@@ -1047,7 +1047,7 @@ abstract class DatabaseUpdater {
 	 * Sets the number of active users in the site_stats table
 	 */
 	protected function doActiveUsersInit() {
-		$activeUsers = $this->db->selectField( 'site_stats', 'ss_active_users', false, __METHOD__ );
+		$activeUsers = $this->db->selectField( 'site_stats', 'ss_active_users', '', __METHOD__ );
 		if ( $activeUsers == -1 ) {
 			$activeUsers = $this->db->selectField( 'recentchanges',
 				'COUNT( DISTINCT rc_user_text )',
@@ -1227,8 +1227,28 @@ abstract class DatabaseUpdater {
 				"maintenance/migrateComments.php.\n"
 			);
 			$task = $this->maintenance->runChild( MigrateComments::class, 'migrateComments.php' );
-			$task->execute();
-			$this->output( "done.\n" );
+			$ok = $task->execute();
+			$this->output( $ok ? "done.\n" : "errors were encountered.\n" );
+		}
+	}
+
+	/**
+	 * Migrate actors to the new 'actor' table
+	 * @since 1.31
+	 */
+	protected function migrateActors() {
+		global $wgActorTableSchemaMigrationStage;
+		if ( $wgActorTableSchemaMigrationStage >= MIGRATION_WRITE_NEW &&
+			!$this->updateRowExists( 'MigrateActors' )
+		) {
+			$this->output(
+				"Migrating actors to the 'actor' table, printing progress markers. For large\n" .
+				"databases, you may want to hit Ctrl-C and do this manually with\n" .
+				"maintenance/migrateActors.php.\n"
+			);
+			$task = $this->maintenance->runChild( 'MigrateActors', 'migrateActors.php' );
+			$ok = $task->execute();
+			$this->output( $ok ? "done.\n" : "errors were encountered.\n" );
 		}
 	}
 

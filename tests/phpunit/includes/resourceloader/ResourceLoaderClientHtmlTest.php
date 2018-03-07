@@ -5,7 +5,7 @@ use Wikimedia\TestingAccessWrapper;
 /**
  * @group ResourceLoader
  */
-class ResourceLoaderClientHtmlTest extends PHPUnit_Framework_TestCase {
+class ResourceLoaderClientHtmlTest extends PHPUnit\Framework\TestCase {
 
 	use MediaWikiCoversValidator;
 
@@ -127,6 +127,7 @@ class ResourceLoaderClientHtmlTest extends PHPUnit_Framework_TestCase {
 		] );
 		$client->setModuleScripts( [
 			'test.scripts',
+			'test.scripts.user',
 			'test.scripts.user.empty',
 			'test.scripts.shouldembed',
 			'test.unregistered.scripts',
@@ -142,6 +143,7 @@ class ResourceLoaderClientHtmlTest extends PHPUnit_Framework_TestCase {
 				'test.styles.private' => 'ready',
 				'test.styles.shouldembed' => 'ready',
 				'test.scripts' => 'loading',
+				'test.scripts.user' => 'loading',
 				'test.scripts.user.empty' => 'ready',
 				'test.scripts.shouldembed' => 'loading',
 			],
@@ -153,6 +155,7 @@ class ResourceLoaderClientHtmlTest extends PHPUnit_Framework_TestCase {
 			],
 			'scripts' => [
 				'test.scripts',
+				'test.scripts.user',
 				'test.scripts.shouldembed',
 			],
 			'embed' => [

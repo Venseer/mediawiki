@@ -32,6 +32,8 @@
 	/* Private members */
 
 	var
+		mwString = require( 'mediawiki.String' ),
+
 		namespaceIds = mw.config.get( 'wgNamespaceIds' ),
 
 		/**
@@ -320,7 +322,7 @@
 			// Except for special pages, e.g. [[Special:Block/Long name]]
 			// Note: The PHP implementation also asserts that even in NS_SPECIAL, the title should
 			// be less than 512 bytes.
-			if ( namespace !== NS_SPECIAL && $.byteLength( title ) > TITLE_MAX_BYTES ) {
+			if ( namespace !== NS_SPECIAL && mwString.byteLength( title ) > TITLE_MAX_BYTES ) {
 				return false;
 			}
 
@@ -407,21 +409,7 @@
 		 * @return {string}
 		 */
 		trimToByteLength = function ( s, length ) {
-			var byteLength, chopOffChars, chopOffBytes;
-
-			// bytelength is always greater or equal to the length in characters
-			s = s.substr( 0, length );
-			while ( ( byteLength = $.byteLength( s ) ) > length ) {
-				// Calculate how many characters can be safely removed
-				// First, we need to know how many bytes the string exceeds the threshold
-				chopOffBytes = byteLength - length;
-				// A character in UTF-8 is at most 4 bytes
-				// One character must be removed in any case because the
-				// string is too long
-				chopOffChars = Math.max( 1, Math.floor( chopOffBytes / 4 ) );
-				s = s.substr( 0, s.length - chopOffChars );
-			}
-			return s;
+			return mwString.trimByteLength( '', s, length ).newVal;
 		},
 
 		/**

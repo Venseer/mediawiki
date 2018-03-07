@@ -962,11 +962,11 @@ interface IDatabase {
 	 * Example usage:
 	 * @code
 	 *     $sql = $db->makeList( [
-	 *         'rev_user' => $id,
+	 *         'rev_page' => $id,
 	 *         $db->makeList( [ 'rev_minor' => 1, 'rev_len' < 500 ], $db::LIST_OR ] )
 	 *     ], $db::LIST_AND );
 	 * @endcode
-	 * This would set $sql to "rev_user = '$id' AND (rev_minor = '1' OR rev_len < '500')"
+	 * This would set $sql to "rev_page = '$id' AND (rev_minor = '1' OR rev_len < '500')"
 	 *
 	 * @param array $a Containing the data
 	 * @param int $mode IDatabase class constant:
@@ -1276,7 +1276,9 @@ interface IDatabase {
 	 * @param string $fname The function name of the caller, from __METHOD__
 	 *
 	 * @param array $insertOptions Options for the INSERT part of the query, see
-	 *    IDatabase::insert() for details.
+	 *    IDatabase::insert() for details. Also, one additional option is
+	 *    available: pass 'NO_AUTO_COLUMNS' to hint that the query does not use
+	 *    an auto-increment or sequence to determine any column values.
 	 * @param array $selectOptions Options for the SELECT part of the query, see
 	 *    IDatabase::select() for details.
 	 * @param array $selectJoinConds Join conditions for the SELECT part of the query, see

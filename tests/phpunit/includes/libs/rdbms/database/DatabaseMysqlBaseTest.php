@@ -29,6 +29,7 @@ use Wikimedia\Rdbms\MySQLMasterPos;
 use Wikimedia\Rdbms\DatabaseMysqlBase;
 use Wikimedia\Rdbms\DatabaseMysqli;
 use Wikimedia\Rdbms\Database;
+use Wikimedia\TestingAccessWrapper;
 
 /**
  * Fake class around abstract class so we can call concrete methods.
@@ -109,7 +110,7 @@ class FakeDatabaseMysqlBase extends DatabaseMysqlBase {
 	}
 }
 
-class DatabaseMysqlBaseTest extends PHPUnit_Framework_TestCase {
+class DatabaseMysqlBaseTest extends PHPUnit\Framework\TestCase {
 
 	use MediaWikiCoversValidator;
 
@@ -494,5 +495,113 @@ class DatabaseMysqlBaseTest extends PHPUnit_Framework_TestCase {
 		$db = new FakeDatabaseMysqlBase();
 
 		$db->clearFlag( Database::DBO_IGNORE );
+	}
+
+	/**
+	 * @covers Wikimedia\Rdbms\MySQLMasterPos
+	 */
+	public function testSerialize() {
+		$pos = new MySQLMasterPos( '3E11FA47-71CA-11E1-9E33-C80AA9429562:99', 53636363 );
+		$roundtripPos = unserialize( serialize( $pos ) );
+
+		$this->assertEquals( $pos, $roundtripPos );
+
+		$pos = new MySQLMasterPos( '255-11-23', 53636363 );
+		$roundtripPos = unserialize( serialize( $pos ) );
+
+		$this->assertEquals( $pos, $roundtripPos );
+	}
+
+	/**
+	 * @covers Wikimedia\Rdbms\DatabaseMysqlBase::isInsertSelectSafe
+	 * @dataProvider provideInsertSelectCases
+	 */
+	public function testInsertSelectIsSafe( $insertOpts, $selectOpts, $row, $safe ) {
+		$db = $this->getMockBuilder( DatabaseMysqli::class )
+			->disableOriginalConstructor()
+			->setMethods( [ 'getReplicationSafetyInfo' ] )
+			->getMock();
+		$db->method( 'getReplicationSafetyInfo' )->willReturn( (object)$row );
+		$dbw = TestingAccessWrapper::newFromObject( $db );
+
+		$this->assertEquals( $safe, $dbw->isInsertSelectSafe( $insertOpts, $selectOpts ) );
+	}
+
+	public function provideInsertSelectCases() {
+		return [
+			[
+				[],
+				[],
+				[
+					'innodb_autoinc_lock_mode' => '2',
+					'binlog_format' => 'ROW',
+				],
+				true
+			],
+			[
+				[],
+				[ 'LIMIT' => 100 ],
+				[
+					'innodb_autoinc_lock_mode' => '2',
+					'binlog_format' => 'ROW',
+				],
+				true
+			],
+			[
+				[],
+				[ 'LIMIT' => 100 ],
+				[
+					'innodb_autoinc_lock_mode' => '0',
+					'binlog_format' => 'STATEMENT',
+				],
+				false
+			],
+			[
+				[],
+				[],
+				[
+					'innodb_autoinc_lock_mode' => '2',
+					'binlog_format' => 'STATEMENT',
+				],
+				false
+			],
+			[
+				[ 'NO_AUTO_COLUMNS' ],
+				[ 'LIMIT' => 100 ],
+				[
+					'innodb_autoinc_lock_mode' => '0',
+					'binlog_format' => 'STATEMENT',
+				],
+				false
+			],
+			[
+				[],
+				[],
+				[
+					'innodb_autoinc_lock_mode' => 0,
+					'binlog_format' => 'STATEMENT',
+				],
+				true
+			],
+			[
+				[ 'NO_AUTO_COLUMNS' ],
+				[],
+				[
+					'innodb_autoinc_lock_mode' => 2,
+					'binlog_format' => 'STATEMENT',
+				],
+				true
+			],
+			[
+				[ 'NO_AUTO_COLUMNS' ],
+				[],
+				[
+					'innodb_autoinc_lock_mode' => 0,
+					'binlog_format' => 'STATEMENT',
+				],
+				true
+			],
+
+		];
 	}
 }

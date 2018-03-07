@@ -3311,9 +3311,10 @@ $wgAllowUserJs = false;
 $wgAllowUserCss = false;
 
 /**
- * Allow user-preferences implemented in CSS?
- * This allows users to customise the site appearance to a greater
- * degree; disabling it will improve page load times.
+ * Allow style-related user-preferences?
+ *
+ * This controls whether the `editfont` and `underline` preferences
+ * are availabe to users.
  */
 $wgAllowUserCssPrefs = true;
 
@@ -4438,7 +4439,6 @@ $wgEnableMagicLinks = [
  *
  * This variable can have the following values:
  * - 'any': all pages as considered as valid articles
- * - 'comma': the page must contain a comma to be considered valid
  * - 'link': the page must contain a [[wiki link]] to be considered valid
  *
  * See also See https://www.mediawiki.org/wiki/Manual:Article_count
@@ -5127,8 +5127,6 @@ $wgGroupPermissions['*']['edit'] = true;
 $wgGroupPermissions['*']['createpage'] = true;
 $wgGroupPermissions['*']['createtalk'] = true;
 $wgGroupPermissions['*']['writeapi'] = true;
-$wgGroupPermissions['*']['editmyusercss'] = true;
-$wgGroupPermissions['*']['editmyuserjs'] = true;
 $wgGroupPermissions['*']['viewmywatchlist'] = true;
 $wgGroupPermissions['*']['editmywatchlist'] = true;
 $wgGroupPermissions['*']['viewmyprivateinfo'] = true;
@@ -5151,6 +5149,8 @@ $wgGroupPermissions['user']['upload'] = true;
 $wgGroupPermissions['user']['reupload'] = true;
 $wgGroupPermissions['user']['reupload-shared'] = true;
 $wgGroupPermissions['user']['minoredit'] = true;
+$wgGroupPermissions['user']['editmyusercss'] = true;
+$wgGroupPermissions['user']['editmyuserjs'] = true;
 $wgGroupPermissions['user']['purge'] = true;
 $wgGroupPermissions['user']['sendemail'] = true;
 $wgGroupPermissions['user']['applychangetags'] = true;
@@ -5813,6 +5813,7 @@ $wgGrantPermissions['editpage']['changetags'] = true;
 $wgGrantPermissions['editprotected'] = $wgGrantPermissions['editpage'];
 $wgGrantPermissions['editprotected']['editprotected'] = true;
 
+// FIXME: Rename editmycssjs to editmyconfig
 $wgGrantPermissions['editmycssjs'] = $wgGrantPermissions['editpage'];
 $wgGrantPermissions['editmycssjs']['editmyusercss'] = true;
 $wgGrantPermissions['editmycssjs']['editmyuserjs'] = true;
@@ -8828,6 +8829,13 @@ $wgInterwikiPrefixDisplayTypes = [];
  * @var int One of the MIGRATION_* constants
  */
 $wgCommentTableSchemaMigrationStage = MIGRATION_OLD;
+
+/**
+ * Actor table schema migration stage.
+ * @since 1.31
+ * @var int One of the MIGRATION_* constants
+ */
+$wgActorTableSchemaMigrationStage = MIGRATION_OLD;
 
 /**
  * For really cool vim folding this needs to be at the end:

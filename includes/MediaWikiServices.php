@@ -16,6 +16,7 @@ use MediaWiki\Preferences\PreferencesFactory;
 use MediaWiki\Shell\CommandFactory;
 use MediaWiki\Storage\BlobStore;
 use MediaWiki\Storage\BlobStoreFactory;
+use MediaWiki\Storage\NameTableStore;
 use MediaWiki\Storage\RevisionFactory;
 use MediaWiki\Storage\RevisionLookup;
 use MediaWiki\Storage\RevisionStore;
@@ -691,6 +692,30 @@ class MediaWikiServices extends ServiceContainer {
 	}
 
 	/**
+	 * @since 1.31
+	 * @return \UploadRevisionImporter
+	 */
+	public function getWikiRevisionUploadImporter() {
+		return $this->getService( 'UploadRevisionImporter' );
+	}
+
+	/**
+	 * @since 1.31
+	 * @return \OldRevisionImporter
+	 */
+	public function getWikiRevisionOldRevisionImporter() {
+		return $this->getService( 'OldRevisionImporter' );
+	}
+
+	/**
+	 * @since 1.31
+	 * @return \OldRevisionImporter
+	 */
+	public function getWikiRevisionOldRevisionImporterNoUpdates() {
+		return $this->getService( 'WikiRevisionOldRevisionImporterNoUpdates' );
+	}
+
+	/**
 	 * @since 1.30
 	 * @return CommandFactory
 	 */
@@ -748,6 +773,22 @@ class MediaWikiServices extends ServiceContainer {
 
 	/**
 	 * @since 1.31
+	 * @return NameTableStore
+	 */
+	public function getContentModelStore() {
+		return $this->getService( 'ContentModelStore' );
+	}
+
+	/**
+	 * @since 1.31
+	 * @return NameTableStore
+	 */
+	public function getSlotRoleStore() {
+		return $this->getService( 'SlotRoleStore' );
+	}
+
+	/**
+	 * @since 1.31
 	 * @return PreferencesFactory
 	 */
 	public function getPreferencesFactory() {
@@ -768,6 +809,14 @@ class MediaWikiServices extends ServiceContainer {
 	 */
 	public function getCommentStore() {
 		return $this->getService( 'CommentStore' );
+	}
+
+	/**
+	 * @since 1.31
+	 * @return ActorMigration
+	 */
+	public function getActorMigration() {
+		return $this->getService( 'ActorMigration' );
 	}
 
 	///////////////////////////////////////////////////////////////////////////
