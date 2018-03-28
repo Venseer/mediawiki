@@ -71,6 +71,7 @@ production.
 * Wikimedia\Rdbms\IDatabase::doAtomicSection(), non-native ::insertSelect(),
   and non-MySQL ::replace() and ::upsert() no longer roll back the whole
   transaction on failure.
+* (T189785) Added a monthly heartbeat ping to the pingback feature.
 
 === External library changes in 1.31 ===
 
@@ -294,6 +295,8 @@ changes to languages because of Phabricator reports.
   * StripState::merge()
 * The "free" CSS class is now only applied to unbracketed URLs in wikitext. Links
   written using square brackets will get the class "text" not "free".
+* SpecialPageFactory::getList(), deprecated in 1.24, has been removed. You can
+  use ::getNames() instead.
 * OpenSearch::getOpenSearchTemplate(), deprecated in 1.25, has been removed. You
   can use ApiOpenSearch::getOpenSearchTemplate() instead.
 * The global function wfBaseConvert, deprecated in 1.27, has been removed. Use
@@ -310,6 +313,13 @@ changes to languages because of Phabricator reports.
 * The global function wfOutputHandler() was removed, use the its replacement
   MediaWiki\OutputHandler::handle() instead. The global function was only sometimes defined.
   Its replacement is always available via the autoloader.
+* ChangeTags::listExtensionActivatedTags and ::listExtensionDefinedTags, deprecated
+  in 1.28, have been removed.  Use ::listSoftwareActivatedTags() and
+  ::listSoftwareDefinedTags() instead.
+* Title::getTitleInvalidRegex(), deprecated in 1.25, has been removed. You
+  can use MediaWikiTitleCodec::getTitleInvalidRegex() instead.
+* HTMLForm & VFormHTMLForm::isVForm(), deprecated in 1.25, have been removed.
+* The ProfileSection class, deprecated in 1.25 and unused, has been removed.
 
 == Compatibility ==
 MediaWiki 1.31 requires PHP 5.5.9 or later. Although HHVM 3.18.5 or later is supported,
@@ -322,7 +332,7 @@ Oracle and Microsoft SQL Server.
 The supported versions are:
 
 * MySQL 5.0.3 or later
-* PostgreSQL 8.3 or later
+* PostgreSQL 9.2 or later
 * SQLite 3.3.7 or later
 * Oracle 9.0.1 or later
 * Microsoft SQL Server 2005 (9.00.1399)
