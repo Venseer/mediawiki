@@ -101,6 +101,8 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	protected $queryLogger;
 	/** @var callback Error logging callback */
 	protected $errorLogger;
+	/** @var callback Deprecation logging callback */
+	protected $deprecationLogger;
 
 	/** @var resource|null Database connection */
 	protected $conn = null;
@@ -141,6 +143,19 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	/** @var integer|null Rows affected by the last query to query() or its CRUD wrappers */
 	protected $affectedRowCount;
 
+	/**
+	 * @var int Transaction status
+	 */
+	protected $trxStatus = self::STATUS_TRX_NONE;
+	/**
+	 * @var Exception|null The last error that caused the status to become STATUS_TRX_ERROR
+	 */
+	protected $trxStatusCause;
+	/**
+	 * @var array|null If wasKnownStatementRollbackError() prevented trxStatus from being set,
+	 *  the relevant details are stored here.
+	 */
+	protected $trxStatusIgnoredCause;
 	/**
 	 * Either 1 if a transaction is active or 0 otherwise.
 	 * The other Trx fields may not be meaningfull if this is 0.
@@ -259,6 +274,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	/** @var int */
 	protected $nonNativeInsertSelectBatchSize = 10000;
 
+	/** @var int Transaction is in a error state requiring a full or savepoint rollback */
+	const STATUS_TRX_ERROR = 1;
+	/** @var int Transaction is active and in a normal state */
+	const STATUS_TRX_OK = 2;
+	/** @var int No transaction is active */
+	const STATUS_TRX_NONE = 3;
+
 	/**
 	 * @note: exceptions for missing libraries/drivers should be thrown in initConnection()
 	 * @param array $params Parameters passed from Database::factory()
@@ -297,6 +319,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$this->connLogger = $params['connLogger'];
 		$this->queryLogger = $params['queryLogger'];
 		$this->errorLogger = $params['errorLogger'];
+		$this->deprecationLogger = $params['deprecationLogger'];
 
 		if ( isset( $params['nonNativeInsertSelectBatchSize'] ) ) {
 			$this->nonNativeInsertSelectBatchSize = $params['nonNativeInsertSelectBatchSize'];
@@ -381,6 +404,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 *      includes the agent as a SQL comment.
 	 *   - trxProfiler: Optional TransactionProfiler instance.
 	 *   - errorLogger: Optional callback that takes an Exception and logs it.
+	 *   - deprecationLogger: Optional callback that takes a string and logs it.
 	 *   - cliMode: Whether to consider the execution context that of a CLI script.
 	 *   - agent: Optional name used to identify the end-user in query profiling/logging.
 	 *   - srvCache: Optional BagOStuff instance to an APC-style cache.
@@ -420,6 +444,11 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			if ( !isset( $p['errorLogger'] ) ) {
 				$p['errorLogger'] = function ( Exception $e ) {
 					trigger_error( get_class( $e ) . ': ' . $e->getMessage(), E_USER_WARNING );
+				};
+			}
+			if ( !isset( $p['deprecationLogger'] ) ) {
+				$p['deprecationLogger'] = function ( $msg ) {
+					trigger_error( $msg, E_USER_DEPRECATED );
 				};
 			}
 
@@ -548,6 +577,14 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		return $this->trxLevel ? $this->trxTimestamp : null;
 	}
 
+	/**
+	 * @return int One of the STATUS_TRX_* class constants
+	 * @since 1.31
+	 */
+	public function trxStatus() {
+		return $this->trxStatus;
+	}
+
 	public function tablePrefix( $prefix = null ) {
 		$old = $this->tablePrefix;
 		if ( $prefix !== null ) {
@@ -635,6 +672,20 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		);
 	}
 
+	/**
+	 * @return string|null
+	 */
+	final protected function getTransactionRoundId() {
+		// If transaction round participation is enabled, see if one is active
+		if ( $this->getFlag( self::DBO_TRX ) ) {
+			$id = $this->getLBInfo( 'trxRoundId' );
+
+			return is_string( $id ) ? $id : null;
+		}
+
+		return null;
+	}
+
 	public function pendingWriteQueryDuration( $type = self::ESTIMATE_TOTAL ) {
 		if ( !$this->trxLevel ) {
 			return false;
@@ -688,6 +739,15 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		}
 
 		return $fnames;
+	}
+
+	/**
+	 * @return string
+	 */
+	private function flatAtomicSectionList() {
+		return array_reduce( $this->trxAtomicLevels, function ( $accum, $v ) {
+			return $accum === null ? $v[0] : "$accum, " . $v[0];
+		} );
 	}
 
 	public function isOpen() {
@@ -832,41 +892,63 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		);
 	}
 
-	public function close() {
+	final public function close() {
+		$exception = null; // error to throw after disconnecting
+
 		if ( $this->conn ) {
 			// Resolve any dangling transaction first
-			if ( $this->trxLevel() ) {
+			if ( $this->trxLevel ) {
 				// Meaningful transactions should ideally have been resolved by now
 				if ( $this->writesOrCallbacksPending() ) {
 					$this->queryLogger->warning(
 						__METHOD__ . ": writes or callbacks still pending.",
 						[ 'trace' => ( new RuntimeException() )->getTraceAsString() ]
 					);
+					// Cannot let incomplete atomic sections be committed
+					if ( $this->trxAtomicLevels ) {
+						$levels = $this->flatAtomicSectionList();
+						$exception = new DBUnexpectedError(
+							$this,
+							__METHOD__ . ": atomic sections $levels are still open."
+						);
+					// Check if it is possible to properly commit and trigger callbacks
+					} elseif ( $this->trxEndCallbacksSuppressed ) {
+						$exception = new DBUnexpectedError(
+							$this,
+							__METHOD__ . ': callbacks are suppressed; cannot properly commit.'
+						);
+					}
 				}
-				// Check if it is possible to properly commit and trigger callbacks
-				if ( $this->trxEndCallbacksSuppressed ) {
-					throw new DBUnexpectedError(
-						$this,
-						__METHOD__ . ': callbacks are suppressed; cannot properly commit.'
-					);
+				// Commit or rollback the changes and run any callbacks as needed
+				if ( $this->trxStatus === self::STATUS_TRX_OK && !$exception ) {
+					$this->commit( __METHOD__, self::TRANSACTION_INTERNAL );
+				} else {
+					$this->rollback( __METHOD__, self::TRANSACTION_INTERNAL );
 				}
-				// Commit the changes and run any callbacks as needed
-				$this->commit( __METHOD__, self::FLUSHING_INTERNAL );
 			}
 			// Close the actual connection in the binding handle
 			$closed = $this->closeConnection();
 			$this->conn = false;
-			// Sanity check that no callbacks are dangling
-			if (
-				$this->trxIdleCallbacks || $this->trxPreCommitCallbacks || $this->trxEndCallbacks
-			) {
-				throw new RuntimeException( "Transaction callbacks still pending." );
-			}
 		} else {
 			$closed = true; // already closed; nothing to do
 		}
 
 		$this->opened = false;
+
+		// Throw any unexpected errors after having disconnected
+		if ( $exception instanceof Exception ) {
+			throw $exception;
+		}
+
+		// Sanity check that no callbacks are dangling
+		if (
+			$this->trxIdleCallbacks || $this->trxPreCommitCallbacks || $this->trxEndCallbacks
+		) {
+			throw new RuntimeException(
+				"Transaction callbacks are still pending:\n" .
+				implode( ', ', $this->pendingWriteAndCallbackCallers() )
+			);
+		}
 
 		return $closed;
 	}
@@ -991,6 +1073,11 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	public function query( $sql, $fname = __METHOD__, $tempIgnore = false ) {
+		$this->assertTransactionStatus( $sql, $fname );
+
+		# Avoid fatals if close() was called
+		$this->assertOpen();
+
 		$priorWritesPending = $this->writesOrCallbacksPending();
 		$this->lastQuery = $sql;
 
@@ -1041,59 +1128,61 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->queryLogger->debug( "{$this->dbName} {$commentedSql}" );
 		}
 
-		# Avoid fatals if close() was called
-		$this->assertOpen();
-
-		# Send the query to the server
+		# Send the query to the server and fetch any corresponding errors
 		$ret = $this->doProfiledQuery( $sql, $commentedSql, $isNonTempWrite, $fname );
+		$lastError = $this->lastError();
+		$lastErrno = $this->lastErrno();
 
 		# Try reconnecting if the connection was lost
-		if ( false === $ret && $this->wasConnectionLoss() ) {
+		if ( $ret === false && $this->wasConnectionLoss() ) {
+			# Check if any meaningful session state was lost
 			$recoverable = $this->canRecoverFromDisconnect( $sql, $priorWritesPending );
-			# Stash the last error values before anything might clear them
-			$lastError = $this->lastError();
-			$lastErrno = $this->lastErrno();
-			# Update state tracking to reflect transaction loss due to disconnection
-			$this->handleSessionLoss();
-			if ( $this->reconnect() ) {
-				$msg = __METHOD__ . ': lost connection to {dbserver}; reconnected';
-				$params = [ 'dbserver' => $this->getServer() ];
-				$this->connLogger->warning( $msg, $params );
-				$this->queryLogger->warning( $msg, $params +
-					[ 'trace' => ( new RuntimeException() )->getTraceAsString() ] );
+			# Update session state tracking and try to restore the connection
+			$reconnected = $this->replaceLostConnection( __METHOD__ );
+			# Silently resend the query to the server if it is safe and possible
+			if ( $reconnected && $recoverable ) {
+				$ret = $this->doProfiledQuery( $sql, $commentedSql, $isNonTempWrite, $fname );
+				$lastError = $this->lastError();
+				$lastErrno = $this->lastErrno();
 
-				if ( $recoverable ) {
-					# Should be safe to silently retry the query
-					$ret = $this->doProfiledQuery( $sql, $commentedSql, $isNonTempWrite, $fname );
+				if ( $ret === false && $this->wasConnectionLoss() ) {
+					# Query probably causes disconnects; reconnect and do not re-run it
+					$this->replaceLostConnection( __METHOD__ );
+				}
+			}
+		}
+
+		if ( $ret === false ) {
+			if ( $this->trxLevel ) {
+				if ( !$this->wasKnownStatementRollbackError() ) {
+					# Either the query was aborted or all queries after BEGIN where aborted.
+					if ( $this->explicitTrxActive() || $priorWritesPending ) {
+						# In the first case, the only options going forward are (a) ROLLBACK, or
+						# (b) ROLLBACK TO SAVEPOINT (if one was set). If the later case, the only
+						# option is ROLLBACK, since the snapshots would have been released.
+						$this->trxStatus = self::STATUS_TRX_ERROR;
+						$this->trxStatusCause =
+							$this->makeQueryException( $lastError, $lastErrno, $sql, $fname );
+						$tempIgnore = false; // cannot recover
+					} else {
+						# Nothing prior was there to lose from the transaction,
+						# so just roll it back.
+						$this->doRollback( __METHOD__ . " ($fname)" );
+						$this->trxStatus = self::STATUS_TRX_OK;
+					}
+					$this->trxStatusIgnoredCause = null;
 				} else {
-					# Callers may catch the exception and continue to use the DB
-					$this->reportQueryError( $lastError, $lastErrno, $sql, $fname );
+					# We're ignoring an error that caused just the current query to be aborted.
+					# But log the cause so we can log a deprecation notice if a
+					# caller actually does ignore it.
+					$this->trxStatusIgnoredCause = [ $lastError, $lastErrno, $fname ];
 				}
-			} else {
-				$msg = __METHOD__ . ': lost connection to {dbserver} permanently';
-				$this->connLogger->error( $msg, [ 'dbserver' => $this->getServer() ] );
-			}
-		}
-
-		if ( false === $ret ) {
-			# Deadlocks cause the entire transaction to abort, not just the statement.
-			# https://dev.mysql.com/doc/refman/5.7/en/innodb-error-handling.html
-			# https://www.postgresql.org/docs/9.1/static/explicit-locking.html
-			if ( $this->wasDeadlock() ) {
-				if ( $this->explicitTrxActive() || $priorWritesPending ) {
-					$tempIgnore = false; // not recoverable
-				}
-				# Update state tracking to reflect transaction loss
-				$this->handleSessionLoss();
 			}
 
-			$this->reportQueryError(
-				$this->lastError(), $this->lastErrno(), $sql, $fname, $tempIgnore );
+			$this->reportQueryError( $lastError, $lastErrno, $sql, $fname, $tempIgnore );
 		}
 
-		$res = $this->resultObject( $ret );
-
-		return $res;
+		return $this->resultObject( $ret );
 	}
 
 	/**
@@ -1192,6 +1281,33 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	/**
+	 * @param string $sql
+	 * @param string $fname
+	 * @throws DBTransactionStateError
+	 */
+	private function assertTransactionStatus( $sql, $fname ) {
+		if ( $this->getQueryVerb( $sql ) === 'ROLLBACK' ) { // transaction/savepoint
+			return;
+		}
+
+		if ( $this->trxStatus < self::STATUS_TRX_OK ) {
+			throw new DBTransactionStateError(
+				$this,
+				"Cannot execute query from $fname while transaction status is ERROR. ",
+				[],
+				$this->trxStatusCause
+			);
+		} elseif ( $this->trxStatus === self::STATUS_TRX_OK && $this->trxStatusIgnoredCause ) {
+			list( $iLastError, $iLastErrno, $iFname ) = $this->trxStatusIgnoredCause;
+			call_user_func( $this->deprecationLogger,
+				"Caller from $fname ignored an error originally raised from $iFname: " .
+				"[$iLastErrno] $iLastError"
+			);
+			$this->trxStatusIgnoredCause = null;
+		}
+	}
+
+	/**
 	 * Determine whether or not it is safe to retry queries after a database
 	 * connection is lost
 	 *
@@ -1208,12 +1324,14 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		# didn't matter anyway (aside from DBO_TRX snapshot loss).
 		if ( $this->namedLocksHeld ) {
 			return false; // possible critical section violation
+		} elseif ( $this->sessionTempTables ) {
+			return false; // tables might be queried latter
 		} elseif ( $sql === 'COMMIT' ) {
 			return !$priorWritesPending; // nothing written anyway? (T127428)
 		} elseif ( $sql === 'ROLLBACK' ) {
 			return true; // transaction lost...which is also what was requested :)
 		} elseif ( $this->explicitTrxActive() ) {
-			return false; // don't drop atomocity
+			return false; // don't drop atomocity and explicit snapshots
 		} elseif ( $priorWritesPending ) {
 			return false; // prior writes lost from implicit transaction
 		}
@@ -1222,36 +1340,41 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	/**
-	 * Clean things up after transaction loss due to disconnection
-	 *
-	 * @return null|Exception
+	 * Clean things up after session (and thus transaction) loss
 	 */
 	private function handleSessionLoss() {
+		// Clean up tracking of session-level things...
+		// https://dev.mysql.com/doc/refman/5.7/en/implicit-commit.html
+		// https://www.postgresql.org/docs/9.2/static/sql-createtable.html (ignoring ON COMMIT)
+		$this->sessionTempTables = [];
+		// https://dev.mysql.com/doc/refman/5.7/en/miscellaneous-functions.html#function_get-lock
+		// https://www.postgresql.org/docs/9.4/static/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+		$this->namedLocksHeld = [];
+		// Session loss implies transaction loss
+		$this->handleTransactionLoss();
+	}
+
+	/**
+	 * Clean things up after transaction loss
+	 */
+	private function handleTransactionLoss() {
 		$this->trxLevel = 0;
 		$this->trxAtomicCounter = 0;
 		$this->trxIdleCallbacks = []; // T67263; transaction already lost
 		$this->trxPreCommitCallbacks = []; // T67263; transaction already lost
-		$this->sessionTempTables = [];
-		$this->namedLocksHeld = [];
-
-		// Note: if callback suppression is set then some *Callbacks arrays are not cleared here
-		$e = null;
 		try {
-			// Handle callbacks in trxEndCallbacks
+			// Handle callbacks in trxEndCallbacks, e.g. onTransactionResolution().
+			// If callback suppression is set then the array will remain unhandled.
 			$this->runOnTransactionIdleCallbacks( self::TRIGGER_ROLLBACK );
 		} catch ( Exception $ex ) {
 			// Already logged; move on...
-			$e = $e ?: $ex;
 		}
 		try {
-			// Handle callbacks in trxRecurringCallbacks
+			// Handle callbacks in trxRecurringCallbacks, e.g. setTransactionListener()
 			$this->runTransactionListenerCallbacks( self::TRIGGER_ROLLBACK );
 		} catch ( Exception $ex ) {
 			// Already logged; move on...
-			$e = $e ?: $ex;
 		}
-
-		return $e;
 	}
 
 	/**
@@ -1283,25 +1406,40 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		if ( $tempIgnore ) {
 			$this->queryLogger->debug( "SQL ERROR (ignored): $error\n" );
 		} else {
-			$sql1line = mb_substr( str_replace( "\n", "\\n", $sql ), 0, 5 * 1024 );
-			$this->queryLogger->error(
-				"{fname}\t{db_server}\t{errno}\t{error}\t{sql1line}",
-				$this->getLogContext( [
-					'method' => __METHOD__,
-					'errno' => $errno,
-					'error' => $error,
-					'sql1line' => $sql1line,
-					'fname' => $fname,
-				] )
-			);
-			$this->queryLogger->debug( "SQL ERROR: " . $error . "\n" );
-			$wasQueryTimeout = $this->wasQueryTimeout( $error, $errno );
-			if ( $wasQueryTimeout ) {
-				throw new DBQueryTimeoutError( $this, $error, $errno, $sql, $fname );
-			} else {
-				throw new DBQueryError( $this, $error, $errno, $sql, $fname );
-			}
+			$exception = $this->makeQueryException( $error, $errno, $sql, $fname );
+
+			throw $exception;
 		}
+	}
+
+	/**
+	 * @param string $error
+	 * @param string|int $errno
+	 * @param string $sql
+	 * @param string $fname
+	 * @return DBError
+	 */
+	private function makeQueryException( $error, $errno, $sql, $fname ) {
+		$sql1line = mb_substr( str_replace( "\n", "\\n", $sql ), 0, 5 * 1024 );
+		$this->queryLogger->error(
+			"{fname}\t{db_server}\t{errno}\t{error}\t{sql1line}",
+			$this->getLogContext( [
+				'method' => __METHOD__,
+				'errno' => $errno,
+				'error' => $error,
+				'sql1line' => $sql1line,
+				'fname' => $fname,
+			] )
+		);
+		$this->queryLogger->debug( "SQL ERROR: " . $error . "\n" );
+		$wasQueryTimeout = $this->wasQueryTimeout( $error, $errno );
+		if ( $wasQueryTimeout ) {
+			$e = new DBQueryTimeoutError( $this, $error, $errno, $sql, $fname );
+		} else {
+			$e = new DBQueryError( $this, $error, $errno, $sql, $fname );
+		}
+
+		return $e;
 	}
 
 	public function freeResult( $res ) {
@@ -3010,6 +3148,16 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		return false;
 	}
 
+	/**
+	 * @return bool Whether it is safe to assume the given error only caused statement rollback
+	 * @note This is for backwards compatibility for callers catching DBError exceptions in
+	 *   order to ignore problems like duplicate key errors or foriegn key violations
+	 * @since 1.31
+	 */
+	protected function wasKnownStatementRollbackError() {
+		return false; // don't know; it could have caused a transaction rollback
+	}
+
 	public function deadlockLoop() {
 		$args = func_get_args();
 		$function = array_shift( $args );
@@ -3073,6 +3221,12 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	final public function onTransactionIdle( callable $callback, $fname = __METHOD__ ) {
+		if ( !$this->trxLevel && $this->getTransactionRoundId() ) {
+			// Start an implicit transaction similar to how query() does
+			$this->begin( __METHOD__, self::TRANSACTION_INTERNAL );
+			$this->trxAutomatic = true;
+		}
+
 		$this->trxIdleCallbacks[] = [ $callback, $fname ];
 		if ( !$this->trxLevel ) {
 			$this->runOnTransactionIdleCallbacks( self::TRIGGER_IDLE );
@@ -3080,10 +3234,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	final public function onTransactionPreCommitOrIdle( callable $callback, $fname = __METHOD__ ) {
-		if ( $this->trxLevel || $this->getFlag( self::DBO_TRX ) ) {
-			// As long as DBO_TRX is set, writes will accumulate until the load balancer issues
-			// an implicit commit of all peer databases. This is true even if a transaction has
-			// not yet been triggered by writes; make sure $callback runs *after* any such writes.
+		if ( !$this->trxLevel && $this->getTransactionRoundId() ) {
+			// Start an implicit transaction similar to how query() does
+			$this->begin( __METHOD__, self::TRANSACTION_INTERNAL );
+			$this->trxAutomatic = true;
+		}
+
+		if ( $this->trxLevel ) {
 			$this->trxPreCommitCallbacks[] = [ $callback, $fname ];
 		} else {
 			// No transaction is active nor will start implicitly, so make one for this callback
@@ -3335,6 +3492,8 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->rollback( $fname, self::FLUSHING_INTERNAL );
 		} elseif ( $savepointId !== 'n/a' ) {
 			$this->doRollbackToSavepoint( $savepointId, $fname );
+			$this->trxStatus = self::STATUS_TRX_OK; // no exception; recovered
+			$this->trxStatusIgnoredCause = null;
 		}
 
 		$this->affectedRowCount = 0; // for the sake of consistency
@@ -3357,9 +3516,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		// Protect against mismatched atomic section, transaction nesting, and snapshot loss
 		if ( $this->trxLevel ) {
 			if ( $this->trxAtomicLevels ) {
-				$levels = array_reduce( $this->trxAtomicLevels, function ( $accum, $v ) {
-					return $accum === null ? $v[0] : "$accum, " . $v[0];
-				} );
+				$levels = $this->flatAtomicSectionList();
 				$msg = "$fname: Got explicit BEGIN while atomic section(s) $levels are open.";
 				throw new DBUnexpectedError( $this, $msg );
 			} elseif ( !$this->trxAutomatic ) {
@@ -3378,6 +3535,8 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$this->assertOpen();
 
 		$this->doBegin( $fname );
+		$this->trxStatus = self::STATUS_TRX_OK;
+		$this->trxStatusIgnoredCause = null;
 		$this->trxAtomicCounter = 0;
 		$this->trxTimestamp = microtime( true );
 		$this->trxFname = $fname;
@@ -3393,6 +3552,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$this->trxWriteCallers = [];
 		// First SELECT after BEGIN will establish the snapshot in REPEATABLE-READ.
 		// Get an estimate of the replication lag before any such queries.
+		$this->trxReplicaLag = null; // clear cached value first
 		$this->trxReplicaLag = $this->getApproximateLagStatus()['lag'];
 		// T147697: make explicitTrxActive() return true until begin() finishes. This way, no
 		// caller will think its OK to muck around with the transaction just because startAtomic()
@@ -3414,9 +3574,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	final public function commit( $fname = __METHOD__, $flush = '' ) {
 		if ( $this->trxLevel && $this->trxAtomicLevels ) {
 			// There are still atomic sections open. This cannot be ignored
-			$levels = array_reduce( $this->trxAtomicLevels, function ( $accum, $v ) {
-				return $accum === null ? $v[0] : "$accum, " . $v[0];
-			} );
+			$levels = $this->flatAtomicSectionList();
 			throw new DBUnexpectedError(
 				$this,
 				"$fname: Got COMMIT while atomic sections $levels are still open."
@@ -3451,6 +3609,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$this->runOnTransactionPreCommitCallbacks();
 		$writeTime = $this->pendingWriteQueryDuration( self::ESTIMATE_DB_APPLY );
 		$this->doCommit( $fname );
+		$this->trxStatus = self::STATUS_TRX_NONE;
 		if ( $this->trxDoneWrites ) {
 			$this->lastWriteTime = microtime( true );
 			$this->trxProfiler->transactionWritingOut(
@@ -3496,6 +3655,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->assertOpen();
 
 			$this->doRollback( $fname );
+			$this->trxStatus = self::STATUS_TRX_NONE;
 			$this->trxAtomicLevels = [];
 			if ( $this->trxDoneWrites ) {
 				$this->trxProfiler->transactionWritingOut(
@@ -3646,11 +3806,12 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	/**
-	 * Close existing database connection and open a new connection
+	 * Close any existing (dead) database connection and open a new connection
 	 *
+	 * @param string $fname
 	 * @return bool True if new connection is opened successfully, false if error
 	 */
-	protected function reconnect() {
+	protected function replaceLostConnection( $fname ) {
 		$this->closeConnection();
 		$this->opened = false;
 		$this->conn = false;
@@ -3658,15 +3819,30 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->open( $this->server, $this->user, $this->password, $this->dbName );
 			$this->lastPing = microtime( true );
 			$ok = true;
+
+			$this->connLogger->warning(
+				$fname . ': lost connection to {dbserver}; reconnected',
+				[
+					'dbserver' => $this->getServer(),
+					'trace' => ( new RuntimeException() )->getTraceAsString()
+				]
+			);
 		} catch ( DBConnectionError $e ) {
 			$ok = false;
+
+			$this->connLogger->error(
+				$fname . ': lost connection to {dbserver} permanently',
+				[ 'dbserver' => $this->getServer() ]
+			);
 		}
+
+		$this->handleSessionLoss();
 
 		return $ok;
 	}
 
 	public function getSessionLagStatus() {
-		return $this->getTransactionLagStatus() ?: $this->getApproximateLagStatus();
+		return $this->getRecordedTransactionLagStatus() ?: $this->getApproximateLagStatus();
 	}
 
 	/**
@@ -3677,11 +3853,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 * is this lag plus transaction duration. If they don't, it is still
 	 * safe to be pessimistic. This returns null if there is no transaction.
 	 *
+	 * This returns null if the lag status for this transaction was not yet recorded.
+	 *
 	 * @return array|null ('lag': seconds or false on error, 'since': UNIX timestamp of BEGIN)
 	 * @since 1.27
 	 */
-	final protected function getTransactionLagStatus() {
-		return $this->trxLevel
+	final protected function getRecordedTransactionLagStatus() {
+		return ( $this->trxLevel && $this->trxReplicaLag !== null )
 			? [ 'lag' => $this->trxReplicaLag, 'since' => $this->trxTimestamp() ]
 			: null;
 	}

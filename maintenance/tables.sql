@@ -618,7 +618,7 @@ CREATE TABLE /*_*/archive (
   --
   -- @since 1.5 Entries from 1.4 will be NULL here. When restoring
   -- archive rows from before 1.5, a new rev_id is created.
-  ar_rev_id int unsigned,
+  ar_rev_id int unsigned NOT NULL,
 
   -- Copied from rev_text_id, references text.old_id.
   -- To avoid breaking the block-compression scheme and otherwise making
@@ -1464,7 +1464,7 @@ CREATE TABLE /*_*/recentchanges (
 CREATE INDEX /*i*/rc_timestamp ON /*_*/recentchanges (rc_timestamp);
 
 -- Special:Watchlist
-CREATE INDEX /*i*/rc_namespace_title ON /*_*/recentchanges (rc_namespace, rc_title);
+CREATE INDEX /*i*/rc_namespace_title_timestamp ON /*_*/recentchanges (rc_namespace, rc_title, rc_timestamp);
 
 -- Special:Recentchangeslinked when finding changes in pages linked from a page
 CREATE INDEX /*i*/rc_cur_id ON /*_*/recentchanges (rc_cur_id);

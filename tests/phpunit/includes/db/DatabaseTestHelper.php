@@ -26,6 +26,11 @@ class DatabaseTestHelper extends Database {
 	/** @var array List of row arrays */
 	protected $nextResult = [];
 
+	/** @var array|null */
+	protected $nextError = null;
+	/** @var array|null */
+	protected $lastError = null;
+
 	/**
 	 * Array of tables to be considered as existing by tableExist()
 	 * Use setExistingTables() to alter.
@@ -48,7 +53,11 @@ class DatabaseTestHelper extends Database {
 		$this->errorLogger = function ( Exception $e ) {
 			wfWarn( get_class( $e ) . ": {$e->getMessage()}" );
 		};
+		$this->deprecationLogger = function ( $msg ) {
+			wfWarn( $msg );
+		};
 		$this->currentDomain = DatabaseDomain::newUnspecified();
+		$this->open( 'localhost', 'testuser', 'password', 'testdb' );
 	}
 
 	/**
@@ -74,6 +83,16 @@ class DatabaseTestHelper extends Database {
 		$this->nextResult = $res;
 	}
 
+	/**
+	 * @param int $errno Error number
+	 * @param string $error Error text
+	 * @param array $options
+	 *  - wasKnownStatementRollbackError: Return value for wasKnownStatementRollbackError()
+	 */
+	public function forceNextQueryError( $errno, $error, $options = [] ) {
+		$this->nextError = [ 'errno' => $errno, 'error' => $error ] + $options;
+	}
+
 	protected function addSql( $sql ) {
 		// clean up spaces before and after some words and the whole string
 		$this->lastSqls[] = trim( preg_replace(
@@ -83,7 +102,17 @@ class DatabaseTestHelper extends Database {
 	}
 
 	protected function checkFunctionName( $fname ) {
-		if ( substr( $fname, 0, strlen( $this->testName ) ) !== $this->testName ) {
+		if ( $fname === 'Wikimedia\\Rdbms\\Database::close' ) {
+			return; // no $fname parameter
+		}
+
+		// Handle some internal calls from the Database class
+		$check = $fname;
+		if ( preg_match( '/^Wikimedia\\\\Rdbms\\\\Database::query \((.+)\)$/', $fname, $m ) ) {
+			$check = $m[1];
+		}
+
+		if ( substr( $check, 0, strlen( $this->testName ) ) !== $this->testName ) {
 			throw new MWException( 'function name does not start with test class. ' .
 				$fname . ' vs. ' . $this->testName . '. ' .
 				'Please provide __METHOD__ to database methods.' );
@@ -102,7 +131,6 @@ class DatabaseTestHelper extends Database {
 
 	public function query( $sql, $fname = '', $tempIgnore = false ) {
 		$this->checkFunctionName( $fname );
-		$this->addSql( $sql );
 
 		return parent::query( $sql, $fname, $tempIgnore );
 	}
@@ -128,7 +156,9 @@ class DatabaseTestHelper extends Database {
 	}
 
 	function open( $server, $user, $password, $dbName ) {
-		return false;
+		$this->conn = (object)[ 'test' ];
+
+		return true;
 	}
 
 	function fetchObject( $res ) {
@@ -160,11 +190,17 @@ class DatabaseTestHelper extends Database {
 	}
 
 	function lastErrno() {
-		return -1;
+		return $this->lastError ? $this->lastError['errno'] : -1;
 	}
 
 	function lastError() {
-		return 'test';
+		return $this->lastError ? $this->lastError['error'] : 'test';
+	}
+
+	protected function wasKnownStatementRollbackError() {
+		return isset( $this->lastError['wasKnownStatementRollbackError'] )
+			? $this->lastError['wasKnownStatementRollbackError']
+			: false;
 	}
 
 	function fieldInfo( $table, $field ) {
@@ -192,7 +228,7 @@ class DatabaseTestHelper extends Database {
 	}
 
 	function isOpen() {
-		return true;
+		return $this->conn ? true : false;
 	}
 
 	function ping( &$rtt = null ) {
@@ -201,12 +237,22 @@ class DatabaseTestHelper extends Database {
 	}
 
 	protected function closeConnection() {
-		return false;
+		return true;
 	}
 
 	protected function doQuery( $sql ) {
+		$sql = preg_replace( '< /\* .+?  \*/>', '', $sql );
+		$this->addSql( $sql );
+
+		if ( $this->nextError ) {
+			$this->lastError = $this->nextError;
+			$this->nextError = null;
+			return false;
+		}
+
 		$res = $this->nextResult;
 		$this->nextResult = [];
+		$this->lastError = null;
 
 		return new FakeResultWrapper( $res );
 	}

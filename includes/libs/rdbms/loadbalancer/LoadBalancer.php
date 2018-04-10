@@ -111,6 +111,8 @@ class LoadBalancer implements ILoadBalancer {
 
 	/** @var callable Exception logger */
 	private $errorLogger;
+	/** @var callable Deprecation logger */
+	private $deprecationLogger;
 
 	/** @var bool */
 	private $disabled = false;
@@ -222,6 +224,11 @@ class LoadBalancer implements ILoadBalancer {
 			? $params['errorLogger']
 			: function ( Exception $e ) {
 				trigger_error( get_class( $e ) . ': ' . $e->getMessage(), E_USER_WARNING );
+			};
+		$this->deprecationLogger = isset( $params['deprecationLogger'] )
+			? $params['deprecationLogger']
+			: function ( $msg ) {
+				trigger_error( $msg, E_USER_DEPRECATED );
 			};
 
 		foreach ( [ 'replLogger', 'connLogger', 'queryLogger', 'perfLogger' ] as $key ) {
@@ -1067,6 +1074,7 @@ class LoadBalancer implements ILoadBalancer {
 		$server['connLogger'] = $this->connLogger;
 		$server['queryLogger'] = $this->queryLogger;
 		$server['errorLogger'] = $this->errorLogger;
+		$server['deprecationLogger'] = $this->deprecationLogger;
 		$server['profiler'] = $this->profiler;
 		$server['trxProfiler'] = $this->trxProfiler;
 		// Use the same agent and PHP mode for all DB handles
@@ -1423,6 +1431,12 @@ class LoadBalancer implements ILoadBalancer {
 	}
 
 	/**
+	 * Make all DB servers with DBO_DEFAULT/DBO_TRX set join the transaction round
+	 *
+	 * Some servers may have neither flag enabled, meaning that they opt out of such
+	 * transaction rounds and remain in auto-commit mode. Such behavior might be desired
+	 * when a DB server is used for something like simple key/value storage.
+	 *
 	 * @param IDatabase $conn
 	 */
 	private function applyTransactionRoundFlags( IDatabase $conn ) {
@@ -1434,9 +1448,10 @@ class LoadBalancer implements ILoadBalancer {
 			// DBO_TRX is controlled entirely by CLI mode presence with DBO_DEFAULT.
 			// Force DBO_TRX even in CLI mode since a commit round is expected soon.
 			$conn->setFlag( $conn::DBO_TRX, $conn::REMEMBER_PRIOR );
-			// If config has explicitly requested DBO_TRX be either on or off by not
-			// setting DBO_DEFAULT, then respect that. Forcing no transactions is useful
-			// for things like blob stores (ExternalStore) which want auto-commit mode.
+		}
+
+		if ( $conn->getFlag( $conn::DBO_TRX ) ) {
+			$conn->setLBInfo( 'trxRoundId', $this->trxRoundId );
 		}
 	}
 
@@ -1446,6 +1461,10 @@ class LoadBalancer implements ILoadBalancer {
 	private function undoTransactionRoundFlags( IDatabase $conn ) {
 		if ( $conn->getLBInfo( 'autoCommitOnly' ) ) {
 			return; // transaction rounds do not apply to these connections
+		}
+
+		if ( $conn->getFlag( $conn::DBO_TRX ) ) {
+			$conn->setLBInfo( 'trxRoundId', false );
 		}
 
 		if ( $conn->getFlag( $conn::DBO_DEFAULT ) ) {

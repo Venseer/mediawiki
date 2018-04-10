@@ -279,7 +279,7 @@ CREATE TABLE /*_*/archive (
    ar_timestamp varchar(14) NOT NULL default '',
    ar_minor_edit BIT NOT NULL DEFAULT 0,
    ar_flags NVARCHAR(255) NOT NULL,
-   ar_rev_id INT NULL, -- NOT a FK, the row gets deleted from revision and moved here
+   ar_rev_id INT NOT NULL, -- NOT a FK, the row gets deleted from revision and moved here
    ar_text_id INT CONSTRAINT ar_text_id__old_id__fk FOREIGN KEY REFERENCES /*_*/text(old_id) ON DELETE CASCADE,
    ar_deleted TINYINT NOT NULL DEFAULT 0,
    ar_len INT,
@@ -1001,8 +1001,9 @@ CREATE TABLE /*_*/recentchanges (
   -- If the Recent Changes Patrol option is enabled,
   -- users may mark edits as having been reviewed to
   -- remove a warning flag on the RC list.
-  -- A value of 1 indicates the page has been reviewed.
-  rc_patrolled bit NOT NULL default 0,
+  -- A value of 1 indicates the page has been reviewed manually.
+  -- A value of 2 indicates the page has been automatically reviewed.
+  rc_patrolled tinyint NOT NULL CONSTRAINT DF_rc_patrolled DEFAULT 0
 
   -- Recorded IP address the edit was made from, if the
   -- $wgPutIPinRC option is enabled.
@@ -1027,7 +1028,7 @@ CREATE TABLE /*_*/recentchanges (
 );
 
 CREATE INDEX /*i*/rc_timestamp ON /*_*/recentchanges (rc_timestamp);
-CREATE INDEX /*i*/rc_namespace_title ON /*_*/recentchanges (rc_namespace, rc_title);
+CREATE INDEX /*i*/rc_namespace_title_timestamp ON /*_*/recentchanges (rc_namespace, rc_title, rc_timestamp);
 CREATE INDEX /*i*/rc_cur_id ON /*_*/recentchanges (rc_cur_id);
 CREATE INDEX /*i*/new_name_timestamp ON /*_*/recentchanges (rc_new,rc_namespace,rc_timestamp);
 CREATE INDEX /*i*/rc_ip ON /*_*/recentchanges (rc_ip);

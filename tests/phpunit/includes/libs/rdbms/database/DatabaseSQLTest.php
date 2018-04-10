@@ -3,6 +3,9 @@
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\LikeMatch;
 use Wikimedia\Rdbms\Database;
+use Wikimedia\TestingAccessWrapper;
+use Wikimedia\Rdbms\DBTransactionStateError;
+use Wikimedia\Rdbms\DBUnexpectedError;
 
 /**
  * Test the parts of the Database abstract class that deal
@@ -11,6 +14,7 @@ use Wikimedia\Rdbms\Database;
 class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 
 	use MediaWikiCoversValidator;
+	use PHPUnit4And6Compat;
 
 	/** @var DatabaseTestHelper|Database */
 	private $database;
@@ -1481,4 +1485,206 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 		}
 	}
 
+	/**
+	 * @expectedException \Wikimedia\Rdbms\DBTransactionStateError
+	 */
+	public function testTransactionErrorState1() {
+		$wrapper = TestingAccessWrapper::newFromObject( $this->database );
+
+		$this->database->begin( __METHOD__ );
+		$wrapper->trxStatus = Database::STATUS_TRX_ERROR;
+		$this->database->delete( 'x', [ 'field' => 3 ], __METHOD__ );
+		$this->database->commit( __METHOD__ );
+	}
+
+	/**
+	 * @covers \Wikimedia\Rdbms\Database::query
+	 */
+	public function testTransactionErrorState2() {
+		$wrapper = TestingAccessWrapper::newFromObject( $this->database );
+
+		$this->database->startAtomic( __METHOD__ );
+		$wrapper->trxStatus = Database::STATUS_TRX_ERROR;
+		$this->database->rollback( __METHOD__ );
+		$this->assertEquals( 0, $this->database->trxLevel() );
+		$this->assertEquals( Database::STATUS_TRX_NONE, $wrapper->trxStatus() );
+		$this->assertLastSql( 'BEGIN; ROLLBACK' );
+
+		$this->database->startAtomic( __METHOD__ );
+		$this->assertEquals( Database::STATUS_TRX_OK, $wrapper->trxStatus() );
+		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+		$this->database->endAtomic( __METHOD__ );
+		$this->assertEquals( Database::STATUS_TRX_NONE, $wrapper->trxStatus() );
+		$this->assertLastSql( 'BEGIN; DELETE FROM x WHERE field = \'1\'; COMMIT' );
+		$this->assertEquals( 0, $this->database->trxLevel(), 'Use after rollback()' );
+
+		$this->database->begin( __METHOD__ );
+		$this->database->startAtomic( __METHOD__, Database::ATOMIC_CANCELABLE );
+		$this->database->update( 'y', [ 'a' => 1 ], [ 'field' => 1 ], __METHOD__ );
+		$wrapper->trxStatus = Database::STATUS_TRX_ERROR;
+		$this->database->cancelAtomic( __METHOD__ );
+		$this->assertEquals( Database::STATUS_TRX_OK, $wrapper->trxStatus() );
+		$this->database->startAtomic( __METHOD__ );
+		$this->database->delete( 'y', [ 'field' => 1 ], __METHOD__ );
+		$this->database->endAtomic( __METHOD__ );
+		$this->database->commit( __METHOD__ );
+		// phpcs:ignore Generic.Files.LineLength
+		$this->assertLastSql( 'BEGIN; SAVEPOINT wikimedia_rdbms_atomic1; UPDATE y SET a = \'1\' WHERE field = \'1\'; ROLLBACK TO SAVEPOINT wikimedia_rdbms_atomic1; DELETE FROM y WHERE field = \'1\'; COMMIT' );
+		$this->assertEquals( 0, $this->database->trxLevel(), 'Use after rollback()' );
+
+		// Next transaction
+		$this->database->startAtomic( __METHOD__ );
+		$this->assertEquals( Database::STATUS_TRX_OK, $wrapper->trxStatus() );
+		$this->database->delete( 'x', [ 'field' => 3 ], __METHOD__ );
+		$this->database->endAtomic( __METHOD__ );
+		$this->assertEquals( Database::STATUS_TRX_NONE, $wrapper->trxStatus() );
+		$this->assertLastSql( 'BEGIN; DELETE FROM x WHERE field = \'3\'; COMMIT' );
+		$this->assertEquals( 0, $this->database->trxLevel() );
+	}
+
+	/**
+	 * @covers \Wikimedia\Rdbms\Database::query
+	 */
+	public function testImplicitTransactionRollback() {
+		$doError = function () {
+			$this->database->forceNextQueryError( 666, 'Evilness' );
+			try {
+				$this->database->delete( 'error', '1', __CLASS__ . '::SomeCaller' );
+				$this->fail( 'Expected exception not thrown' );
+			} catch ( DBError $e ) {
+				$this->assertSame( 666, $e->errno );
+			}
+		};
+
+		$this->database->setFlag( Database::DBO_TRX );
+
+		// Implicit transaction gets silently rolled back
+		$this->database->begin( __METHOD__, Database::TRANSACTION_INTERNAL );
+		call_user_func( $doError );
+		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+		$this->database->commit( __METHOD__, Database::FLUSHING_INTERNAL );
+		// phpcs:ignore
+		$this->assertLastSql( 'BEGIN; DELETE FROM error WHERE 1; ROLLBACK; BEGIN; DELETE FROM x WHERE field = \'1\'; COMMIT' );
+
+		// ... unless there were prior writes
+		$this->database->begin( __METHOD__, Database::TRANSACTION_INTERNAL );
+		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+		call_user_func( $doError );
+		try {
+			$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+			$this->fail( 'Expected exception not thrown' );
+		} catch ( DBTransactionStateError $e ) {
+		}
+		$this->database->rollback( __METHOD__, Database::FLUSHING_INTERNAL );
+		// phpcs:ignore
+		$this->assertLastSql( 'BEGIN; DELETE FROM x WHERE field = \'1\'; DELETE FROM error WHERE 1; ROLLBACK' );
+	}
+
+	/**
+	 * @covers \Wikimedia\Rdbms\Database::query
+	 */
+	public function testTransactionStatementRollbackIgnoring() {
+		$wrapper = TestingAccessWrapper::newFromObject( $this->database );
+		$warning = [];
+		$wrapper->deprecationLogger = function ( $msg ) use ( &$warning ) {
+			$warning[] = $msg;
+		};
+
+		$doError = function () {
+			$this->database->forceNextQueryError( 666, 'Evilness', [
+				'wasKnownStatementRollbackError' => true,
+			] );
+			try {
+				$this->database->delete( 'error', '1', __CLASS__ . '::SomeCaller' );
+				$this->fail( 'Expected exception not thrown' );
+			} catch ( DBError $e ) {
+				$this->assertSame( 666, $e->errno );
+			}
+		};
+		$expectWarning = 'Caller from ' . __METHOD__ .
+			' ignored an error originally raised from ' . __CLASS__ . '::SomeCaller: [666] Evilness';
+
+		// Rollback doesn't raise a warning
+		$warning = [];
+		$this->database->startAtomic( __METHOD__ );
+		call_user_func( $doError );
+		$this->database->rollback( __METHOD__ );
+		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+		$this->assertSame( [], $warning );
+		// phpcs:ignore
+		$this->assertLastSql( 'BEGIN; DELETE FROM error WHERE 1; ROLLBACK; DELETE FROM x WHERE field = \'1\'' );
+
+		// cancelAtomic() doesn't raise a warning
+		$warning = [];
+		$this->database->begin( __METHOD__ );
+		$this->database->startAtomic( __METHOD__, Database::ATOMIC_CANCELABLE );
+		call_user_func( $doError );
+		$this->database->cancelAtomic( __METHOD__ );
+		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+		$this->database->commit( __METHOD__ );
+		$this->assertSame( [], $warning );
+		// phpcs:ignore
+		$this->assertLastSql( 'BEGIN; SAVEPOINT wikimedia_rdbms_atomic1; DELETE FROM error WHERE 1; ROLLBACK TO SAVEPOINT wikimedia_rdbms_atomic1; DELETE FROM x WHERE field = \'1\'; COMMIT' );
+
+		// Commit does raise a warning
+		$warning = [];
+		$this->database->begin( __METHOD__ );
+		call_user_func( $doError );
+		$this->database->commit( __METHOD__ );
+		$this->assertSame( [ $expectWarning ], $warning );
+		$this->assertLastSql( 'BEGIN; DELETE FROM error WHERE 1; COMMIT' );
+
+		// Deprecation only gets raised once
+		$warning = [];
+		$this->database->begin( __METHOD__ );
+		call_user_func( $doError );
+		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+		$this->database->commit( __METHOD__ );
+		$this->assertSame( [ $expectWarning ], $warning );
+		// phpcs:ignore
+		$this->assertLastSql( 'BEGIN; DELETE FROM error WHERE 1; DELETE FROM x WHERE field = \'1\'; COMMIT' );
+	}
+
+	/**
+	 * @covers \Wikimedia\Rdbms\Database::close
+	 */
+	public function testPrematureClose1() {
+		$fname = __METHOD__;
+		$this->database->begin( __METHOD__ );
+		$this->database->onTransactionIdle( function () use ( $fname ) {
+			$this->database->query( 'SELECT 1', $fname );
+		} );
+		$this->database->delete( 'x', [ 'field' => 3 ], __METHOD__ );
+		$this->database->close();
+
+		$this->assertFalse( $this->database->isOpen() );
+		$this->assertLastSql( 'BEGIN; DELETE FROM x WHERE field = \'3\'; COMMIT; SELECT 1' );
+		$this->assertEquals( 0, $this->database->trxLevel() );
+	}
+
+	/**
+	 * @covers \Wikimedia\Rdbms\Database::close
+	 */
+	public function testPrematureClose2() {
+		try {
+			$fname = __METHOD__;
+			$this->database->startAtomic( __METHOD__ );
+			$this->database->onTransactionIdle( function () use ( $fname ) {
+				$this->database->query( 'SELECT 1', $fname );
+			} );
+			$this->database->delete( 'x', [ 'field' => 3 ], __METHOD__ );
+			$this->database->close();
+			$this->fail( 'Expected exception not thrown' );
+		} catch ( DBUnexpectedError $ex ) {
+			$this->assertSame(
+				'Wikimedia\Rdbms\Database::close: atomic sections ' .
+				'DatabaseSQLTest::testPrematureClose2 are still open.',
+				$ex->getMessage()
+			);
+		}
+
+		$this->assertFalse( $this->database->isOpen() );
+		$this->assertLastSql( 'BEGIN; DELETE FROM x WHERE field = \'3\'; ROLLBACK' );
+		$this->assertEquals( 0, $this->database->trxLevel() );
+	}
 }

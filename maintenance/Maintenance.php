@@ -25,6 +25,7 @@
 require_once __DIR__ . '/../includes/PHPVersionCheck.php';
 wfEntryPointCheck( 'cli' );
 
+use MediaWiki\Shell\Shell;
 use Wikimedia\Rdbms\DBReplicationWaitError;
 
 /**
@@ -508,7 +509,9 @@ abstract class Maintenance {
 		$this->addOption(
 			'memory-limit',
 			'Set a specific memory limit for the script, '
-				. '"max" for no limit or "default" to avoid changing it'
+				. '"max" for no limit or "default" to avoid changing it',
+			false,
+			true
 		);
 		$this->addOption( 'server', "The protocol and server name to use in URLs, e.g. " .
 			"http://en.wikipedia.org. This is sometimes necessary because " .
@@ -1592,12 +1595,12 @@ abstract class Maintenance {
 		// something that can do the relevant syscalls. There are a few
 		// options. Linux and Mac OS X both have "stty size" which does the
 		// job directly.
-		$retval = false;
-		$size = wfShellExec( 'stty size', $retval );
-		if ( $retval !== 0 ) {
+		$result = Shell::command( 'stty', 'size' )
+			->execute();
+		if ( $result->getExitCode() !== 0 ) {
 			return $default;
 		}
-		if ( !preg_match( '/^(\d+) (\d+)$/', $size, $m ) ) {
+		if ( !preg_match( '/^(\d+) (\d+)$/', $result->getStdout(), $m ) ) {
 			return $default;
 		}
 		return [ intval( $m[2] ), intval( $m[1] ) ];

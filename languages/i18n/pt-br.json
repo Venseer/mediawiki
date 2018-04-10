@@ -113,7 +113,8 @@
 			"BarbaraAckles",
 			"Trigonometria87",
 			"RadiX",
-			"Fitoschido"
+			"Fitoschido",
+			"Ed g2s"
 		]
 	},
 	"tog-underline": "Ligação sublinhada:",
@@ -716,10 +717,10 @@
 	"savechanges": "Salvar alterações",
 	"publishpage": "Publicar página",
 	"publishchanges": "Publicar alterações",
-	"savearticle-start": "Salvar página ...",
+	"savearticle-start": "Salvar página…",
 	"savechanges-start": "Salvar alterações…",
-	"publishpage-start": "Publicar página ...",
-	"publishchanges-start": "Publicar alterações...",
+	"publishpage-start": "Publicar página…",
+	"publishchanges-start": "Publicar alterações…",
 	"preview": "Pré-visualização",
 	"showpreview": "Mostrar previsão",
 	"showdiff": "Mostrar alterações",
@@ -2067,6 +2068,7 @@
 	"apisandbox-dynamic-error-exists": "Um parâmetro chamado \"$1\" já existe.",
 	"apisandbox-deprecated-parameters": "Parâmetros obsoletos",
 	"apisandbox-fetch-token": "Preencher automaticamente o token",
+	"apisandbox-add-multi": "Adicionar",
 	"apisandbox-submit-invalid-fields-title": "Alguns campos são inválidos",
 	"apisandbox-submit-invalid-fields-message": "Corrija os campos marcados e tente novamente.",
 	"apisandbox-results": "Resultados",

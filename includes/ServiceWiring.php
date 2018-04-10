@@ -286,8 +286,14 @@ return [
 
 		$detectorCmd = $mainConfig->get( 'MimeDetectorCommand' );
 		if ( $detectorCmd ) {
-			$params['detectCallback'] = function ( $file ) use ( $detectorCmd ) {
-				return wfShellExec( "$detectorCmd " . wfEscapeShellArg( $file ) );
+			$factory = $services->getShellCommandFactory();
+			$params['detectCallback'] = function ( $file ) use ( $detectorCmd, $factory ) {
+				$result = $factory->create()
+					// $wgMimeDetectorCommand can contain commands with parameters
+					->unsafeParams( $detectorCmd )
+					->params( $file )
+					->execute();
+				return $result->getStdout();
 			};
 		}
 
@@ -577,7 +583,10 @@ return [
 		$authManager = AuthManager::singleton();
 		$linkRenderer = $services->getLinkRendererFactory()->create();
 		$config = $services->getMainConfig();
-		return new DefaultPreferencesFactory( $config, $wgContLang, $authManager, $linkRenderer );
+		$factory = new DefaultPreferencesFactory( $config, $wgContLang, $authManager, $linkRenderer );
+		$factory->setLogger( LoggerFactory::getInstance( 'preferences' ) );
+
+		return $factory;
 	},
 
 	'HttpRequestFactory' => function ( MediaWikiServices $services ) {

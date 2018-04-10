@@ -320,7 +320,7 @@ abstract class DatabaseMysqlBase extends Database {
 	abstract protected function mysqlFetchObject( $res );
 
 	/**
-	 * @param ResultWrapper|resource $res
+	 * @param IResultWrapper|resource $res
 	 * @return array|bool
 	 * @throws DBUnexpectedError
 	 */
@@ -766,18 +766,20 @@ abstract class DatabaseMysqlBase extends Database {
 	protected function getLagFromPtHeartbeat() {
 		$options = $this->lagDetectionOptions;
 
-		$staleness = $this->trxLevel
-			? microtime( true ) - $this->trxTimestamp()
-			: 0;
-		if ( $staleness > self::LAG_STALE_WARN_THRESHOLD ) {
-			// Avoid returning higher and higher lag value due to snapshot age
-			// given that the isolation level will typically be REPEATABLE-READ
-			$this->queryLogger->warning(
-				"Using cached lag value for {db_server} due to active transaction",
-				$this->getLogContext( [ 'method' => __METHOD__ ] )
-			);
+		$currentTrxInfo = $this->getRecordedTransactionLagStatus();
+		if ( $currentTrxInfo ) {
+			// There is an active transaction and the initial lag was already queried
+			$staleness = microtime( true ) - $currentTrxInfo['since'];
+			if ( $staleness > self::LAG_STALE_WARN_THRESHOLD ) {
+				// Avoid returning higher and higher lag value due to snapshot age
+				// given that the isolation level will typically be REPEATABLE-READ
+				$this->queryLogger->warning(
+					"Using cached lag value for {db_server} due to active transaction",
+					$this->getLogContext( [ 'method' => __METHOD__, 'age' => $staleness ] )
+				);
+			}
 
-			return $this->getTransactionLagStatus()['lag'];
+			return $currentTrxInfo['lag'];
 		}
 
 		if ( isset( $options['conds'] ) ) {
@@ -1329,6 +1331,26 @@ abstract class DatabaseMysqlBase extends Database {
 
 	public function wasConnectionError( $errno ) {
 		return $errno == 2013 || $errno == 2006;
+	}
+
+	protected function wasKnownStatementRollbackError() {
+		$errno = $this->lastErrno();
+
+		if ( $errno === 1205 ) { // lock wait timeout
+			// Note that this is uncached to avoid stale values of SET is used
+			$row = $this->selectRow(
+				false,
+				[ 'innodb_rollback_on_timeout' => '@@innodb_rollback_on_timeout' ],
+				[],
+				__METHOD__
+			);
+			// https://dev.mysql.com/doc/refman/5.7/en/innodb-error-handling.html
+			// https://dev.mysql.com/doc/refman/5.5/en/innodb-parameters.html
+			return $row->innodb_rollback_on_timeout ? false : true;
+		}
+
+		// See https://dev.mysql.com/doc/refman/5.5/en/error-messages-server.html
+		return in_array( $errno, [ 1022, 1216, 1217, 1137 ], true );
 	}
 
 	/**
