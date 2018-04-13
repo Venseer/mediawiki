@@ -105,9 +105,14 @@ class ChangesListSpecialPageTest extends AbstractChangesListSpecialPageTestCase 
 	}
 
 	private static function normalizeCondition( $conds ) {
+		$dbr = wfGetDB( DB_REPLICA );
 		$normalized = array_map(
-			function ( $k, $v ) {
-				return is_numeric( $k ) ? $v : "$k = $v";
+			function ( $k, $v ) use ( $dbr ) {
+				if ( is_array( $v ) ) {
+					sort( $v );
+				}
+				// (Ab)use makeList() to format only this entry
+				return $dbr->makeList( [ $k => $v ], Database::LIST_AND );
 			},
 			array_keys( $conds ),
 			$conds
@@ -116,9 +121,9 @@ class ChangesListSpecialPageTest extends AbstractChangesListSpecialPageTestCase 
 		return $normalized;
 	}
 
-	/** return false if condition begin with 'rc_timestamp ' */
+	/** return false if condition begins with 'rc_timestamp ' */
 	private static function filterOutRcTimestampCondition( $var ) {
-		return ( false === strpos( $var, 'rc_timestamp ' ) );
+		return ( is_array( $var ) || false === strpos( $var, 'rc_timestamp ' ) );
 	}
 
 	public function testRcNsFilter() {
@@ -342,7 +347,7 @@ class ChangesListSpecialPageTest extends AbstractChangesListSpecialPageTestCase 
 		$user = $this->getTestSysop()->getUser();
 		$this->assertConditions(
 			[ # expected
-				"rc_patrolled = 0",
+				'rc_patrolled' => 0,
 			],
 			[
 				'hidepatrolled' => 1,
@@ -356,12 +361,36 @@ class ChangesListSpecialPageTest extends AbstractChangesListSpecialPageTestCase 
 		$user = $this->getTestSysop()->getUser();
 		$this->assertConditions(
 			[ # expected
-				"rc_patrolled != 0",
+				'rc_patrolled' => [ 1, 2 ],
 			],
 			[
 				'hideunpatrolled' => 1,
 			],
 			"rc conditions: hideunpatrolled=1",
+			$user
+		);
+	}
+
+	public function testRcReviewStatusFilter() {
+		$user = $this->getTestSysop()->getUser();
+		$this->assertConditions(
+			[ #expected
+				'rc_patrolled' => 1,
+			],
+			[
+				'reviewStatus' => 'manual'
+			],
+			"rc conditions: reviewStatus=manual",
+			$user
+		);
+		$this->assertConditions(
+			[ #expected
+				'rc_patrolled' => [ 0, 2 ],
+			],
+			[
+				'reviewStatus' => 'unpatrolled;auto'
+			],
+			"rc conditions: reviewStatus=unpatrolled;auto",
 			$user
 		);
 	}

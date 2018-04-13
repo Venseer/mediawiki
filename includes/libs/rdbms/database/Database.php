@@ -212,7 +212,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	/**
 	 * Array of levels of atomicity within transactions
 	 *
-	 * @var array
+	 * @var array List of (name, unique ID, savepoint ID)
 	 */
 	private $trxAtomicLevels = [];
 	/**
@@ -898,34 +898,48 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		if ( $this->conn ) {
 			// Resolve any dangling transaction first
 			if ( $this->trxLevel ) {
-				// Meaningful transactions should ideally have been resolved by now
-				if ( $this->writesOrCallbacksPending() ) {
+				if ( $this->trxAtomicLevels ) {
+					// Cannot let incomplete atomic sections be committed
+					$levels = $this->flatAtomicSectionList();
+					$exception = new DBUnexpectedError(
+						$this,
+						__METHOD__ . ": atomic sections $levels are still open."
+					);
+				} elseif ( $this->trxAutomatic ) {
+					// Only the connection manager can commit non-empty DBO_TRX transactions
+					if ( $this->writesOrCallbacksPending() ) {
+						$exception = new DBUnexpectedError(
+							$this,
+							__METHOD__ .
+							": mass commit/rollback of peer transaction required (DBO_TRX set)."
+						);
+					}
+				} elseif ( $this->trxLevel ) {
+					// Commit explicit transactions as if this was commit()
 					$this->queryLogger->warning(
 						__METHOD__ . ": writes or callbacks still pending.",
 						[ 'trace' => ( new RuntimeException() )->getTraceAsString() ]
 					);
-					// Cannot let incomplete atomic sections be committed
-					if ( $this->trxAtomicLevels ) {
-						$levels = $this->flatAtomicSectionList();
-						$exception = new DBUnexpectedError(
-							$this,
-							__METHOD__ . ": atomic sections $levels are still open."
-						);
-					// Check if it is possible to properly commit and trigger callbacks
-					} elseif ( $this->trxEndCallbacksSuppressed ) {
-						$exception = new DBUnexpectedError(
-							$this,
-							__METHOD__ . ': callbacks are suppressed; cannot properly commit.'
-						);
-					}
 				}
+
+				if ( $this->trxEndCallbacksSuppressed ) {
+					$exception = $exception ?: new DBUnexpectedError(
+						$this,
+						__METHOD__ . ': callbacks are suppressed; cannot properly commit.'
+					);
+				}
+
 				// Commit or rollback the changes and run any callbacks as needed
 				if ( $this->trxStatus === self::STATUS_TRX_OK && !$exception ) {
-					$this->commit( __METHOD__, self::TRANSACTION_INTERNAL );
+					$this->commit(
+						__METHOD__,
+						$this->trxAutomatic ? self::FLUSHING_INTERNAL : self::FLUSHING_ONE
+					);
 				} else {
-					$this->rollback( __METHOD__, self::TRANSACTION_INTERNAL );
+					$this->rollback( __METHOD__, self::FLUSHING_INTERNAL );
 				}
 			}
+
 			// Close the actual connection in the binding handle
 			$closed = $this->closeConnection();
 			$this->conn = false;
@@ -1293,7 +1307,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		if ( $this->trxStatus < self::STATUS_TRX_OK ) {
 			throw new DBTransactionStateError(
 				$this,
-				"Cannot execute query from $fname while transaction status is ERROR. ",
+				"Cannot execute query from $fname while transaction status is ERROR.",
 				[],
 				$this->trxStatusCause
 			);
@@ -3453,58 +3467,104 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->doSavepoint( $savepointId, $fname );
 		}
 
-		$this->trxAtomicLevels[] = [ $fname, $savepointId ];
+		$sectionId = new AtomicSectionIdentifier;
+		$this->trxAtomicLevels[] = [ $fname, $sectionId, $savepointId ];
+
+		return $sectionId;
 	}
 
 	final public function endAtomic( $fname = __METHOD__ ) {
-		if ( !$this->trxLevel ) {
-			throw new DBUnexpectedError( $this, "No atomic transaction is open (got $fname)." );
+		if ( !$this->trxLevel || !$this->trxAtomicLevels ) {
+			throw new DBUnexpectedError( $this, "No atomic section is open (got $fname)." );
 		}
 
-		list( $savedFname, $savepointId ) = $this->trxAtomicLevels
-			? array_pop( $this->trxAtomicLevels ) : [ null, null ];
+		// Check if the current section matches $fname
+		$pos = count( $this->trxAtomicLevels ) - 1;
+		list( $savedFname, , $savepointId ) = $this->trxAtomicLevels[$pos];
+
 		if ( $savedFname !== $fname ) {
-			throw new DBUnexpectedError( $this, "Invalid atomic section ended (got $fname)." );
+			throw new DBUnexpectedError(
+				$this,
+				"Invalid atomic section ended (got $fname but expected $savedFname)."
+			);
 		}
+
+		// Remove the last section and re-index the array
+		$this->trxAtomicLevels = array_slice( $this->trxAtomicLevels, 0, $pos );
 
 		if ( !$this->trxAtomicLevels && $this->trxAutomaticAtomic ) {
 			$this->commit( $fname, self::FLUSHING_INTERNAL );
-		} elseif ( $savepointId && $savepointId !== 'n/a' ) {
+		} elseif ( $savepointId !== null && $savepointId !== 'n/a' ) {
 			$this->doReleaseSavepoint( $savepointId, $fname );
 		}
 	}
 
-	final public function cancelAtomic( $fname = __METHOD__ ) {
-		if ( !$this->trxLevel ) {
-			throw new DBUnexpectedError( $this, "No atomic transaction is open (got $fname)." );
+	final public function cancelAtomic(
+		$fname = __METHOD__, AtomicSectionIdentifier $sectionId = null
+	) {
+		if ( !$this->trxLevel || !$this->trxAtomicLevels ) {
+			throw new DBUnexpectedError( $this, "No atomic section is open (got $fname)." );
 		}
 
-		list( $savedFname, $savepointId ) = $this->trxAtomicLevels
-			? array_pop( $this->trxAtomicLevels ) : [ null, null ];
+		if ( $sectionId !== null ) {
+			// Find the (last) section with the given $sectionId
+			$pos = -1;
+			foreach ( $this->trxAtomicLevels as $i => list( $asFname, $asId, $spId ) ) {
+				if ( $asId === $sectionId ) {
+					$pos = $i;
+				}
+			}
+			if ( $pos < 0 ) {
+				throw new DBUnexpectedError( "Atomic section not found (for $fname)" );
+			}
+			// Remove all descendant sections and re-index the array
+			$this->trxAtomicLevels = array_slice( $this->trxAtomicLevels, 0, $pos + 1 );
+		}
+
+		// Check if the current section matches $fname
+		$pos = count( $this->trxAtomicLevels ) - 1;
+		list( $savedFname, , $savepointId ) = $this->trxAtomicLevels[$pos];
+
 		if ( $savedFname !== $fname ) {
-			throw new DBUnexpectedError( $this, "Invalid atomic section ended (got $fname)." );
-		}
-		if ( !$savepointId ) {
-			throw new DBUnexpectedError( $this, "Uncancelable atomic section canceled (got $fname)." );
+			throw new DBUnexpectedError(
+				$this,
+				"Invalid atomic section ended (got $fname but expected $savedFname)."
+			);
 		}
 
-		if ( !$this->trxAtomicLevels && $this->trxAutomaticAtomic ) {
-			$this->rollback( $fname, self::FLUSHING_INTERNAL );
-		} elseif ( $savepointId !== 'n/a' ) {
-			$this->doRollbackToSavepoint( $savepointId, $fname );
-			$this->trxStatus = self::STATUS_TRX_OK; // no exception; recovered
-			$this->trxStatusIgnoredCause = null;
+		// Remove the last section and re-index the array
+		$this->trxAtomicLevels = array_slice( $this->trxAtomicLevels, 0, $pos );
+
+		if ( $savepointId !== null ) {
+			// Rollback the transaction to the state just before this atomic section
+			if ( $savepointId === 'n/a' ) {
+				$this->rollback( $fname, self::FLUSHING_INTERNAL );
+			} else {
+				$this->doRollbackToSavepoint( $savepointId, $fname );
+				$this->trxStatus = self::STATUS_TRX_OK; // no exception; recovered
+				$this->trxStatusIgnoredCause = null;
+			}
+		} elseif ( $this->trxStatus > self::STATUS_TRX_ERROR ) {
+			// Put the transaction into an error state if it's not already in one
+			$this->trxStatus = self::STATUS_TRX_ERROR;
+			$this->trxStatusCause = new DBUnexpectedError(
+				$this,
+				"Uncancelable atomic section canceled (got $fname)."
+			);
 		}
 
 		$this->affectedRowCount = 0; // for the sake of consistency
 	}
 
-	final public function doAtomicSection( $fname, callable $callback ) {
-		$this->startAtomic( $fname, self::ATOMIC_CANCELABLE );
+	final public function doAtomicSection(
+		$fname, callable $callback, $cancelable = self::ATOMIC_NOT_CANCELABLE
+	) {
+		$sectionId = $this->startAtomic( $fname, $cancelable );
 		try {
 			$res = call_user_func_array( $callback, [ $this, $fname ] );
 		} catch ( Exception $e ) {
-			$this->cancelAtomic( $fname );
+			$this->cancelAtomic( $fname, $sectionId );
+
 			throw $e;
 		}
 		$this->endAtomic( $fname );
@@ -3513,6 +3573,11 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	final public function begin( $fname = __METHOD__, $mode = self::TRANSACTION_EXPLICIT ) {
+		static $modes = [ self::TRANSACTION_EXPLICIT, self::TRANSACTION_INTERNAL ];
+		if ( !in_array( $mode, $modes, true ) ) {
+			throw new DBUnexpectedError( $this, "$fname: invalid mode parameter '$mode'." );
+		}
+
 		// Protect against mismatched atomic section, transaction nesting, and snapshot loss
 		if ( $this->trxLevel ) {
 			if ( $this->trxAtomicLevels ) {
@@ -3571,9 +3636,14 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$this->trxLevel = 1;
 	}
 
-	final public function commit( $fname = __METHOD__, $flush = '' ) {
+	final public function commit( $fname = __METHOD__, $flush = self::FLUSHING_ONE ) {
+		static $modes = [ self::FLUSHING_ONE, self::FLUSHING_ALL_PEERS, self::FLUSHING_INTERNAL ];
+		if ( !in_array( $flush, $modes, true ) ) {
+			throw new DBUnexpectedError( $this, "$fname: invalid flush parameter '$flush'." );
+		}
+
 		if ( $this->trxLevel && $this->trxAtomicLevels ) {
-			// There are still atomic sections open. This cannot be ignored
+			// There are still atomic sections open; this cannot be ignored
 			$levels = $this->flatAtomicSectionList();
 			throw new DBUnexpectedError(
 				$this,

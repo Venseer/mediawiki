@@ -904,6 +904,36 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	}
 
 	/**
+	 * Alters $wgGroupPermissions for the duration of the test.  Can be called
+	 * with an array, like
+	 *   [ '*' => [ 'read' => false ], 'user' => [ 'read' => false ] ]
+	 * or three values to set a single permission, like
+	 *   $this->setGroupPermissions( '*', 'read', false );
+	 *
+	 * @since 1.31
+	 * @param array|string $newPerms Either an array of permissions to change,
+	 *   in which case the next two parameters are ignored; or a single string
+	 *   identifying a group, to use with the next two parameters.
+	 * @param string|null $newKey
+	 * @param mixed $newValue
+	 */
+	public function setGroupPermissions( $newPerms, $newKey = null, $newValue = null ) {
+		global $wgGroupPermissions;
+
+		$this->stashMwGlobals( 'wgGroupPermissions' );
+
+		if ( is_string( $newPerms ) ) {
+			$newPerms = [ $newPerms => [ $newKey => $newValue ] ];
+		}
+
+		foreach ( $newPerms as $group => $permissions ) {
+			foreach ( $permissions as $key => $value ) {
+				$wgGroupPermissions[$group][$key] = $value;
+			}
+		}
+	}
+
+	/**
 	 * Sets the logger for a specified channel, for the duration of the test.
 	 * @since 1.27
 	 * @param string $channel
@@ -1963,61 +1993,6 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 		}
 
 		return $loaded;
-	}
-
-	/**
-	 * Asserts that the given string is a valid HTML snippet.
-	 * Wraps the given string in the required top level tags and
-	 * then calls assertValidHtmlDocument().
-	 * The snippet is expected to be HTML 5.
-	 *
-	 * @since 1.23
-	 *
-	 * @note Will mark the test as skipped if the "tidy" module is not installed.
-	 * @note This ignores $wgUseTidy, so we can check for valid HTML even (and especially)
-	 *        when automatic tidying is disabled.
-	 *
-	 * @param string $html An HTML snippet (treated as the contents of the body tag).
-	 */
-	protected function assertValidHtmlSnippet( $html ) {
-		$html = '<!DOCTYPE html><html><head><title>test</title></head><body>' . $html . '</body></html>';
-		$this->assertValidHtmlDocument( $html );
-	}
-
-	/**
-	 * Asserts that the given string is valid HTML document.
-	 *
-	 * @since 1.23
-	 *
-	 * @note Will mark the test as skipped if the "tidy" module is not installed.
-	 * @note This ignores $wgUseTidy, so we can check for valid HTML even (and especially)
-	 *        when automatic tidying is disabled.
-	 *
-	 * @param string $html A complete HTML document
-	 */
-	protected function assertValidHtmlDocument( $html ) {
-		// Note: we only validate if the tidy PHP extension is available.
-		// In case wgTidyInternal is false, MWTidy would fall back to the command line version
-		// of tidy. In that case however, we can not reliably detect whether a failing validation
-		// is due to malformed HTML, or caused by tidy not being installed as a command line tool.
-		// That would cause all HTML assertions to fail on a system that has no tidy installed.
-		if ( !$GLOBALS['wgTidyInternal'] || !MWTidy::isEnabled() ) {
-			$this->markTestSkipped( 'Tidy extension not installed' );
-		}
-
-		$errorBuffer = '';
-		MWTidy::checkErrors( $html, $errorBuffer );
-		$allErrors = preg_split( '/[\r\n]+/', $errorBuffer );
-
-		// Filter Tidy warnings which aren't useful for us.
-		// Tidy eg. often cries about parameters missing which have actually
-		// been deprecated since HTML4, thus we should not care about them.
-		$errors = preg_grep(
-			'/^(.*Warning: (trimming empty|.* lacks ".*?" attribute).*|\s*)$/m',
-			$allErrors, PREG_GREP_INVERT
-		);
-
-		$this->assertEmpty( $errors, implode( "\n", $errors ) );
 	}
 
 	/**
