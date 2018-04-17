@@ -566,16 +566,17 @@ class LoadBalancer implements ILoadBalancer {
 		}
 	}
 
-	/**
-	 * @param int $i
-	 * @return IDatabase|bool
-	 */
-	public function getAnyOpenConnection( $i ) {
+	public function getAnyOpenConnection( $i, $flags = 0 ) {
+		$autocommit = ( ( $flags & self::CONN_TRX_AUTOCOMMIT ) == self::CONN_TRX_AUTOCOMMIT );
 		foreach ( $this->conns as $connsByServer ) {
-			if ( !empty( $connsByServer[$i] ) ) {
-				/** @var IDatabase[] $serverConns */
-				$serverConns = $connsByServer[$i];
-				return reset( $serverConns );
+			if ( !isset( $connsByServer[$i] ) ) {
+				continue;
+			}
+
+			foreach ( $connsByServer[$i] as $conn ) {
+				if ( !$autocommit || $conn->getLBInfo( 'autoCommitOnly' ) ) {
+					return $conn;
+				}
 			}
 		}
 
@@ -590,7 +591,7 @@ class LoadBalancer implements ILoadBalancer {
 	 * @return bool
 	 */
 	protected function doWait( $index, $open = false, $timeout = null ) {
-		$timeout = max( 1, $timeout ?: $this->waitTimeout );
+		$timeout = max( 1, intval( $timeout ?: $this->waitTimeout ) );
 
 		// Check if we already know that the DB has reached this point
 		$server = $this->getServerName( $index );
@@ -714,7 +715,7 @@ class LoadBalancer implements ILoadBalancer {
 
 		if ( $i == self::DB_MASTER ) {
 			$i = $this->getWriterIndex();
-		} else {
+		} elseif ( $i == self::DB_REPLICA ) {
 			# Try to find an available server in any the query groups (in order)
 			foreach ( $groups as $group ) {
 				$groupIndex = $this->getReaderIndex( $group, $domain );

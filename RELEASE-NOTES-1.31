@@ -84,6 +84,12 @@ production.
   extensions. Pass --with-extensions to enable that feature.
 * (T184791) rc_patrolled now has three states: "0" for unpatrolled,
   "1" for manually patrolled and "2" for autopatrolled actions.
+* Extensions can now set their type to "editor" if they provide an editor
+  or enhance the editing experience.
+* Extensions can use a PSR-4 autoloader by setting an "AutoloadNamespaces" property
+  in extension.json. See
+  <https://www.mediawiki.org/wiki/Manual:Extension.json/Schema#AutoloadNamespaces>
+  for more details and an example.
 
 === External library changes in 1.31 ===
 
@@ -249,6 +255,8 @@ changes to languages because of Phabricator reports.
   MWTidy::checkErrors() and its callee TidyDriverBase::validate() are removed, as are
   MediaWikiTestCase::assertValidHtmlSnippet() and ::assertValidHtmlDocument(). The
   $wgValidateAllHtml configuration option is removed and will be ignored.
+* Execution of external programs using MediaWiki\Shell\Command now applies RESTRICT_DEFAULT
+  Firejail restriction by default.
 
 === Deprecations in 1.31 ===
 * The Revision class was deprecated in favor of RevisionStore, BlobStore, and
@@ -337,6 +345,8 @@ changes to languages because of Phabricator reports.
 * Wikimedia\Rdbms\SavepointPostgres is deprecated.
 * The DO_MAINTENANCE constant is deprecated. RUN_MAINTENANCE_IF_MAIN should be
   used instead.
+* The function wfShellWikiCmd() has been deprecated, use
+  MediaWiki\Shell::makeScriptCommand().
 
 === Other changes in 1.31 ===
 * Browser support for Internet Explorer 10 was lowered from Grade A to Grade C.
