@@ -2270,18 +2270,6 @@ function wfEscapeShellArg( /*...*/ ) {
 }
 
 /**
- * Check if wfShellExec() is effectively disabled via php.ini config
- *
- * @return bool|string False or 'disabled'
- * @since 1.22
- * @deprecated since 1.30 use MediaWiki\Shell::isDisabled()
- */
-function wfShellExecDisabled() {
-	wfDeprecated( __FUNCTION__, '1.30' );
-	return Shell::isDisabled() ? 'disabled' : false;
-}
-
-/**
  * Execute a shell command, with time and memory limits mirrored from the PHP
  * configuration if supported.
  *
@@ -2360,18 +2348,6 @@ function wfShellExec( $cmd, &$retval = null, $environ = [],
 function wfShellExecWithStderr( $cmd, &$retval = null, $environ = [], $limits = [] ) {
 	return wfShellExec( $cmd, $retval, $environ, $limits,
 		[ 'duplicateStderr' => true, 'profileMethod' => wfGetCaller() ] );
-}
-
-/**
- * Formerly set the locale for locale-sensitive operations
- *
- * This is now done in Setup.php.
- *
- * @deprecated since 1.30, no longer needed
- * @see $wgShellLocale
- */
-function wfInitShellLocale() {
-	wfDeprecated( __FUNCTION__, '1.30' );
 }
 
 /**

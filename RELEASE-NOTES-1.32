@@ -8,6 +8,7 @@ production.
 === Configuration changes in 1.32 ===
 * (T115414) The $wgEnableAPI and $wgEnableWriteAPI settings, deprecated in 1.31, have been removed.
 * The $wgUseAjax setting is now formally deprecated, and MediaWiki will act as if it is always set.
+* The $wgSiteSupportPage setting, unused since 1.5, was removed.
 * …
 
 === New features in 1.32 ===
@@ -42,8 +43,13 @@ changes to languages because of Phabricator reports.
 * …
 
 === Breaking changes in 1.32 ===
-* $wgRequestTime (deprecated in 1.25) was removed.
+* $wgRequestTime was removed (deprecated in 1.25).
   Use $_SERVER['REQUEST_TIME_FLOAT'] or WebRequest::getElapsedTime() instead.
+* The MediaWikiI18N class was removed (deprecated in 1.31).
+* QuickTemplate::setTranslator() was removed (deprecated in 1.31).
+  Use Skin::msg() instead.
+* wfInitShellLocale() was removed (deprecated in 1.30).
+* wfShellExecDisabled() was removed (deprecated in 1.30).
 
 === Deprecations in 1.32 ===
 * Use of a StartProfiler.php file is deprecated in favour of placing
@@ -62,7 +68,7 @@ Oracle and Microsoft SQL Server.
 
 The supported versions are:
 
-* MySQL 5.0.3 or later
+* MySQL 5.5.8 or later
 * PostgreSQL 9.2 or later
 * SQLite 3.3.7 or later
 * Oracle 9.0.1 or later
