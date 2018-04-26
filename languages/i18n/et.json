@@ -30,7 +30,8 @@
 			"Adeliine",
 			"Metsavend",
 			"Cumbril",
-			"Ilmarine"
+			"Ilmarine",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Linkide allakriipsutus:",
@@ -1841,7 +1842,7 @@
 	"statistics-files": "Üleslaaditud faile",
 	"statistics-edits": "Redigeerimisi alates {{GRAMMAR:genitive|{{SITENAME}}}} loomisest",
 	"statistics-edits-average": "Keskmiselt redigeerimisi lehekülje kohta",
-	"statistics-users": "Registreeritud [[Special:ListUsers|kasutajad]]",
+	"statistics-users": "Registreeritud kasutajad",
 	"statistics-users-active": "Aktiivsed kasutajad",
 	"statistics-users-active-desc": "Kasutajad, kes on viimase {{PLURAL:$1|päeva|$1 päeva}} jooksul tegutsenud",
 	"pageswithprop": "Leheatribuudiga leheküljed",
@@ -1958,10 +1959,6 @@
 	"apisandbox-jsonly": "API liivakasti kasutamine nõuab JavaScripti.",
 	"apisandbox-api-disabled": "API on selles võrgukohas keelatud.",
 	"apisandbox-intro": "Kasuta seda lehekülge <strong>MediaWiki API</strong> katsetamiseks.\nÜksikasjad API kasutamise kohta leiad [[mw:API:Main page|API dokumentatsioonist]]. Näide: [https://www.mediawiki.org/wiki/API#A_simple_example esilehe sisu hankimine]. Vali toiming, et näha veel näiteid.\n\nPane tähele, et kuigi siin on liivakast, võivad siin leheküljel tehtud toimingud vikit muuta.",
-	"apisandbox-fullscreen": "Laienda paneel",
-	"apisandbox-fullscreen-tooltip": "Laienda liivakastipaneel brauseriakna suuruseks",
-	"apisandbox-unfullscreen": "Näita lehekülge",
-	"apisandbox-unfullscreen-tooltip": "Vähenda liivakastipaneeli, nii et MediaWiki navigeerimislingid on nähtaval",
 	"apisandbox-submit": "Tee päring",
 	"apisandbox-reset": "Puhasta",
 	"apisandbox-retry": "Proovi uuesti",

@@ -50,7 +50,8 @@
 			"SuperPotato",
 			"Nemo bis",
 			"Telaneo",
-			"Jon Harald Søby"
+			"Jon Harald Søby",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Strek under lenker:",
@@ -1864,7 +1865,7 @@
 	"statistics-files": "Opplastede filer",
 	"statistics-edits": "Redigeringer siden {{SITENAME}} ble opprettet",
 	"statistics-edits-average": "Gjennomsnittlig antall redigeringer per side",
-	"statistics-users": "Registrerte [[Special:ListUsers|brukere]]",
+	"statistics-users": "Registrerte brukere",
 	"statistics-users-active": "Aktive brukere",
 	"statistics-users-active-desc": "Brukere som har utført handlinger {{PLURAL:$1|det siste døgnet|de siste $1 dagene}}",
 	"pageswithprop": "Sider med sideverdi",
@@ -1981,10 +1982,6 @@
 	"apisandbox-jsonly": "JavaScript kreves for å bruke API-sandkassa.",
 	"apisandbox-api-disabled": "API er deaktivert på dette nettstedet.",
 	"apisandbox-intro": "Bruk denne siden for å eksperimentere med <strong>webtjenesteprogrammeringsgrensesnittet til MediaWiki</strong>.\nSe [[mw:API:Main page|API-dokumentasjonen]] for mer informasjon om bruk. Eksempel: [https://www.mediawiki.org/wiki/API#A_simple_example hente innholdet til en hovedside]. Velg en handling for å se flere eksempler.\n\nMerk at selv om dette er en sandkasse så kan du utføre handlinger her som fører til endringer på wikien.",
-	"apisandbox-fullscreen": "Utvid panelet",
-	"apisandbox-fullscreen-tooltip": "Utvid sandkassepanelet så det dekker nettleservinduet.",
-	"apisandbox-unfullscreen": "Vis siden",
-	"apisandbox-unfullscreen-tooltip": "Reduser størrelsen på sandkassepanelet, så MediaWikis navigasjonslenker er tilgjengelige.",
 	"apisandbox-submit": "Foreta en forespørsel",
 	"apisandbox-reset": "Tilbakestill",
 	"apisandbox-retry": "Prøv igjen",

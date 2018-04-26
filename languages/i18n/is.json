@@ -26,7 +26,8 @@
 			"Sveinki",
 			"Nemo bis",
 			"Asmen",
-			"MyraMidnight"
+			"MyraMidnight",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Undirstrika tengla:",
@@ -1740,7 +1741,7 @@
 	"statistics-files": "Innsendar skrár",
 	"statistics-edits": "Síðubreytingar frá því {{SITENAME}} byrjaði",
 	"statistics-edits-average": "Meðal breytingafjöldi á síðu",
-	"statistics-users": "Skráðir  [[Special:ListUsers|notendur]]",
+	"statistics-users": "Skráðir notendur",
 	"statistics-users-active": "Virkir notendur",
 	"statistics-users-active-desc": "Notendur sem hafa framkvæmt aðgerð {{PLURAL:$1|síðusta $1 dag|síðustu $1 daga}}",
 	"pageswithprop": "Síður með eiginleika",
@@ -1851,10 +1852,6 @@
 	"apisandbox": "API sandkassi",
 	"apisandbox-jsonly": "Krafist er JavaScript til að geta notað API-sandkassann.",
 	"apisandbox-api-disabled": " Slökkt er á API á þessum vef.",
-	"apisandbox-fullscreen": "Þenja út spjald",
-	"apisandbox-fullscreen-tooltip": "Stækka sandkassaspjaldið til að fylla vafragluggann.",
-	"apisandbox-unfullscreen": "Birta síðu",
-	"apisandbox-unfullscreen-tooltip": "Minnka sandkassaspjaldið, þannig að stýritenglar MediaWiki verði tiltækir.",
 	"apisandbox-submit": "Gera fyrirspurn",
 	"apisandbox-reset": "Hreinsa",
 	"apisandbox-retry": "Reyna aftur",

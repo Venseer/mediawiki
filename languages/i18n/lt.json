@@ -37,7 +37,8 @@
 			"Matma Rex",
 			"Nemo bis",
 			"Nersip",
-			"Manvydasz"
+			"Manvydasz",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Nuorodos pabraukimas:",
@@ -1793,7 +1794,7 @@
 	"statistics-files": "Įkelti failai",
 	"statistics-edits": "Puslapių redagavimų skaičius nuo {{SITENAME}} sukūrimo",
 	"statistics-edits-average": "Vidutinis puslapio keitimų skaičius",
-	"statistics-users": "Registruotų [[Special:ListUsers|naudotojų]]",
+	"statistics-users": "Registruotų naudotojų",
 	"statistics-users-active": "Aktyvių naudotojų",
 	"statistics-users-active-desc": "Naudotojai, kurie per {{PLURAL:$1|paskutinę dieną|paskutines $1 dienų}} padarė keitimų",
 	"pageswithprop": "Puslapiai su puslapio atributais",
@@ -1908,8 +1909,6 @@
 	"apisandbox": "API smėlio dėžės",
 	"apisandbox-api-disabled": "API yra išjungtas šioje svetainėje.",
 	"apisandbox-intro": "Naudokite šį puslapį norėdami eksperimentuoti su '''MediaWiki API \"„.\n\tIeškokite [https://www.mediawiki.org/wiki/API:Main_page API dokumentacijoje] Išsamesnės informacijos apie API naudojimo.",
-	"apisandbox-fullscreen": "Išplėsti skydelį",
-	"apisandbox-unfullscreen": "Rodyti puslapį",
 	"apisandbox-submit": "Pateikti prašymą",
 	"apisandbox-reset": "Išvalyti",
 	"apisandbox-retry": "Bandykite dar kartą",

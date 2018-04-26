@@ -36,7 +36,8 @@
 			"Matma Rex",
 			"LacoR",
 			"Xð",
-			"Pmikolas44"
+			"Pmikolas44",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Podčiarkovať odkazy:",
@@ -1753,7 +1754,7 @@
 	"statistics-files": "Nahraných súborov",
 	"statistics-edits": "Úprav stránok od založenia {{GRAMMAR:genitív|{{SITENAME}}}}",
 	"statistics-edits-average": "Priemerný počet úprav na stránku",
-	"statistics-users": "Registrovaných [[Special:ListUsers|používateľov]]",
+	"statistics-users": "Registrovaných používateľov",
 	"statistics-users-active": "Aktívnych používateľov",
 	"statistics-users-active-desc": "Používatelia, ktorí za {{PLURAL:$1|posledný deň|posledné $1 dni|posledných $1 dní}} vykonali nejakú operáciu",
 	"pageswithprop": "Stránky s vlastnosťou stránky",
@@ -1867,8 +1868,6 @@
 	"apisandbox-jsonly": "Na použitie pieskoviska API je nutný JavaScript.",
 	"apisandbox-api-disabled": "API je na tejto stránke vypnuté.",
 	"apisandbox-intro": "Pomocou tejto stránky môžete experimentovať s <strong>API webovej služby MediaWiki</strong>.\nPodrobnosti využitia API nájdete v [[mw:API:Main page|jeho dokumentácii]]. Príklad: [https://www.mediawiki.org/wiki/API#A_simple_example získanie obsahu Hlavnej stránky]. Ďalšie príklady uvidíte vybraním operácie.\n\nUvedomte si, že napriek tomu, že ste na pieskovisku, môžu operácie vykonané na tejto stránke wiki zmeniť.",
-	"apisandbox-fullscreen": "Rozbaliť panel",
-	"apisandbox-unfullscreen": "Zobraziť stránku",
 	"apisandbox-submit": "Odoslať dopyt",
 	"apisandbox-reset": "Vyčistiť",
 	"apisandbox-retry": "Skúsiť znova",

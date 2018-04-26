@@ -11,7 +11,8 @@
 			"아라",
 			"MarcoAurelio",
 			"Macofe",
-			"Matma Rex"
+			"Matma Rex",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Bagisa ha ilarom an mga sumpay:",
@@ -1282,7 +1283,7 @@
 	"statistics-files": "Mga file nga gin-upload",
 	"statistics-edits": "Mga pagliwat hit pakli tikang gintukod hini nga {{SITENAME}}",
 	"statistics-edits-average": "Average nga mga pagliwat kada pakli",
-	"statistics-users": "Mga [[Special:ListUsers|gumaramit]] nga nakarehistro",
+	"statistics-users": "Mga gumaramit nga nakarehistro",
 	"statistics-users-active": "Mga gumaramit nga nanggigios",
 	"statistics-users-active-desc": "Mga gumaramit nga mayda ginbuhat ha naglabay {{PLURAL:$1|ka adlaw|$1 ka mga adlaw}}",
 	"pageswithprop-prop": "Ngaran han propyudad:",
@@ -1361,10 +1362,6 @@
 	"apihelp-no-such-module": "Waray kahiagii an Module \"$1\"",
 	"apisandbox": "sandbox hit API",
 	"apisandbox-jsonly": "Kinahanglan hin JavaSript para ha paggamit han API sandbox.",
-	"apisandbox-fullscreen": "Igpahilawig an panel",
-	"apisandbox-fullscreen-tooltip": "Igpahilawig an sandbox panel para masudlan an browser window.",
-	"apisandbox-unfullscreen": "Igpakita an pakli",
-	"apisandbox-unfullscreen-tooltip": "Igpaguti an sandbox panel, para an MediaWiki navigation link in mahikit-an.",
 	"apisandbox-submit": "Paghimo hin request",
 	"apisandbox-reset": "Hawana",
 	"apisandbox-retry": "Utroha",

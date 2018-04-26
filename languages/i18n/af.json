@@ -25,7 +25,8 @@
 			"Oesjaar",
 			"Matma Rex",
 			"Biggs ZA",
-			"Slashme"
+			"Slashme",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Onderstreep skakels:",
@@ -1545,7 +1546,7 @@
 	"statistics-files": "Opgelaaide lêers",
 	"statistics-edits": "Wysigings sedert {{SITENAME}} begin is",
 	"statistics-edits-average": "Gemiddelde wysigings per bladsy",
-	"statistics-users": "Geregistreerde [[Special:ListUsers|gebruikers]]",
+	"statistics-users": "Geregistreerde gebruikers",
 	"statistics-users-active": "Aktiewe gebruikers",
 	"statistics-users-active-desc": "Gebruikers wat in die afgelope {{PLURAL:$1|dag|$1 dae}} 'n handeling uitgevoer het",
 	"pageswithprop": "Blaaie met 'n bladsy-eienskap",
@@ -1645,7 +1646,6 @@
 	"apisandbox": "API-sandput",
 	"apisandbox-api-disabled": "API is afgeskakel op hierdie webwerf.",
 	"apisandbox-intro": "Gebruik hierdie bladsy om te eksperimenteer met die '''MediaWiki-API'''.\nSien die [https://www.mediawiki.org/wiki/API:Main_page API-dokumentasie] vir verdere details oor die gebruik van die API. Voorbeeld: [https://www.mediawiki.org/wiki/API#A_simple_example hoe die inhoud van 'n Tuisblad te laai]. Kies 'n handeling om meer voorbeelde te sien.",
-	"apisandbox-unfullscreen": "Wys bladsy",
 	"apisandbox-submit": "Maak versoek",
 	"apisandbox-reset": "Vee uit",
 	"apisandbox-retry": "Herprobeer",

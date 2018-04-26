@@ -67,7 +67,8 @@
 			"Joedalton",
 			"EeveeSylveon",
 			"Kenn.jensen",
-			"Saederup92"
+			"Saederup92",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Understreg henvisninger:",
@@ -1788,7 +1789,7 @@
 	"statistics-files": "Oplagte filer",
 	"statistics-edits": "Redigeringer siden {{SITENAME}} blev oprettet",
 	"statistics-edits-average": "Gennemsnitligt antal redigeringer per side",
-	"statistics-users": "Registrerede [[Special:ListUsers|brugere]]",
+	"statistics-users": "Registrerede brugere",
 	"statistics-users-active": "Aktive brugere",
 	"statistics-users-active-desc": "Brugere som har udført handlinger i {{PLURAL:$1|det sidste døgn|de sidste $1 dage}}",
 	"pageswithprop": "Sider med en sideegenskab",
@@ -1903,10 +1904,6 @@
 	"apisandbox": "API-sandkassen",
 	"apisandbox-api-disabled": "API er deaktiveret på dette websted.",
 	"apisandbox-intro": "Brug denne side til at eksperimentere med '''MediaWiki web service API'''.\nVi henviser til [https://www.mediawiki.org/wiki/API:Main_page dokumentationen af API] for yderligere oplysninger om brug af API.  Eksempel: [https://www.mediawiki.org/wiki/API#A_simple_example få indholdet af en forside]. Vælg en handling at se flere eksempler.\n\nBemærk, at selv om dette er en sandkasse, vil handlinger du udfører på denne side redigere wikien.",
-	"apisandbox-fullscreen": "Udvid panel",
-	"apisandbox-fullscreen-tooltip": "Udvid sandkassepanelet, så det udfylder browservinduet.",
-	"apisandbox-unfullscreen": "Vis side",
-	"apisandbox-unfullscreen-tooltip": "Formindsk sandkassepanelet, så MediaWiki-navigationslink er tilgængelige.",
 	"apisandbox-submit": "Lav forespørgsel",
 	"apisandbox-reset": "Ryd",
 	"apisandbox-retry": "Forsøg igen",

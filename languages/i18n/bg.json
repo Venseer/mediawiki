@@ -41,7 +41,8 @@
 			"АдмиралАнимЕ",
 			"Irus",
 			"Kareyac",
-			"ShockD"
+			"ShockD",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Подчертаване на препратките:",
@@ -1737,7 +1738,7 @@
 	"statistics-files": "Качени файлове",
 	"statistics-edits": "Брой редакции по страници от началото на {{SITENAME}}",
 	"statistics-edits-average": "Среден брой редакции на страница",
-	"statistics-users": "Регистрирани [[Special:ListUsers|потребители]]",
+	"statistics-users": "Регистрирани потребители",
 	"statistics-users-active": "Активни потребители",
 	"statistics-users-active-desc": "Потребители, направили редакция през {{PLURAL:$1|последния ден|последните $1 дни}}",
 	"pageswithprop": "Страници с page property",
@@ -1845,8 +1846,6 @@
 	"apihelp": "Помощ за API",
 	"apihelp-no-such-module": "Модул \"$1\" не беше намерен.",
 	"apisandbox": "Пясъчник за API",
-	"apisandbox-fullscreen": "Разшири полето",
-	"apisandbox-unfullscreen": "Показване на страница",
 	"apisandbox-submit": "Направи запитване",
 	"apisandbox-reset": "Изчистване",
 	"apisandbox-retry": "Повторен опит",

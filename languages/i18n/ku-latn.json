@@ -20,7 +20,8 @@
 			"Macofe",
 			"Matma Rex",
 			"Stryn",
-			"Cûndûllah el-Kurdî"
+			"Cûndûllah el-Kurdî",
+			"Fitoschido"
 		]
 	},
 	"tog-underline": "Xetekê di bin girêdanê de çêke:",
@@ -1083,7 +1084,7 @@
 	"statistics-pages-desc": "Hemû rûpelên di vê wîkiyê de, bi hemû rûpelên gotûbêj, beralîkirin, hwd.",
 	"statistics-files": "Wêneyên barkirî",
 	"statistics-edits": "Hejmara guherandinên rûpelan ji avabûna {{SITENAME}} heta niha",
-	"statistics-users": "[[Special:ListUsers|Bikarhênerên tomarkirî]]",
+	"statistics-users": "Bikarhênerên tomarkirî",
 	"statistics-users-active": "Bikarhênerên çalak",
 	"pageswithprop-submit": "Biçe",
 	"doubleredirects": "Beralîkirinên ducarî",
@@ -1143,7 +1144,6 @@
 	"notargettitle": "Armanc tune",
 	"pager-newer-n": "{{PLURAL:$1|nûtir 1|nûtir $1}}",
 	"pager-older-n": "{{PLURAL:$1|kevintir 1|kevintir $1}}",
-	"apisandbox-unfullscreen": "Rûpelê nîşan bide",
 	"apisandbox-helpurls": "Girêdanên alîkariyê",
 	"apisandbox-examples": "Mînak",
 	"apisandbox-results": "Encam",
