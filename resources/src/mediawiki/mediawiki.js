@@ -871,7 +871,7 @@
 				// For addEmbeddedCSS()
 				cssBuffer = '',
 				cssBufferTimer = null,
-				cssCallbacks = $.Callbacks(),
+				cssCallbacks = [],
 				rAF = window.requestAnimationFrame || setTimeout;
 
 			function getMarker() {
@@ -923,15 +923,18 @@
 			 */
 			function addEmbeddedCSS( cssText, callback ) {
 				function fireCallbacks() {
-					var oldCallbacks = cssCallbacks;
+					var i,
+						oldCallbacks = cssCallbacks;
 					// Reset cssCallbacks variable so it's not polluted by any calls to
 					// addEmbeddedCSS() from one of the callbacks (T105973)
-					cssCallbacks = $.Callbacks();
-					oldCallbacks.fire().empty();
+					cssCallbacks = [];
+					for ( i = 0; i < oldCallbacks.length; i++ ) {
+						oldCallbacks[ i ]();
+					}
 				}
 
 				if ( callback ) {
-					cssCallbacks.add( callback );
+					cssCallbacks.push( callback );
 				}
 
 				// Yield once before creating the <style> tag. This lets multiple stylesheets
@@ -2828,8 +2831,9 @@
 			return $.when.apply( $, all );
 		} );
 		loading.then( function () {
-			/* global mwPerformance */
-			mwPerformance.mark( 'mwLoadEnd' );
+			if ( window.performance && performance.mark ) {
+				performance.mark( 'mwLoadEnd' );
+			}
 			mw.hook( 'resourceloader.loadEnd' ).fire();
 		} );
 	} );
