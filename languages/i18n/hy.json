@@ -31,7 +31,8 @@
 			"Irus",
 			"Narek",
 			"23artashes",
-			"Fitoschido"
+			"Fitoschido",
+			"Սահակ"
 		]
 	},
 	"tog-underline": "ընդգծել հղումները՝",
@@ -245,7 +246,7 @@
 	"copyrightpage": "{{ns:project}}:Հեղինակային իրավունքներ",
 	"currentevents": "Ընթացիկ իրադարձություններ",
 	"currentevents-url": "Project:Ընթացիկ իրադարձություններ",
-	"disclaimers": "Ազատում պատասխանատվությունից",
+	"disclaimers": "Հրաժարագրեր",
 	"disclaimerpage": "Project:Ազատում պատասխանատվությունից",
 	"edithelp": "Խմբագրման ուղեցույց",
 	"helppage-top-gethelp": "Օգնություն",
@@ -1080,7 +1081,7 @@
 	"recentchangeslinked-page": "Էջի անվանումը՝",
 	"recentchangeslinked-to": "Հակառա՛կը. ցույց տալ այս էջին հղող էջերի փոփոխությունները։",
 	"recentchanges-page-added-to-category": "[[:$1]] էջը ավելացվել է կատեգորիայում",
-	"upload": "Բեռնել նիշք (ֆայլ)",
+	"upload": "Բեռնել նիշք",
 	"uploadbtn": "Բեռնել նիշք",
 	"reuploaddesc": "Վերադառնալ բեռնման ձևին։",
 	"uploadnologin": "Դուք չեք մտել համակարգ",

@@ -70,12 +70,16 @@ changes to languages because of Phabricator reports.
   * Revision::getRawComment()
 * window.gM() from mediawiki.jqueryMsg was removed (deprecated in 1.23).
   Use mw.msg() or mw.message() instead.
+* The SqlDataUpdate class, deprecated in 1.28, has been removed.
 
 === Deprecations in 1.32 ===
 * Use of a StartProfiler.php file is deprecated in favour of placing
   configuration in LocalSettings.php.
 * HTMLForm::setSubmitProgressive() is deprecated. No need to call it. Submit
   button is already marked as progressive.
+* Skin::setupSkinUserCss() is deprecated. Adding of modules to load
+  has been centralised to Skin::getDefaultModules(), which is now capable
+  of queueing style modules as well.
 
 === Other changes in 1.32 ===
 * …
