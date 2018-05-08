@@ -534,26 +534,6 @@
 	};
 
 	/**
-	 * Add the appropriate prefix to the accesskey shown in the tooltip.
-	 *
-	 * If the `$nodes` parameter is given, only those nodes are updated;
-	 * otherwise we update all elements with accesskeys on the page.
-	 *
-	 * @method updateTooltipAccessKeys
-	 * @param {Array|jQuery} [$nodes] A jQuery object, or array of nodes to update.
-	 * @deprecated since 1.24 Use the module jquery.accessKeyLabel instead.
-	 */
-	mw.log.deprecate( util, 'updateTooltipAccessKeys', function ( $nodes ) {
-		if ( !$nodes ) {
-			$nodes = $( '[accesskey]' );
-		} else if ( !( $nodes instanceof $ ) ) {
-			$nodes = $( $nodes );
-		}
-
-		$nodes.updateTooltipAccessKeys();
-	}, 'Use jquery.accessKeyLabel instead.', 'mw.util.updateTooltipAccessKeys' );
-
-	/**
 	 * Add a little box at the top of the screen to inform the user of
 	 * something, replacing any previous message.
 	 * Calling with no arguments, with an empty string or null will hide the message
@@ -573,18 +553,6 @@
 		mw.notify( message, { autoHide: true, tag: 'legacy' } );
 		return true;
 	}, 'Use mw.notify instead.', 'mw.util.jsMessage' );
-
-	/**
-	 * Encode the string like Sanitizer::escapeId() in PHP
-	 *
-	 * @method escapeId
-	 * @deprecated since 1.30 use escapeIdForAttribute() or escapeIdForLink()
-	 * @param {string} str String to be encoded.
-	 * @return {string} Encoded string
-	 */
-	mw.log.deprecate( util, 'escapeId', function ( str ) {
-		return escapeIdInternal( str, 'legacy' );
-	}, 'Use mw.util.escapeIdForAttribute or mw.util.escapeIdForLink instead.', 'mw.util.escapeId' );
 
 	/**
 	 * Initialisation of mw.util.$content
