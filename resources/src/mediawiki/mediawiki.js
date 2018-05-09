@@ -1188,10 +1188,10 @@
 			 *
 			 * @private
 			 * @param {string} src URL to script, will be used as the src attribute in the script tag
-			 * @return {jQuery.Promise}
+			 * @param {Function} [callback] Callback to run after request resolution
 			 */
-			function addScript( src ) {
-				return $.ajax( {
+			function addScript( src, callback ) {
+				var promise = $.ajax( {
 					url: src,
 					dataType: 'script',
 					// Force jQuery behaviour to be for crossDomain. Otherwise jQuery would use
@@ -1202,6 +1202,10 @@
 					crossDomain: true,
 					cache: true
 				} );
+
+				if ( callback ) {
+					promise.always( callback );
+				}
 			}
 
 			/**
@@ -1209,25 +1213,22 @@
 			 *
 			 * @private
 			 * @param {string} src URL of the script
-			 * @param {string} [moduleName] Name of currently executing module
-			 * @return {jQuery.Promise}
+			 * @param {string} moduleName Name of currently executing module
+			 * @param {Function} callback Callback to run after addScript() resolution
 			 */
-			function queueModuleScript( src, moduleName ) {
-				var r = $.Deferred();
-
+			function queueModuleScript( src, moduleName, callback ) {
 				pendingRequests.push( function () {
-					if ( moduleName && hasOwn.call( registry, moduleName ) ) {
+					if ( hasOwn.call( registry, moduleName ) ) {
 						// Emulate runScript() part of execute()
 						window.require = mw.loader.require;
 						window.module = registry[ moduleName ].module;
 					}
-					addScript( src ).always( function () {
+					addScript( src, function () {
 						// 'module.exports' should not persist after the file is executed to
 						// avoid leakage to unrelated code. 'require' should be kept, however,
 						// as asynchronous access to 'require' is allowed and expected. (T144879)
 						delete window.module;
-						r.resolve();
-
+						callback();
 						// Start the next one (if any)
 						if ( pendingRequests[ 0 ] ) {
 							pendingRequests.shift()();
@@ -1240,7 +1241,6 @@
 					handlingPendingRequests = true;
 					pendingRequests.shift()();
 				}
-				return r.promise();
 			}
 
 			/**
@@ -1304,7 +1304,7 @@
 							return;
 						}
 
-						queueModuleScript( arr[ i ], module ).always( function () {
+						queueModuleScript( arr[ i ], module, function () {
 							nestedAddScript( arr, callback, i + 1 );
 						} );
 					};
