@@ -2443,7 +2443,7 @@ class OutputPage extends ContextSource {
 		if ( $this->mArticleBodyOnly ) {
 			echo $this->mBodytext;
 		} else {
-			// Enable safe mode if requested
+			// Enable safe mode if requested (T152169)
 			if ( $this->getRequest()->getBool( 'safemode' ) ) {
 				$this->disallowUserJs();
 			}
@@ -2861,6 +2861,17 @@ class OutputPage extends ContextSource {
 
 			$rlClient = new ResourceLoaderClientHtml( $context, [
 				'target' => $this->getTarget(),
+				'nonce' => $this->getCSPNonce(),
+				// When 'safemode', disallowUserJs(), or reduceAllowedModules() is used
+				// to only restrict modules to ORIGIN_CORE (ie. disallow ORIGIN_USER), the list of
+				// modules enqueud for loading on this page is filtered to just those.
+				// However, to make sure we also apply the restriction to dynamic dependencies and
+				// lazy-loaded modules at run-time on the client-side, pass 'safemode' down to the
+				// StartupModule so that the client-side registry will not contain any restricted
+				// modules either. (T152169, T185303)
+				'safemode' => ( $this->getAllowedModules( ResourceLoaderModule::TYPE_COMBINED )
+					<= ResourceLoaderModule::ORIGIN_CORE_INDIVIDUAL
+				) ? '1' : null,
 			] );
 			$rlClient->setConfig( $this->getJSVars() );
 			$rlClient->setModules( $this->getModules( /*filter*/ true ) );
@@ -2907,7 +2918,7 @@ class OutputPage extends ContextSource {
 		}
 
 		$pieces[] = Html::element( 'title', null, $this->getHTMLTitle() );
-		$pieces[] = $this->getRlClient()->getHeadHtml( $this->getCSPNonce() );
+		$pieces[] = $this->getRlClient()->getHeadHtml();
 		$pieces[] = $this->buildExemptModules();
 		$pieces = array_merge( $pieces, array_values( $this->getHeadLinksArray() ) );
 		$pieces = array_merge( $pieces, array_values( $this->mHeadItems ) );

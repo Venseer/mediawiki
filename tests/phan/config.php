@@ -317,8 +317,6 @@ return [
 		"PhanParamSignatureRealMismatchTooFewParameters",
 		// approximate error count: 125
 		"PhanParamTooMany",
-		// approximate error count: 1
-		"PhanParamTooManyCallable",
 		// approximate error count: 3
 		"PhanParamTooManyInternal",
 		// approximate error count: 1
@@ -329,10 +327,6 @@ return [
 		"PhanTypeComparisonFromArray",
 		// approximate error count: 2
 		"PhanTypeComparisonToArray",
-		// approximate error count: 3
-		"PhanTypeInvalidRightOperand",
-		// approximate error count: 1
-		"PhanTypeMagicVoidWithReturn",
 		// approximate error count: 218
 		"PhanTypeMismatchArgument",
 		// approximate error count: 13
@@ -341,8 +335,6 @@ return [
 		"PhanTypeMismatchDeclaredParam",
 		// approximate error count: 111
 		"PhanTypeMismatchDeclaredParamNullable",
-		// approximate error count: 1
-		"PhanTypeMismatchDefault",
 		// approximate error count: 5
 		"PhanTypeMismatchDimAssignment",
 		// approximate error count: 2
@@ -355,12 +347,8 @@ return [
 		"PhanTypeMismatchProperty",
 		// approximate error count: 74
 		"PhanTypeMismatchReturn",
-		// approximate error count: 11
-		"PhanTypeMissingReturn",
 		// approximate error count: 5
 		"PhanTypeNonVarPassByRef",
-		// approximate error count: 1
-		"PhanUndeclaredClassInCallable",
 		// approximate error count: 32
 		"PhanUndeclaredConstant",
 		// approximate error count: 233
@@ -369,10 +357,6 @@ return [
 		"PhanUndeclaredProperty",
 		// approximate error count: 3
 		"PhanUndeclaredStaticMethod",
-		// approximate error count: 11
-		"PhanUndeclaredTypeReturnType",
-		// approximate error count: 27
-		"PhanUndeclaredVariable",
 		// approximate error count: 58
 		"PhanUndeclaredVariableDim",
 	],

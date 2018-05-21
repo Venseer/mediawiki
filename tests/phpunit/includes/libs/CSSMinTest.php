@@ -35,7 +35,7 @@ class CSSMinTest extends MediaWikiTestCase {
 	public static function provideSerializeStringValue() {
 		return [
 			[ 'Hello World!', '"Hello World!"' ],
-			[ "Null\0Null", "\"Null\\fffd Null\"" ],
+			[ "Null\0Null", "\"Null\xEF\xBF\xBDNull\"" ],
 			[ '"', '"\\""' ],
 			[ "'", '"\'"' ],
 			[ "\\", '"\\\\"' ],
@@ -199,6 +199,9 @@ class CSSMinTest extends MediaWikiTestCase {
 			[ true, '//example.org/x.y.z/image.png' ],
 			[ true, '//localhost/styles.css?query=yes' ],
 			[ true, 'data:image/gif;base64,R0lGODlhAQABAIAAAP8AADAAACwAAAAAAQABAAACAkQBADs=' ],
+			[ false, '' ],
+			[ false, '/' ],
+			[ true, '//' ],
 			[ false, 'x.gif' ],
 			[ false, '/x.gif' ],
 			[ false, './x.gif' ],
@@ -217,6 +220,9 @@ class CSSMinTest extends MediaWikiTestCase {
 
 	public static function provideIsLocalUrls() {
 		return [
+			[ false, '' ],
+			[ false, '/' ],
+			[ false, '//' ],
 			[ false, 'x.gif' ],
 			[ true, '/x.gif' ],
 			[ false, './x.gif' ],

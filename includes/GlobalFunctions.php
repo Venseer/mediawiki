@@ -1089,7 +1089,8 @@ function wfIsDebugRawPage() {
 	if ( $cache !== null ) {
 		return $cache;
 	}
-	# Check for raw action using $_GET not $wgRequest, since the latter might not be initialised yet
+	// Check for raw action using $_GET not $wgRequest, since the latter might not be initialised yet
+	// phpcs:ignore MediaWiki.Usage.SuperGlobalsUsage.SuperGlobals
 	if ( ( isset( $_GET['action'] ) && $_GET['action'] == 'raw' )
 		|| (
 			isset( $_SERVER['SCRIPT_NAME'] )
@@ -3228,7 +3229,7 @@ function wfRunHooks( $event, array $args = [], $deprecatedVersion = null ) {
  * @param string $format The format string (See php's docs)
  * @param string $data A binary string of binary data
  * @param int|bool $length The minimum length of $data or false. This is to
- *	prevent reading beyond the end of $data. false to disable the check.
+ * 	prevent reading beyond the end of $data. false to disable the check.
  *
  * Also be careful when using this function to read unsigned 32 bit integer
  * because php might make it negative.

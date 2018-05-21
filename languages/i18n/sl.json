@@ -2380,9 +2380,9 @@
 	"whatlinkshere": "Kaj se povezuje sem",
 	"whatlinkshere-title": "Strani, ki se povezujejo na $1",
 	"whatlinkshere-page": "Stran:",
-	"linkshere": "Na '''[[:$1]]''' kažejo naslednje strani:",
-	"nolinkshere": "Nobena stran ne kaže na '''[[:$1]]'''.",
-	"nolinkshere-ns": "Nobena stran se ne povezuje na '''[[:$1]]''' v izbranem imenskem prostoru.",
+	"linkshere-2": "Na '''$1''' kažejo naslednje strani:",
+	"nolinkshere-2": "Nobena stran ne kaže na '''$1'''.",
+	"nolinkshere-ns-2": "Nobena stran se ne povezuje na '''$1''' v izbranem imenskem prostoru.",
 	"isredirect": "preusmeritvena stran",
 	"istemplate": "vključitev",
 	"isimage": "povezava na datoteko",
@@ -3997,5 +3997,6 @@
 	"pagedata-title": "Podatki strani",
 	"pagedata-text": "Ta stran nudi podatkovni vmesnik do strani. Prosimo, navedite naslov strani v URL-ju z uporabo skladnje podstrani.\n* Pogajanje o vsebini se nanaša na glavo Accept vašega odjemalca. To pomeni, da bomo podatke strani posredovali v obliki, ki vašemu odjemalcu bolj ustreza.",
 	"pagedata-not-acceptable": "Nismo našli ujemajoče oblike. Podprte vrste MIME: $1",
-	"pagedata-bad-title": "Neveljaven naslov: $1."
+	"pagedata-bad-title": "Neveljaven naslov: $1.",
+	"unregistered-user-config": "Iz varnostnih razlogov uporabniških podstrani JavaScript, CSS in JSON ne moremo naložiti neregistriranim uporabnikom."
 }

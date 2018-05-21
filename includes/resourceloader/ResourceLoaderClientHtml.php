@@ -57,12 +57,18 @@ class ResourceLoaderClientHtml {
 	/**
 	 * @param ResourceLoaderContext $context
 	 * @param array $options [optional] Array of options
-	 *  - 'target': Custom parameter passed to StartupModule.
+	 *  - 'target': Parameter for modules=startup request, see ResourceLoaderStartUpModule.
+	 *  - 'safemode': Parameter for modules=startup request, see ResourceLoaderStartUpModule.
+	 *  - 'nonce': From OutputPage::getCSPNonce().
 	 */
 	public function __construct( ResourceLoaderContext $context, array $options = [] ) {
 		$this->context = $context;
 		$this->resourceLoader = $context->getResourceLoader();
-		$this->options = $options;
+		$this->options = $options + [
+			'target' => null,
+			'safemode' => null,
+			'nonce' => null,
+		];
 	}
 
 	/**
@@ -139,7 +145,8 @@ class ResourceLoaderClientHtml {
 				'styles' => [],
 				'general' => [],
 			],
-
+			// Deprecations for style-only modules
+			'styledeprecations' => [],
 		];
 
 		foreach ( $this->modules as $name ) {
@@ -204,6 +211,10 @@ class ResourceLoaderClientHtml {
 					$data['styles'][] = $name;
 				}
 			}
+			$deprecation = $module->getDeprecationInformation();
+			if ( $deprecation ) {
+				$data['styledeprecations'][] = $deprecation;
+			}
 		}
 
 		foreach ( $this->moduleScripts as $name ) {
@@ -248,10 +259,10 @@ class ResourceLoaderClientHtml {
 	 * - Inline scripts can't be asynchronous.
 	 * - For styles, earlier is better.
 	 *
-	 * @param string $nonce From OutputPage::getCSPNonce()
 	 * @return string|WrappedStringList HTML
 	 */
-	public function getHeadHtml( $nonce ) {
+	public function getHeadHtml() {
+		$nonce = $this->options['nonce'];
 		$data = $this->getData();
 		$chunks = [];
 
@@ -307,7 +318,15 @@ class ResourceLoaderClientHtml {
 			);
 		}
 
-		// External stylesheets
+		// Deprecations for only=styles modules
+		if ( $data['styledeprecations'] ) {
+			$chunks[] = ResourceLoader::makeInlineScript(
+				implode( '', $data['styledeprecations'] ),
+				$nonce
+			);
+		}
+
+		// External stylesheets (only=styles)
 		if ( $data['styles'] ) {
 			$chunks[] = $this->getLoad(
 				$data['styles'],
@@ -327,9 +346,12 @@ class ResourceLoaderClientHtml {
 
 		// Async scripts. Once the startup is loaded, inline RLQ scripts will run.
 		// Pass-through a custom 'target' from OutputPage (T143066).
-		$startupQuery = isset( $this->options['target'] )
-			? [ 'target' => (string)$this->options['target'] ]
-			: [];
+		$startupQuery = [];
+		foreach ( [ 'target', 'safemode' ] as $param ) {
+			if ( $this->options[$param] !== null ) {
+				$startupQuery[$param] = (string)$this->options[$param];
+			}
+		}
 		$chunks[] = $this->getLoad(
 			'startup',
 			ResourceLoaderModule::TYPE_SCRIPTS,
@@ -379,12 +401,12 @@ class ResourceLoaderClientHtml {
 	 * @param ResourceLoaderContext $mainContext
 	 * @param array $modules One or more module names
 	 * @param string $only ResourceLoaderModule TYPE_ class constant
-	 * @param array $extraQuery Array with extra query parameters for the request
-	 * @param string $nonce See OutputPage::getCSPNonce() [Since 1.32]
+	 * @param array $extraQuery [optional] Array with extra query parameters for the request
+	 * @param string $nonce [optional] Content-Security-Policy nonce (from OutputPage::getCSPNonce)
 	 * @return string|WrappedStringList HTML
 	 */
 	public static function makeLoad( ResourceLoaderContext $mainContext, array $modules, $only,
-		array $extraQuery, $nonce
+		array $extraQuery = [], $nonce = null
 	) {
 		$rl = $mainContext->getResourceLoader();
 		$chunks = [];

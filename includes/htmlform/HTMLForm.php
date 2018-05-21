@@ -50,6 +50,9 @@ use Wikimedia\ObjectFactory;
  *                             if 'class' is not specified, this is used as a map
  *                             through HTMLForm::$typeMappings to get the class name.
  *    'default'             -- default value when the form is displayed
+ *    'nodata'              -- if set (to any value, which casts to true), the data
+ *                             for this field will not be loaded from the actual request. Instead,
+ *                             always the default data is set as the value of this field.
  *    'id'                  -- HTML id attribute
  *    'cssclass'            -- CSS class
  *    'csshelpclass'        -- CSS class used to style help text
@@ -1604,9 +1607,10 @@ class HTMLForm extends ContextSource {
 	 * @param string $legend Legend text for the fieldset
 	 * @param string $section The section content in plain Html
 	 * @param array $attributes Additional attributes for the fieldset
+	 * @param bool $isRoot Section is at the root of the tree
 	 * @return string The fieldset's Html
 	 */
-	protected function wrapFieldSetSection( $legend, $section, $attributes ) {
+	protected function wrapFieldSetSection( $legend, $section, $attributes, $isRoot ) {
 		return Xml::fieldset( $legend, $section, $attributes ) . "\n";
 	}
 
@@ -1689,7 +1693,9 @@ class HTMLForm extends ContextSource {
 					if ( $fieldsetIDPrefix ) {
 						$attributes['id'] = Sanitizer::escapeIdForAttribute( "$fieldsetIDPrefix$key" );
 					}
-					$subsectionHtml .= $this->wrapFieldSetSection( $legend, $section, $attributes );
+					$subsectionHtml .= $this->wrapFieldSetSection(
+						$legend, $section, $attributes, $fields === $this->mFieldTree
+					);
 				} else {
 					// Just return the inputs, nothing fancy.
 					$subsectionHtml .= $section;
