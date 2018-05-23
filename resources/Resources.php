@@ -217,10 +217,6 @@ return [
 		'styles' => 'resources/src/jquery/jquery.farbtastic.css',
 		'dependencies' => 'jquery.colorUtil',
 	],
-	'jquery.footHovzer' => [
-		'scripts' => 'resources/src/jquery/jquery.footHovzer.js',
-		'styles' => 'resources/src/jquery/jquery.footHovzer.css',
-	],
 	'jquery.form' => [
 		'scripts' => 'resources/lib/jquery/jquery.form.js',
 	],
@@ -321,6 +317,7 @@ return [
 		'scripts' => 'resources/src/jquery/jquery.tabIndex.js',
 	],
 	'jquery.tablesorter' => [
+		'targets' => [ 'desktop', 'mobile' ],
 		'scripts' => 'resources/src/jquery.tablesorter/jquery.tablesorter.js',
 		'styles' => 'resources/src/jquery.tablesorter/jquery.tablesorter.less',
 		'messages' => [ 'sort-descending', 'sort-ascending' ],
@@ -969,13 +966,14 @@ return [
 	],
 	'mediawiki.debug' => [
 		'scripts' => [
+			'resources/src/mediawiki.debug/jquery.footHovzer.js',
 			'resources/src/mediawiki.debug/debug.js',
 		],
 		'styles' => [
+			'resources/src/mediawiki.debug/jquery.footHovzer.css',
 			'resources/src/mediawiki.debug/debug.less',
 		],
 		'dependencies' => [
-			'jquery.footHovzer',
 			'oojs-ui-core',
 		],
 	],
@@ -1648,6 +1646,7 @@ return [
 	],
 
 	'mediawiki.language.months' => [
+		'targets' => [ 'desktop', 'mobile' ],
 		'scripts' => 'resources/src/mediawiki.language/mediawiki.language.months.js',
 		'dependencies' => 'mediawiki.language',
 		'messages' => array_merge(
@@ -2553,11 +2552,6 @@ return [
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
-	'mediawiki.widgets.visibleByteLimit' => [
-		'dependencies' => 'mediawiki.widgets.visibleLengthLimit',
-		'deprecated' => 'Use "mediawiki.widgets.visibleLengthLimit" instead.',
-		'targets' => [ 'desktop', 'mobile' ]
-	],
 	'mediawiki.widgets.visibleLengthLimit' => [
 		'scripts' => [
 			'resources/src/mediawiki.widgets.visibleLengthLimit/mediawiki.widgets.visibleLengthLimit.js'
@@ -2775,12 +2769,6 @@ return [
 			'mediawiki.api',
 			'oojs-ui-core',
 		],
-	],
-
-	/* es5-shim */
-	'es5-shim' => [
-		'deprecated' => 'Use of the "es5-shim" module is deprecated since MediaWiki 1.29.0',
-		'targets' => [ 'desktop', 'mobile' ],
 	],
 
 	/* dom-level2-shim */

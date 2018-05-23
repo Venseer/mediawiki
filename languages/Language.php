@@ -273,7 +273,7 @@ class Language {
 	 * language, script or variant codes actually exist in the repositories.
 	 *
 	 * Based on regexes by Mark Davis of the Unicode Consortium:
-	 * http://unicode.org/repos/cldr/trunk/tools/java/org/unicode/cldr/util/data/langtagRegex.txt
+	 * https://www.unicode.org/repos/cldr/trunk/tools/java/org/unicode/cldr/util/data/langtagRegex.txt
 	 *
 	 * @param string $code
 	 * @param bool $lenient Whether to allow '_' as separator. The default is only '-'.
@@ -797,7 +797,7 @@ class Language {
 	 * 		'all' all available languages
 	 * 		'mw' only if the language is defined in MediaWiki or wgExtraLanguageNames (default)
 	 * 		'mwfile' only if the language is in 'mw' *and* has a message file
-	 * @return array Language code => language name
+	 * @return array Language code => language name (sorted by key)
 	 * @since 1.20
 	 */
 	public static function fetchLanguageNames( $inLanguage = null, $include = 'mw' ) {
@@ -823,7 +823,7 @@ class Language {
 	 *		'all' all available languages
 	 *		'mw' only if the language is defined in MediaWiki or wgExtraLanguageNames (default)
 	 *		'mwfile' only if the language is in 'mw' *and* has a message file
-	 * @return array Language code => language name
+	 * @return array Language code => language name (sorted by key)
 	 */
 	private static function fetchLanguageNamesUncached( $inLanguage = null, $include = 'mw' ) {
 		global $wgExtraLanguageNames, $wgUsePigLatinVariant;
@@ -1951,8 +1951,8 @@ class Language {
 	 * Gets directionality of the first strongly directional codepoint, for embedBidi()
 	 *
 	 * This is the rule the BIDI algorithm uses to determine the directionality of
-	 * paragraphs ( http://unicode.org/reports/tr9/#The_Paragraph_Level ) and
-	 * FSI isolates ( http://unicode.org/reports/tr9/#Explicit_Directional_Isolates ).
+	 * paragraphs ( https://www.unicode.org/reports/tr9/#The_Paragraph_Level ) and
+	 * FSI isolates ( https://www.unicode.org/reports/tr9/#Explicit_Directional_Isolates ).
 	 *
 	 * TODO: Does not handle BIDI control characters inside the text.
 	 * TODO: Does not handle unallocated characters.
