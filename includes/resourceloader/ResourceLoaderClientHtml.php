@@ -18,6 +18,7 @@
  * @file
  */
 
+use Wikimedia\WrappedString;
 use Wikimedia\WrappedStringList;
 
 /**
@@ -146,7 +147,7 @@ class ResourceLoaderClientHtml {
 				'general' => [],
 			],
 			// Deprecations for style-only modules
-			'styledeprecations' => [],
+			'styleDeprecations' => [],
 		];
 
 		foreach ( $this->modules as $name ) {
@@ -213,7 +214,7 @@ class ResourceLoaderClientHtml {
 			}
 			$deprecation = $module->getDeprecationInformation();
 			if ( $deprecation ) {
-				$data['styledeprecations'][] = $deprecation;
+				$data['styleDeprecations'][] = $deprecation;
 			}
 		}
 
@@ -318,14 +319,6 @@ class ResourceLoaderClientHtml {
 			);
 		}
 
-		// Deprecations for only=styles modules
-		if ( $data['styledeprecations'] ) {
-			$chunks[] = ResourceLoader::makeInlineScript(
-				implode( '', $data['styledeprecations'] ),
-				$nonce
-			);
-		}
-
 		// External stylesheets (only=styles)
 		if ( $data['styles'] ) {
 			$chunks[] = $this->getLoad(
@@ -359,14 +352,25 @@ class ResourceLoaderClientHtml {
 			$startupQuery
 		);
 
-		return WrappedStringList::join( "\n", $chunks );
+		return WrappedString::join( "\n", $chunks );
 	}
 
 	/**
 	 * @return string|WrappedStringList HTML
 	 */
 	public function getBodyHtml() {
-		return '';
+		$data = $this->getData();
+		$chunks = [];
+
+		// Deprecations for only=styles modules
+		if ( $data['styleDeprecations'] ) {
+			$chunks[] = ResourceLoader::makeInlineScript(
+				implode( '', $data['styleDeprecations'] ),
+				$this->options['nonce']
+			);
+		}
+
+		return WrappedString::join( "\n", $chunks );
 	}
 
 	private function getContext( $group, $type ) {

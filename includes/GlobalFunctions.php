@@ -32,75 +32,6 @@ use MediaWiki\Shell\Shell;
 use Wikimedia\ScopedCallback;
 use Wikimedia\Rdbms\DBReplicationWaitError;
 
-// Hide compatibility functions from Doxygen
-/// @cond
-/**
- * Compatibility functions
- *
- * We support PHP 5.5.9 and up.
- * Re-implementations of newer functions or functions in non-standard
- * PHP extensions may be included here.
- */
-
-// hash_equals function only exists in PHP >= 5.6.0
-// https://secure.php.net/hash_equals
-if ( !function_exists( 'hash_equals' ) ) {
-	/**
-	 * Check whether a user-provided string is equal to a fixed-length secret string
-	 * without revealing bytes of the secret string through timing differences.
-	 *
-	 * The usual way to compare strings (PHP's === operator or the underlying memcmp()
-	 * function in C) is to compare corresponding bytes and stop at the first difference,
-	 * which would take longer for a partial match than for a complete mismatch. This
-	 * is not secure when one of the strings (e.g. an HMAC or token) must remain secret
-	 * and the other may come from an attacker. Statistical analysis of timing measurements
-	 * over many requests may allow the attacker to guess the string's bytes one at a time
-	 * (and check his guesses) even if the timing differences are extremely small.
-	 *
-	 * When making such a security-sensitive comparison, it is essential that the sequence
-	 * in which instructions are executed and memory locations are accessed not depend on
-	 * the secret string's value. HOWEVER, for simplicity, we do not attempt to minimize
-	 * the inevitable leakage of the string's length. That is generally known anyway as
-	 * a chararacteristic of the hash function used to compute the secret value.
-	 *
-	 * Longer explanation: http://www.emerose.com/timing-attacks-explained
-	 *
-	 * @codeCoverageIgnore
-	 * @param string $known_string Fixed-length secret string to compare against
-	 * @param string $user_string User-provided string
-	 * @return bool True if the strings are the same, false otherwise
-	 */
-	function hash_equals( $known_string, $user_string ) {
-		// Strict type checking as in PHP's native implementation
-		if ( !is_string( $known_string ) ) {
-			trigger_error( 'hash_equals(): Expected known_string to be a string, ' .
-				gettype( $known_string ) . ' given', E_USER_WARNING );
-
-			return false;
-		}
-
-		if ( !is_string( $user_string ) ) {
-			trigger_error( 'hash_equals(): Expected user_string to be a string, ' .
-				gettype( $user_string ) . ' given', E_USER_WARNING );
-
-			return false;
-		}
-
-		$known_string_len = strlen( $known_string );
-		if ( $known_string_len !== strlen( $user_string ) ) {
-			return false;
-		}
-
-		$result = 0;
-		for ( $i = 0; $i < $known_string_len; $i++ ) {
-			$result |= ord( $known_string[$i] ) ^ ord( $user_string[$i] );
-		}
-
-		return ( $result === 0 );
-	}
-}
-/// @endcond
-
 /**
  * Load an extension
  *
@@ -1515,7 +1446,7 @@ function wfHostname() {
  * hostname of the server handling the request.
  *
  * @param string $nonce Value from OutputPage::getCSPNonce
- * @return string
+ * @return string|WrappedString HTML
  */
 function wfReportTime( $nonce = null ) {
 	global $wgShowHostnames;
@@ -2737,6 +2668,28 @@ function wfGetPrecompiledData( $name ) {
 		}
 	}
 	return false;
+}
+
+/**
+ * @since 1.32
+ * @param string[] $data Array with string keys/values to export
+ * @param string $header
+ * @return string PHP code
+ */
+function wfMakeStaticArrayFile( array $data, $header = 'Automatically generated' ) {
+	$format = "\t%s => %s,\n";
+	$code = "<?php\n"
+		. "// " . implode( "\n// ", explode( "\n", $header ) ) . "\n"
+		. "return [\n";
+	foreach ( $data as $key => $value ) {
+		$code .= sprintf(
+			$format,
+			var_export( $key, true ),
+			var_export( $value, true )
+		);
+	}
+	$code .= "];\n";
+	return $code;
 }
 
 /**

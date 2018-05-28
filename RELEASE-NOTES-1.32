@@ -21,6 +21,9 @@ production.
   adds a defense-in-depth feature to stop an attacker who has found a bug in
   the parser allowing them to insert malicious attributes. Disabled by default,
   you can configure this via $wgCSPHeader and $wgCSPReportOnlyHeader.
+* New configuration variable has been added: $wgCookieSetOnIpBlock.
+  This determines whether to set a cookie when an IP user is blocked. Doing so means
+  that a blocked user, even after moving to a new IP address, will still be blocked.
 
 === New features in 1.32 ===
 * (T112474) Generalized the ResourceLoader mechanism for overriding modules
@@ -28,6 +31,8 @@ production.
 * Added 'ApiParseMakeOutputPage' hook.
 * (T174313) Added checkbox on Special:ListUsers to display only users in
   temporary user groups.
+* (T152462) A cookie can now be set when an IP user is blocked to track that user if
+  they move to a new IP address. This is disabled by default.
 
 === External library changes in 1.32 ===
 * …
@@ -107,6 +112,17 @@ because of Phabricator reports.
 * The mediawiki.widgets.visibleByteLimit module alias, deprecated in 1.32, was
   removed. Use mediawiki.widgets.visibleLengthLimit instead.
 * The jquery.farbtastic module, unused since 1.18, was removed.
+* (T181318) The $wgStyleVersion setting and its appendage to various script and
+  style URLs in OutputPage, deprecated in 1.31, was removed.
+* The hooks 'PreferencesFormPreSave' and 'PreferencesGetLegend' may provide
+  any HTMLForm object rather than PreferencesForm.
+* The non namespaced TimestampException class, deprecated in 1.29, was removed.
+  Use Wikimedia\Timestamp\TimestampException instead.
+* The global functions codepointToUtf8, hexSequenceToUtf8, utf8ToHexSequence,
+  utf8ToCodepoint, and escapeSingleString (deprecated in 1.25) were removed.
+  The UtfNormal\Utils class from the utfnormal library should be used instead.
+* The deprecated UTF8_ and UNICODE_ constants were removed. The class constants
+  from the UtfNormal\Constants class from the utfnormal library should be used
 
 === Deprecations in 1.32 ===
 * Use of a StartProfiler.php file is deprecated in favour of placing
@@ -131,6 +147,8 @@ because of Phabricator reports.
   to use it.
 * WatchAction::getUnwatchToken is deprecated. Use WatchAction::getWatchToken
   with the 'unwatch' action parameter instead.
+* IcuCollation::getICUVersion() is deprecated, as you can just use the PHP
+  constant INTL_ICU_VERSION directly in all versions that MediaWiki supports.
 
 === Other changes in 1.32 ===
 * Soft hyphens (U+00AD) are now automatically removed from titles; these
@@ -140,8 +158,8 @@ because of Phabricator reports.
 * …
 
 == Compatibility ==
-MediaWiki 1.32 requires PHP 5.5.9 or later. Although HHVM 3.18.5 or later is
-supported, it is generally advised to use PHP 5.5.9 or later for long term
+MediaWiki 1.32 requires PHP 7.0.0 or later. Although HHVM 3.18.5 or later is
+supported, it is generally advised to use PHP 7.0.0 or later for long term
 support.
 
 MySQL/MariaDB is the recommended DBMS. PostgreSQL or SQLite can also be used,

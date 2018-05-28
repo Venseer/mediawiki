@@ -2566,17 +2566,6 @@ $wgCacheEpoch = '20030516000000';
 $wgGitInfoCacheDirectory = false;
 
 /**
- * Bump this number when changing the global style sheets and JavaScript.
- *
- * It should be appended in the query string of static CSS and JS includes,
- * to ensure that client-side caches do not keep obsolete copies of global
- * styles.
- *
- * @deprecated since 1.31
- */
-$wgStyleVersion = '303';
-
-/**
  * This will cache static pages for non-logged-in users to reduce
  * database traffic on public sites. ResourceLoader requests to default
  * language and skins are cached as well as single module requests.
@@ -3238,8 +3227,8 @@ $wgHTMLFormAllowTableFormat = true;
 $wgUseMediaWikiUIEverywhere = false;
 
 /**
- * Temporary variable that determines whether the EditPage class should use OOjs UI or not.
- * This will be removed later and OOjs UI will become the only option.
+ * Temporary variable that determines whether Special:Preferences should use OOUI or not.
+ * This will be removed later and OOUI will become the only option.
  *
  * @since 1.32
  */
@@ -6042,6 +6031,15 @@ $wgSessionName = false;
  * it is best to use this in conjunction with $wgSecretKey being set).
  */
 $wgCookieSetOnAutoblock = false;
+
+/**
+ * Whether to set a cookie when a logged-out user is blocked. Doing so means that a blocked user,
+ * even after moving to a new IP address, will still be blocked. This cookie will contain an
+ * authentication code if $wgSecretKey is set, or otherwise will just be the block ID (in which
+ * case there is a possibility of an attacker discovering the names of revdeleted users, so it
+ * is best to use this in conjunction with $wgSecretKey being set).
+ */
+$wgCookieSetOnIpBlock = false;
 
 /** @} */ # end of cookie settings }
 

@@ -21,6 +21,8 @@
  */
 
 use MediaWiki\MediaWikiServices;
+use Wikimedia\WrappedString;
+use Wikimedia\WrappedStringList;
 
 /**
  * @defgroup Skins Skins
@@ -402,7 +404,7 @@ abstract class Skin extends ContextSource {
 	/**
 	 * @param array $data
 	 * @param string $nonce OutputPage::getCSPNonce()
-	 * @return string
+	 * @return string|WrappedString HTML
 	 */
 	static function makeVariablesScript( $data, $nonce = null ) {
 		if ( $data ) {
@@ -675,16 +677,22 @@ abstract class Skin extends ContextSource {
 	/**
 	 * This gets called shortly before the "</body>" tag.
 	 *
-	 * @return string HTML-wrapped JS code to be put before "</body>"
+	 * @return string|WrappedStringList HTML containing scripts to put before `</body>`
 	 */
 	function bottomScripts() {
 		// TODO and the suckage continues. This function is really just a wrapper around
 		// OutputPage::getBottomScripts() which takes a Skin param. This should be cleaned
 		// up at some point
-		$bottomScriptText = $this->getOutput()->getBottomScripts();
-		Hooks::run( 'SkinAfterBottomScripts', [ $this, &$bottomScriptText ] );
+		$chunks = [ $this->getOutput()->getBottomScripts() ];
 
-		return $bottomScriptText;
+		// Keep the hook appendage separate to preserve WrappedString objects.
+		// This enables BaseTemplate::getTrail() to merge them where possible.
+		$extraHtml = '';
+		Hooks::run( 'SkinAfterBottomScripts', [ $this, &$extraHtml ] );
+		if ( $extraHtml !== '' ) {
+			$chunks[] = $extraHtml;
+		}
+		return WrappedString::join( "\n", $chunks );
 	}
 
 	/**
@@ -1095,25 +1103,25 @@ abstract class Skin extends ContextSource {
 	}
 
 	/**
-	 * Return a fully resolved style path url to images or styles stored in the current skins's folder.
-	 * This method returns a url resolved using the configured skin style path
-	 * and includes the style version inside of the url.
+	 * Return a fully resolved style path URL to images or styles stored in the
+	 * current skin's folder. This method returns a URL resolved using the
+	 * configured skin style path.
 	 *
 	 * Requires $stylename to be set, otherwise throws MWException.
 	 *
 	 * @param string $name The name or path of a skin resource file
-	 * @return string The fully resolved style path url including styleversion
+	 * @return string The fully resolved style path URL
 	 * @throws MWException
 	 */
 	function getSkinStylePath( $name ) {
-		global $wgStylePath, $wgStyleVersion;
+		global $wgStylePath;
 
 		if ( $this->stylename === null ) {
 			$class = static::class;
 			throw new MWException( "$class::\$stylename must be set to use getSkinStylePath()" );
 		}
 
-		return "$wgStylePath/{$this->stylename}/$name?$wgStyleVersion";
+		return "$wgStylePath/{$this->stylename}/$name";
 	}
 
 	/* these are used extensively in SkinTemplate, but also some other places */

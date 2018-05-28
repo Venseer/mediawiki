@@ -587,6 +587,10 @@ class EditPage {
 		$permErrors = $this->getEditPermissionErrors( $this->save ? 'secure' : 'full' );
 		if ( $permErrors ) {
 			wfDebug( __METHOD__ . ": User can't edit\n" );
+
+			// track block with a cookie if it doesn't exists already
+			$this->context->getUser()->trackBlockWithCookie();
+
 			// Auto-block user's IP if the account was "hard" blocked
 			if ( !wfReadOnly() ) {
 				DeferredUpdates::addCallableUpdate( function () {
@@ -4111,14 +4115,12 @@ ERROR;
 
 		$script .= '});';
 
-		$nonce = $wgOut->getCSPNonce();
-		$wgOut->addScript( ResourceLoader::makeInlineScript( $script, $nonce ) );
-
 		$toolbar = '<div id="toolbar"></div>';
 
 		if ( Hooks::run( 'EditPageBeforeEditToolbar', [ &$toolbar ] ) ) {
 			// Only add the old toolbar cruft to the page payload if the toolbar has not
 			// been over-written by a hook caller
+			$nonce = $wgOut->getCSPNonce();
 			$wgOut->addScript( ResourceLoader::makeInlineScript( $script, $nonce ) );
 		};
 
