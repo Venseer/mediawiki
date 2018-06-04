@@ -53,10 +53,10 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 		$this->database->select(
 			$sql['tables'],
 			$sql['fields'],
-			isset( $sql['conds'] ) ? $sql['conds'] : [],
+			$sql['conds'] ?? [],
 			__METHOD__,
-			isset( $sql['options'] ) ? $sql['options'] : [],
-			isset( $sql['join_conds'] ) ? $sql['join_conds'] : []
+			$sql['options'] ?? [],
+			$sql['join_conds'] ?? []
 		);
 		$this->assertLastSql( $sqlText );
 	}
@@ -266,10 +266,10 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 		$this->database->selectRowCount(
 			$sql['tables'],
 			$sql['field'],
-			isset( $sql['conds'] ) ? $sql['conds'] : [],
+			$sql['conds'] ?? [],
 			__METHOD__,
-			isset( $sql['options'] ) ? $sql['options'] : [],
-			isset( $sql['join_conds'] ) ? $sql['join_conds'] : []
+			$sql['options'] ?? [],
+			$sql['join_conds'] ?? []
 		);
 		$this->assertLastSql( $sqlText );
 	}
@@ -363,7 +363,7 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 			$sql['values'],
 			$sql['conds'],
 			__METHOD__,
-			isset( $sql['options'] ) ? $sql['options'] : []
+			$sql['options'] ?? []
 		);
 		$this->assertLastSql( $sqlText );
 	}
@@ -531,7 +531,7 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 			$sql['table'],
 			$sql['rows'],
 			__METHOD__,
-			isset( $sql['options'] ) ? $sql['options'] : []
+			$sql['options'] ?? []
 		);
 		$this->assertLastSql( $sqlText );
 	}
@@ -587,9 +587,9 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 			$sql['varMap'],
 			$sql['conds'],
 			__METHOD__,
-			isset( $sql['insertOptions'] ) ? $sql['insertOptions'] : [],
-			isset( $sql['selectOptions'] ) ? $sql['selectOptions'] : [],
-			isset( $sql['selectJoinConds'] ) ? $sql['selectJoinConds'] : []
+			$sql['insertOptions'] ?? [],
+			$sql['selectOptions'] ?? [],
+			$sql['selectJoinConds'] ?? []
 		);
 		$this->assertLastSql( $sqlTextNative );
 
@@ -603,9 +603,9 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 			$sql['varMap'],
 			$sql['conds'],
 			__METHOD__,
-			isset( $sql['insertOptions'] ) ? $sql['insertOptions'] : [],
-			isset( $sql['selectOptions'] ) ? $sql['selectOptions'] : [],
-			isset( $sql['selectJoinConds'] ) ? $sql['selectJoinConds'] : []
+			$sql['insertOptions'] ?? [],
+			$sql['selectOptions'] ?? [],
+			$sql['selectJoinConds'] ?? []
 		);
 		$this->assertLastSqlDb( implode( '; ', [ $sqlSelect, 'BEGIN', $sqlInsert, 'COMMIT' ] ), $dbWeb );
 	}
@@ -1012,10 +1012,10 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 			$params['table'],
 			$params['vars'],
 			$params['permute_conds'],
-			isset( $params['extra_conds'] ) ? $params['extra_conds'] : '',
+			$params['extra_conds'] ?? '',
 			'FNAME',
-			isset( $params['options'] ) ? $params['options'] : [],
-			isset( $params['join_conds'] ) ? $params['join_conds'] : []
+			$params['options'] ?? [],
+			$params['join_conds'] ?? []
 		) );
 		$this->assertEquals( $expect, $sql );
 	}
@@ -1893,15 +1893,31 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 
 		$this->database->setFlag( Database::DBO_TRX );
 
-		// Implicit transaction gets silently rolled back
+		// Implicit transaction does not get silently rolled back
 		$this->database->begin( __METHOD__, Database::TRANSACTION_INTERNAL );
 		call_user_func( $doError );
-		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
-		$this->database->commit( __METHOD__, Database::FLUSHING_INTERNAL );
-		// phpcs:ignore
-		$this->assertLastSql( 'BEGIN; DELETE FROM error WHERE 1; ROLLBACK; BEGIN; DELETE FROM x WHERE field = \'1\'; COMMIT' );
+		try {
+			$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
+			$this->fail( 'Expected exception not thrown' );
+		} catch ( DBTransactionError $e ) {
+			$this->assertEquals(
+				'Cannot execute query from ' . __METHOD__ . ' while transaction status is ERROR.',
+				$e->getMessage()
+			);
+		}
+		try {
+			$this->database->commit( __METHOD__, Database::FLUSHING_INTERNAL );
+			$this->fail( 'Expected exception not thrown' );
+		} catch ( DBTransactionError $e ) {
+			$this->assertEquals(
+				'Cannot execute query from ' . __METHOD__ . ' while transaction status is ERROR.',
+				$e->getMessage()
+			);
+		}
+		$this->database->rollback( __METHOD__, Database::FLUSHING_INTERNAL );
+		$this->assertLastSql( 'BEGIN; DELETE FROM error WHERE 1; ROLLBACK' );
 
-		// ... unless there were prior writes
+		// Likewise if there were prior writes
 		$this->database->begin( __METHOD__, Database::TRANSACTION_INTERNAL );
 		$this->database->delete( 'x', [ 'field' => 1 ], __METHOD__ );
 		call_user_func( $doError );

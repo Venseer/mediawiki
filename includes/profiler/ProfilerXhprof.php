@@ -73,7 +73,7 @@ class ProfilerXhprof extends Profiler {
 	public function __construct( array $params = [] ) {
 		parent::__construct( $params );
 
-		$flags = isset( $params['flags'] ) ? $params['flags'] : 0;
+		$flags = $params['flags'] ?? 0;
 		$options = isset( $params['exclude'] )
 			? [ 'ignored_functions' => $params['exclude'] ] : [];
 		Xhprof::enable( $flags, $options );
@@ -201,10 +201,7 @@ class ProfilerXhprof extends Profiler {
 	protected function getFunctionReport() {
 		$data = $this->getFunctionStats();
 		usort( $data, function ( $a, $b ) {
-			if ( $a['real'] === $b['real'] ) {
-				return 0;
-			}
-			return ( $a['real'] > $b['real'] ) ? -1 : 1; // descending
+			return $b['real'] <=> $a['real']; // descending
 		} );
 
 		$width = 140;

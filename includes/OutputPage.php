@@ -642,9 +642,7 @@ class OutputPage extends ContextSource {
 			// Register a callback for $this->contentOverrides on the first call
 			$this->addContentOverrideCallback( function ( LinkTarget $target ) {
 				$key = $target->getNamespace() . ':' . $target->getDBkey();
-				return isset( $this->contentOverrides[$key] )
-					? $this->contentOverrides[$key]
-					: null;
+				return $this->contentOverrides[$key] ?? null;
 			} );
 		}
 
@@ -1516,9 +1514,7 @@ class OutputPage extends ContextSource {
 		if ( $type == ResourceLoaderModule::TYPE_COMBINED ) {
 			return min( array_values( $this->mAllowedModules ) );
 		} else {
-			return isset( $this->mAllowedModules[$type] )
-				? $this->mAllowedModules[$type]
-				: ResourceLoaderModule::ORIGIN_ALL;
+			return $this->mAllowedModules[$type] ?? ResourceLoaderModule::ORIGIN_ALL;
 		}
 	}
 
@@ -2412,10 +2408,6 @@ class OutputPage extends ContextSource {
 
 		$response->header( 'Content-type: ' . $config->get( 'MimeType' ) . '; charset=UTF-8' );
 		$response->header( 'Content-language: ' . $wgContLang->getHtmlCode() );
-
-		// Avoid Internet Explorer "compatibility view" in IE 8-10, so that
-		// jQuery etc. can work correctly.
-		$response->header( 'X-UA-Compatible: IE=Edge' );
 
 		if ( !$this->mArticleBodyOnly ) {
 			$sk = $this->getSkin();
@@ -3908,7 +3900,7 @@ class OutputPage extends ContextSource {
 	 */
 	public static function setupOOUI( $skinName = 'default', $dir = 'ltr' ) {
 		$themes = ResourceLoaderOOUIModule::getSkinThemeMap();
-		$theme = isset( $themes[$skinName] ) ? $themes[$skinName] : $themes['default'];
+		$theme = $themes[$skinName] ?? $themes['default'];
 		// For example, 'OOUI\WikimediaUITheme'.
 		$themeClass = "OOUI\\{$theme}Theme";
 		OOUI\Theme::setSingleton( new $themeClass() );
@@ -3972,12 +3964,8 @@ class OutputPage extends ContextSource {
 		uksort( $logosPerDppx, function ( $a , $b ) {
 			$a = floatval( $a );
 			$b = floatval( $b );
-
-			if ( $a == $b ) {
-				return 0;
-			}
 			// Sort from smallest to largest (e.g. 1x, 1.5x, 2x)
-			return ( $a < $b ) ? -1 : 1;
+			return $a <=> $b;
 		} );
 
 		foreach ( $logosPerDppx as $dppx => $src ) {

@@ -61,7 +61,7 @@ class ApiResult implements ApiSerializable {
 	 * probably wrong.
 	 * @since 1.25
 	 */
-	const NO_VALIDATE = 12;
+	const NO_VALIDATE = self::NO_SIZE_CHECK | 8;
 
 	/**
 	 * Key for the 'indexed tag name' metadata item. Value is string.
@@ -804,11 +804,11 @@ class ApiResult implements ApiSerializable {
 	 * @return array|object
 	 */
 	protected static function applyTransformations( array $dataIn, array $transforms ) {
-		$strip = isset( $transforms['Strip'] ) ? $transforms['Strip'] : 'none';
+		$strip = $transforms['Strip'] ?? 'none';
 		if ( $strip === 'base' ) {
 			$transforms['Strip'] = 'none';
 		}
-		$transformTypes = isset( $transforms['Types'] ) ? $transforms['Types'] : null;
+		$transformTypes = $transforms['Types'] ?? null;
 		if ( $transformTypes !== null && !is_array( $transformTypes ) ) {
 			throw new InvalidArgumentException( __METHOD__ . ':Value for "Types" must be an array' );
 		}
@@ -954,9 +954,7 @@ class ApiResult implements ApiSerializable {
 
 				case 'kvp':
 				case 'BCkvp':
-					$key = isset( $metadata[self::META_KVP_KEY_NAME] )
-						? $metadata[self::META_KVP_KEY_NAME]
-						: $transformTypes['ArmorKVP'];
+					$key = $metadata[self::META_KVP_KEY_NAME] ?? $transformTypes['ArmorKVP'];
 					$valKey = isset( $transforms['BC'] ) ? '*' : 'value';
 					$assocAsObject = !empty( $transformTypes['AssocAsObject'] );
 					$merge = !empty( $metadata[self::META_KVP_MERGE] );

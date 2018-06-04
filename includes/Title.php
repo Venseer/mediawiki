@@ -784,11 +784,8 @@ class Title implements LinkTarget {
 	 * @return int Result of string comparison, or namespace comparison
 	 */
 	public static function compare( LinkTarget $a, LinkTarget $b ) {
-		if ( $a->getNamespace() == $b->getNamespace() ) {
-			return strcmp( $a->getText(), $b->getText() );
-		} else {
-			return $a->getNamespace() - $b->getNamespace();
-		}
+		return $a->getNamespace() <=> $b->getNamespace()
+			?: strcmp( $a->getText(), $b->getText() );
 	}
 
 	/**
@@ -3089,9 +3086,7 @@ class Title implements LinkTarget {
 		if ( !$this->mRestrictionsLoaded ) {
 			$this->loadRestrictions();
 		}
-		return isset( $this->mRestrictions[$action] )
-				? $this->mRestrictions[$action]
-				: [];
+		return $this->mRestrictions[$action] ?? [];
 	}
 
 	/**
@@ -3119,7 +3114,7 @@ class Title implements LinkTarget {
 		if ( !$this->mRestrictionsLoaded ) {
 			$this->loadRestrictions();
 		}
-		return isset( $this->mRestrictionsExpiry[$action] ) ? $this->mRestrictionsExpiry[$action] : false;
+		return $this->mRestrictionsExpiry[$action] ?? false;
 	}
 
 	/**

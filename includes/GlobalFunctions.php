@@ -121,7 +121,7 @@ function wfArrayDiff2_cmp( $a, $b ) {
 	if ( is_string( $a ) && is_string( $b ) ) {
 		return strcmp( $a, $b );
 	} elseif ( count( $a ) !== count( $b ) ) {
-		return count( $a ) < count( $b ) ? -1 : 1;
+		return count( $a ) <=> count( $b );
 	} else {
 		reset( $a );
 		reset( $b );
@@ -1516,7 +1516,7 @@ function wfBacktrace( $raw = null ) {
 
 	$frames = array_map( function ( $frame ) use ( $frameFormat ) {
 		$file = !empty( $frame['file'] ) ? basename( $frame['file'] ) : '-';
-		$line = isset( $frame['line'] ) ? $frame['line'] : '-';
+		$line = $frame['line'] ?? '-';
 		$call = $frame['function'];
 		if ( !empty( $frame['class'] ) ) {
 			$call = $frame['class'] . $frame['type'] . $call;
@@ -2241,7 +2241,7 @@ function wfShellExec( $cmd, &$retval = null, $environ = [],
 	}
 
 	$includeStderr = isset( $options['duplicateStderr'] ) && $options['duplicateStderr'];
-	$profileMethod = isset( $options['profileMethod'] ) ? $options['profileMethod'] : wfGetCaller();
+	$profileMethod = $options['profileMethod'] ?? wfGetCaller();
 
 	try {
 		$result = Shell::command( [] )
@@ -3148,17 +3148,6 @@ function wfGetMainCache() {
 function wfGetMessageCacheStorage() {
 	global $wgMessageCacheType;
 	return ObjectCache::getInstance( $wgMessageCacheType );
-}
-
-/**
- * Get the cache object used by the parser cache
- *
- * @deprecated since 1.30, use MediaWikiServices::getParserCache()->getCacheStorage()
- * @return BagOStuff
- */
-function wfGetParserCacheStorage() {
-	global $wgParserCacheType;
-	return ObjectCache::getInstance( $wgParserCacheType );
 }
 
 /**

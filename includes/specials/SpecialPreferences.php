@@ -163,7 +163,7 @@ class SpecialPreferences extends SpecialPage {
 	 * Get the preferences form to use.
 	 * @param User $user The user.
 	 * @param IContextSource $context The context.
-	 * @return PreferencesForm|HTMLForm
+	 * @return PreferencesFormLegacy|HTMLForm
 	 */
 	protected function getFormObject( $user, IContextSource $context ) {
 		$preferencesFactory = MediaWikiServices::getInstance()->getPreferencesFactory();
@@ -184,9 +184,7 @@ class SpecialPreferences extends SpecialPage {
 
 		$context = new DerivativeContext( $this->getContext() );
 		$context->setTitle( $this->getPageTitle( 'reset' ) ); // Reset subpage
-		$htmlForm = HTMLForm::factory(
-			$this->oouiEnabled ? 'ooui' : 'vform', [], $context, 'prefs-restore'
-		);
+		$htmlForm = HTMLForm::factory( 'ooui', [], $context, 'prefs-restore' );
 
 		$htmlForm->setSubmitTextMsg( 'restoreprefs' );
 		$htmlForm->setSubmitDestructive();

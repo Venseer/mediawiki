@@ -1675,7 +1675,7 @@ class AuthManager implements LoggerAwareInterface {
 		}
 
 		// Checks passed, create the user...
-		$from = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : 'CLI';
+		$from = $_SERVER['REQUEST_URI'] ?? 'CLI';
 		$this->logger->info( __METHOD__ . ': creating new user ({username}) - from: {from}', [
 			'username' => $username,
 			'from' => $from,
@@ -2286,9 +2286,10 @@ class AuthManager implements LoggerAwareInterface {
 			$spec = [ 'sort2' => $i++ ] + $spec + [ 'sort' => 0 ];
 		}
 		unset( $spec );
+		// Sort according to the 'sort' field, and if they are equal, according to 'sort2'
 		usort( $specs, function ( $a, $b ) {
-			return ( (int)$a['sort'] ) - ( (int)$b['sort'] )
-				?: $a['sort2'] - $b['sort2'];
+			return $a['sort'] <=> $b['sort']
+				?: $a['sort2'] <=> $b['sort2'];
 		} );
 
 		$ret = [];

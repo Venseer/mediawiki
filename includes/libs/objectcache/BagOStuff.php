@@ -81,6 +81,9 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 	/** @var callable[] */
 	protected $busyCallbacks = [];
 
+	/** @var float|null */
+	private $wallClockOverride;
+
 	/** @var int[] Map of (ATTR_* class constant => QOS_* class constant) */
 	protected $attrMap = [];
 
@@ -119,15 +122,13 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 			$this->keyspace = $params['keyspace'];
 		}
 
-		$this->asyncHandler = isset( $params['asyncHandler'] )
-			? $params['asyncHandler']
-			: null;
+		$this->asyncHandler = $params['asyncHandler'] ?? null;
 
 		if ( !empty( $params['reportDupes'] ) && is_callable( $this->asyncHandler ) ) {
 			$this->reportDupes = true;
 		}
 
-		$this->syncTimeout = isset( $params['syncTimeout'] ) ? $params['syncTimeout'] : 3;
+		$this->syncTimeout = $params['syncTimeout'] ?? 3;
 	}
 
 	/**
@@ -342,7 +343,21 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 	 * @throws Exception
 	 */
 	protected function cas( $casToken, $key, $value, $exptime = 0 ) {
-		throw new Exception( "CAS is not implemented in " . __CLASS__ );
+		if ( !$this->lock( $key, 0 ) ) {
+			return false; // non-blocking
+		}
+
+		$curCasToken = null; // passed by reference
+		$this->getWithToken( $key, $curCasToken, self::READ_LATEST );
+		if ( $casToken === $curCasToken ) {
+			$success = $this->set( $key, $value, $exptime );
+		} else {
+			$success = false; // mismatched or failed
+		}
+
+		$this->unlock( $key );
+
+		return $success;
 	}
 
 	/**
@@ -484,11 +499,11 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 			return null;
 		}
 
-		$lSince = microtime( true ); // lock timestamp
+		$lSince = $this->getCurrentTime(); // lock timestamp
 
 		return new ScopedCallback( function () use ( $key, $lSince, $expiry ) {
 			$latency = 0.050; // latency skew (err towards keeping lock present)
-			$age = ( microtime( true ) - $lSince + $latency );
+			$age = ( $this->getCurrentTime() - $lSince + $latency );
 			if ( ( $age + $latency ) >= $expiry ) {
 				$this->logger->warning( "Lock for $key held too long ($age sec)." );
 				return; // expired; it's not "safe" to delete the key
@@ -702,7 +717,7 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 	 */
 	protected function convertExpiry( $exptime ) {
 		if ( $exptime != 0 && $exptime < ( 10 * self::TTL_YEAR ) ) {
-			return time() + $exptime;
+			return (int)$this->getCurrentTime() + $exptime;
 		} else {
 			return $exptime;
 		}
@@ -717,7 +732,7 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 	 */
 	protected function convertToRelative( $exptime ) {
 		if ( $exptime >= ( 10 * self::TTL_YEAR ) ) {
-			$exptime -= time();
+			$exptime -= (int)$this->getCurrentTime();
 			if ( $exptime <= 0 ) {
 				$exptime = 1;
 			}
@@ -784,7 +799,7 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 	 * @since 1.28
 	 */
 	public function getQoS( $flag ) {
-		return isset( $this->attrMap[$flag] ) ? $this->attrMap[$flag] : self::QOS_UNKNOWN;
+		return $this->attrMap[$flag] ?? self::QOS_UNKNOWN;
 	}
 
 	/**
@@ -806,5 +821,21 @@ abstract class BagOStuff implements IExpiringStore, LoggerAwareInterface {
 		}
 
 		return $map;
+	}
+
+	/**
+	 * @return float UNIX timestamp
+	 * @codeCoverageIgnore
+	 */
+	protected function getCurrentTime() {
+		return $this->wallClockOverride ?: microtime( true );
+	}
+
+	/**
+	 * @param float|null &$time Mock UNIX timestamp for testing
+	 * @codeCoverageIgnore
+	 */
+	public function setMockTime( &$time ) {
+		$this->wallClockOverride =& $time;
 	}
 }

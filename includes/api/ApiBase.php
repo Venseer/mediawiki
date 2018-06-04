@@ -761,10 +761,23 @@ abstract class ApiBase extends ContextSource {
 	 * value - validated value from user or default. limits will not be
 	 * parsed if $parseLimit is set to false; use this when the max
 	 * limit is not definitive yet, e.g. when getting revisions.
-	 * @param bool $parseLimit True by default
+	 * @param bool|array $options If a boolean, uses that as the value for 'parseLimit'
+	 *  - parseLimit: (bool, default true) Whether to parse the 'max' value for limit types
+	 *  - safeMode: (bool, default false) If true, avoid throwing for parameter validation errors.
+	 *    Returned parameter values might be ApiUsageException instances.
 	 * @return array
 	 */
-	public function extractRequestParams( $parseLimit = true ) {
+	public function extractRequestParams( $options = [] ) {
+		if ( is_bool( $options ) ) {
+			$options = [ 'parseLimit' => $options ];
+		}
+		$options += [
+			'parseLimit' => true,
+			'safeMode' => false,
+		];
+
+		$parseLimit = (bool)$options['parseLimit'];
+
 		// Cache parameters, for performance and to avoid T26564.
 		if ( !isset( $this->mParamCache[$parseLimit] ) ) {
 			$params = $this->getFinalParams() ?: [];
@@ -778,9 +791,13 @@ abstract class ApiBase extends ContextSource {
 				if ( isset( $paramSettings[self::PARAM_TEMPLATE_VARS] ) ) {
 					$toProcess[] = [ $paramName, $paramSettings[self::PARAM_TEMPLATE_VARS], $paramSettings ];
 				} else {
-					$results[$paramName] = $this->getParameterFromSettings(
-						$paramName, $paramSettings, $parseLimit
-					);
+					try {
+						$results[$paramName] = $this->getParameterFromSettings(
+							$paramName, $paramSettings, $parseLimit
+						);
+					} catch ( ApiUsageException $ex ) {
+						$results[$paramName] = $ex;
+					}
 				}
 			}
 
@@ -826,7 +843,11 @@ abstract class ApiBase extends ContextSource {
 
 						$newName = str_replace( $placeholder, $value, $name );
 						if ( !$targets ) {
-							$results[$newName] = $this->getParameterFromSettings( $newName, $settings, $parseLimit );
+							try {
+								$results[$newName] = $this->getParameterFromSettings( $newName, $settings, $parseLimit );
+							} catch ( ApiUsageException $ex ) {
+								$results[$newName] = $ex;
+							}
 						} else {
 							$newTargets = [];
 							foreach ( $targets as $k => $v ) {
@@ -842,6 +863,15 @@ abstract class ApiBase extends ContextSource {
 			$this->mParamCache[$parseLimit] = $results;
 		}
 
+		$ret = $this->mParamCache[$parseLimit];
+		if ( !$options['safeMode'] ) {
+			foreach ( $ret as $v ) {
+				if ( $v instanceof ApiUsageException ) {
+					throw $v;
+				}
+			}
+		}
+
 		return $this->mParamCache[$parseLimit];
 	}
 
@@ -852,7 +882,14 @@ abstract class ApiBase extends ContextSource {
 	 * @return mixed Parameter value
 	 */
 	protected function getParameter( $paramName, $parseLimit = true ) {
-		return $this->extractRequestParams( $parseLimit )[$paramName];
+		$ret = $this->extractRequestParams( [
+			'parseLimit' => $parseLimit,
+			'safeMode' => true,
+		] )[$paramName];
+		if ( $ret instanceof ApiUsageException ) {
+			throw $ret;
+		}
+		return $ret;
 	}
 
 	/**
@@ -1119,36 +1156,16 @@ abstract class ApiBase extends ContextSource {
 			];
 		}
 
-		$default = isset( $paramSettings[self::PARAM_DFLT] )
-			? $paramSettings[self::PARAM_DFLT]
-			: null;
-		$multi = isset( $paramSettings[self::PARAM_ISMULTI] )
-			? $paramSettings[self::PARAM_ISMULTI]
-			: false;
-		$multiLimit1 = isset( $paramSettings[self::PARAM_ISMULTI_LIMIT1] )
-			? $paramSettings[self::PARAM_ISMULTI_LIMIT1]
-			: null;
-		$multiLimit2 = isset( $paramSettings[self::PARAM_ISMULTI_LIMIT2] )
-			? $paramSettings[self::PARAM_ISMULTI_LIMIT2]
-			: null;
-		$type = isset( $paramSettings[self::PARAM_TYPE] )
-			? $paramSettings[self::PARAM_TYPE]
-			: null;
-		$dupes = isset( $paramSettings[self::PARAM_ALLOW_DUPLICATES] )
-			? $paramSettings[self::PARAM_ALLOW_DUPLICATES]
-			: false;
-		$deprecated = isset( $paramSettings[self::PARAM_DEPRECATED] )
-			? $paramSettings[self::PARAM_DEPRECATED]
-			: false;
-		$deprecatedValues = isset( $paramSettings[self::PARAM_DEPRECATED_VALUES] )
-			? $paramSettings[self::PARAM_DEPRECATED_VALUES]
-			: [];
-		$required = isset( $paramSettings[self::PARAM_REQUIRED] )
-			? $paramSettings[self::PARAM_REQUIRED]
-			: false;
-		$allowAll = isset( $paramSettings[self::PARAM_ALL] )
-			? $paramSettings[self::PARAM_ALL]
-			: false;
+		$default = $paramSettings[self::PARAM_DFLT] ?? null;
+		$multi = $paramSettings[self::PARAM_ISMULTI] ?? false;
+		$multiLimit1 = $paramSettings[self::PARAM_ISMULTI_LIMIT1] ?? null;
+		$multiLimit2 = $paramSettings[self::PARAM_ISMULTI_LIMIT2] ?? null;
+		$type = $paramSettings[self::PARAM_TYPE] ?? null;
+		$dupes = $paramSettings[self::PARAM_ALLOW_DUPLICATES] ?? false;
+		$deprecated = $paramSettings[self::PARAM_DEPRECATED] ?? false;
+		$deprecatedValues = $paramSettings[self::PARAM_DEPRECATED_VALUES] ?? [];
+		$required = $paramSettings[self::PARAM_REQUIRED] ?? false;
+		$allowAll = $paramSettings[self::PARAM_ALL] ?? false;
 
 		// When type is not given, and no choices, the type is the same as $default
 		if ( !isset( $type ) ) {
@@ -1276,10 +1293,9 @@ abstract class ApiBase extends ContextSource {
 						}
 						break;
 					case 'integer': // Force everything using intval() and optionally validate limits
-						$min = isset( $paramSettings[self::PARAM_MIN] ) ? $paramSettings[self::PARAM_MIN] : null;
-						$max = isset( $paramSettings[self::PARAM_MAX] ) ? $paramSettings[self::PARAM_MAX] : null;
-						$enforceLimits = isset( $paramSettings[self::PARAM_RANGE_ENFORCE] )
-							? $paramSettings[self::PARAM_RANGE_ENFORCE] : false;
+						$min = $paramSettings[self::PARAM_MIN] ?? null;
+						$max = $paramSettings[self::PARAM_MAX] ?? null;
+						$enforceLimits = $paramSettings[self::PARAM_RANGE_ENFORCE] ?? false;
 
 						if ( is_array( $value ) ) {
 							$value = array_map( 'intval', $value );
@@ -1311,7 +1327,7 @@ abstract class ApiBase extends ContextSource {
 						if ( $multi ) {
 							self::dieDebug( __METHOD__, "Multi-values not supported for $encParamName" );
 						}
-						$min = isset( $paramSettings[self::PARAM_MIN] ) ? $paramSettings[self::PARAM_MIN] : 0;
+						$min = $paramSettings[self::PARAM_MIN] ?? 0;
 						if ( $value == 'max' ) {
 							$value = $this->getMain()->canApiHighLimits()
 								? $paramSettings[self::PARAM_MAX2]
@@ -2298,7 +2314,7 @@ abstract class ApiBase extends ContextSource {
 					'api-help-param-token',
 					$this->needsToken(),
 				],
-			] + ( isset( $params['token'] ) ? $params['token'] : [] );
+			] + ( $params['token'] ?? [] );
 		}
 
 		// Avoid PHP 7.1 warning of passing $this by reference
@@ -2338,7 +2354,7 @@ abstract class ApiBase extends ContextSource {
 				$settings = [];
 			}
 
-			$d = isset( $desc[$param] ) ? $desc[$param] : '';
+			$d = $desc[$param] ?? '';
 			if ( is_array( $d ) ) {
 				// Special handling for prop parameters
 				$d = array_map( function ( $line ) {
@@ -2420,9 +2436,7 @@ abstract class ApiBase extends ContextSource {
 				}
 
 				$valueMsgs = $settings[self::PARAM_HELP_MSG_PER_VALUE];
-				$deprecatedValues = isset( $settings[self::PARAM_DEPRECATED_VALUES] )
-					? $settings[self::PARAM_DEPRECATED_VALUES]
-					: [];
+				$deprecatedValues = $settings[self::PARAM_DEPRECATED_VALUES] ?? [];
 
 				foreach ( $settings[self::PARAM_TYPE] as $value ) {
 					if ( isset( $valueMsgs[$value] ) ) {
@@ -2774,7 +2788,7 @@ abstract class ApiBase extends ContextSource {
 		if ( !$msg instanceof IApiMessage ) {
 			$key = $msg->getKey();
 			$params = $msg->getParams();
-			array_unshift( $params, isset( self::$messageMap[$key] ) ? self::$messageMap[$key] : $key );
+			array_unshift( $params, self::$messageMap[$key] ?? $key );
 			$msg = ApiMessage::create( $params );
 		}
 

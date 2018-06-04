@@ -52,9 +52,9 @@ class LoadBalancerSingle extends LoadBalancer {
 					'load' => 1,
 				]
 			],
-			'trxProfiler' => isset( $params['trxProfiler'] ) ? $params['trxProfiler'] : null,
-			'srvCache' => isset( $params['srvCache'] ) ? $params['srvCache'] : null,
-			'wanCache' => isset( $params['wanCache'] ) ? $params['wanCache'] : null
+			'trxProfiler' => $params['trxProfiler'] ?? null,
+			'srvCache' => $params['srvCache'] ?? null,
+			'wanCache' => $params['wanCache'] ?? null
 		] );
 
 		if ( isset( $params['readOnlyReason'] ) ) {
@@ -77,4 +77,7 @@ class LoadBalancerSingle extends LoadBalancer {
 	}
 }
 
+/**
+ * @deprecated since 1.29
+ */
 class_alias( LoadBalancerSingle::class, 'LoadBalancerSingle' );

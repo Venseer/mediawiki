@@ -61,7 +61,7 @@
 	</rule>
 	<rule ref="MediaWiki.NamingConventions.ValidGlobalName">
 		<properties>
-			<property name="ignoreList" type="array" value="$IP,$messageMemc,$parserMemc" />
+			<property name="ignoreList" type="array" value="$IP,$messageMemc" />
 		</properties>
 	</rule>
 	<rule ref="Generic.Files.LineLength">
@@ -72,8 +72,6 @@
 			Whitelist existing violations, but enable the sniff to prevent
 			any new occurrences.
 		-->
-		<exclude-pattern>*/includes/api/ApiMessage\.php</exclude-pattern>
-		<exclude-pattern>*/includes/api/ApiUsageException\.php</exclude-pattern>
 		<exclude-pattern>*/includes/media/XCF\.php</exclude-pattern>
 		<exclude-pattern>*/includes/Feed\.php</exclude-pattern>
 		<exclude-pattern>*/includes/libs/xmp/XMP\.php</exclude-pattern>
@@ -84,6 +82,7 @@
 		<exclude-pattern>*/includes/specials/SpecialMostinterwikis\.php</exclude-pattern>
 		<exclude-pattern>*/includes/cache/CacheDependency\.php</exclude-pattern>
 		<exclude-pattern>*/includes/cache/CacheHelper\.php</exclude-pattern>
+		<exclude-pattern>*/includes/compat/XMPReader\.php</exclude-pattern>
 		<exclude-pattern>*/includes/diff/DairikiDiff\.php</exclude-pattern>
 		<exclude-pattern>*/includes/specials/SpecialAncientpages\.php</exclude-pattern>
 		<exclude-pattern>*/includes/specials/SpecialBrokenRedirects\.php</exclude-pattern>
@@ -155,6 +154,7 @@
 		<exclude-pattern>*/maintenance/language/date-formats\.php</exclude-pattern>
 		<exclude-pattern>*/maintenance/language/languages.inc</exclude-pattern>
 		<exclude-pattern>*/maintenance/minify\.php</exclude-pattern>
+		<exclude-pattern>*/maintenance/mysql\.php</exclude-pattern>
 		<exclude-pattern>*/maintenance/parse\.php</exclude-pattern>
 		<exclude-pattern>*/maintenance/preprocessorFuzzTest\.php</exclude-pattern>
 		<exclude-pattern>*/maintenance/rebuildImages\.php</exclude-pattern>
@@ -223,6 +223,7 @@
 		<exclude-pattern>*/includes/AuthPlugin\.php</exclude-pattern>
 		<exclude-pattern>*/includes/cache/CacheDependency\.php</exclude-pattern>
 		<exclude-pattern>*/includes/cache/CacheHelper\.php</exclude-pattern>
+		<exclude-pattern>*/includes/compat/XMPReader\.php</exclude-pattern>
 		<exclude-pattern>*/includes/deferred/CdnCacheUpdate\.php</exclude-pattern>
 		<exclude-pattern>*/includes/diff/DairikiDiff\.php</exclude-pattern>
 		<exclude-pattern>*/includes/diff/DiffEngine\.php</exclude-pattern>

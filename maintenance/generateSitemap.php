@@ -177,7 +177,7 @@ class GenerateSitemap extends Maintenance {
 	public function execute() {
 		$this->setNamespacePriorities();
 		$this->url_limit = 50000;
-		$this->size_limit = pow( 2, 20 ) * 10;
+		$this->size_limit = ( 2 ** 20 ) * 10;
 
 		# Create directory if needed
 		$fspath = $this->getOption( 'fspath', getcwd() );
@@ -276,9 +276,7 @@ class GenerateSitemap extends Maintenance {
 	 * @return string
 	 */
 	function priority( $namespace ) {
-		return isset( $this->priorities[$namespace] )
-			? $this->priorities[$namespace]
-			: $this->guessPriority( $namespace );
+		return $this->priorities[$namespace] ?? $this->guessPriority( $namespace );
 	}
 
 	/**

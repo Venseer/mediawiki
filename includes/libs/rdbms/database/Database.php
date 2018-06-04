@@ -315,9 +315,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 
 		$this->sessionVars = $params['variables'];
 
-		$this->srvCache = isset( $params['srvCache'] )
-			? $params['srvCache']
-			: new HashBagOStuff();
+		$this->srvCache = $params['srvCache'] ?? new HashBagOStuff();
 
 		$this->profiler = $params['profiler'];
 		$this->trxProfiler = $params['trxProfiler'];
@@ -420,29 +418,27 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 * @since 1.18
 	 */
 	final public static function factory( $dbType, $p = [], $connect = self::NEW_CONNECTED ) {
-		$class = self::getClass( $dbType, isset( $p['driver'] ) ? $p['driver'] : null );
+		$class = self::getClass( $dbType, $p['driver'] ?? null );
 
 		if ( class_exists( $class ) && is_subclass_of( $class, IDatabase::class ) ) {
 			// Resolve some defaults for b/c
-			$p['host'] = isset( $p['host'] ) ? $p['host'] : false;
-			$p['user'] = isset( $p['user'] ) ? $p['user'] : false;
-			$p['password'] = isset( $p['password'] ) ? $p['password'] : false;
-			$p['dbname'] = isset( $p['dbname'] ) ? $p['dbname'] : false;
-			$p['flags'] = isset( $p['flags'] ) ? $p['flags'] : 0;
-			$p['variables'] = isset( $p['variables'] ) ? $p['variables'] : [];
-			$p['tablePrefix'] = isset( $p['tablePrefix'] ) ? $p['tablePrefix'] : '';
-			$p['schema'] = isset( $p['schema'] ) ? $p['schema'] : '';
-			$p['cliMode'] = isset( $p['cliMode'] )
-				? $p['cliMode']
-				: ( PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg' );
-			$p['agent'] = isset( $p['agent'] ) ? $p['agent'] : '';
+			$p['host'] = $p['host'] ?? false;
+			$p['user'] = $p['user'] ?? false;
+			$p['password'] = $p['password'] ?? false;
+			$p['dbname'] = $p['dbname'] ?? false;
+			$p['flags'] = $p['flags'] ?? 0;
+			$p['variables'] = $p['variables'] ?? [];
+			$p['tablePrefix'] = $p['tablePrefix'] ?? '';
+			$p['schema'] = $p['schema'] ?? '';
+			$p['cliMode'] = $p['cliMode'] ?? ( PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg' );
+			$p['agent'] = $p['agent'] ?? '';
 			if ( !isset( $p['connLogger'] ) ) {
 				$p['connLogger'] = new NullLogger();
 			}
 			if ( !isset( $p['queryLogger'] ) ) {
 				$p['queryLogger'] = new NullLogger();
 			}
-			$p['profiler'] = isset( $p['profiler'] ) ? $p['profiler'] : null;
+			$p['profiler'] = $p['profiler'] ?? null;
 			if ( !isset( $p['trxProfiler'] ) ) {
 				$p['trxProfiler'] = new TransactionProfiler();
 			}
@@ -1169,27 +1165,21 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 
 		if ( $ret === false ) {
 			if ( $this->trxLevel ) {
-				if ( !$this->wasKnownStatementRollbackError() ) {
-					# Either the query was aborted or all queries after BEGIN where aborted.
-					if ( $this->explicitTrxActive() || $priorWritesPending ) {
-						# In the first case, the only options going forward are (a) ROLLBACK, or
-						# (b) ROLLBACK TO SAVEPOINT (if one was set). If the later case, the only
-						# option is ROLLBACK, since the snapshots would have been released.
-						$this->trxStatus = self::STATUS_TRX_ERROR;
-						$this->trxStatusCause =
-							$this->makeQueryException( $lastError, $lastErrno, $sql, $fname );
-						$tempIgnore = false; // cannot recover
-					} else {
-						# Nothing prior was there to lose from the transaction,
-						# so just roll it back.
-						$this->rollback( __METHOD__ . " ($fname)", self::FLUSHING_INTERNAL );
-					}
-					$this->trxStatusIgnoredCause = null;
-				} else {
+				if ( $this->wasKnownStatementRollbackError() ) {
 					# We're ignoring an error that caused just the current query to be aborted.
-					# But log the cause so we can log a deprecation notice if a
-					# caller actually does ignore it.
+					# But log the cause so we can log a deprecation notice if a caller actually
+					# does ignore it.
 					$this->trxStatusIgnoredCause = [ $lastError, $lastErrno, $fname ];
+				} else {
+					# Either the query was aborted or all queries after BEGIN where aborted.
+					# In the first case, the only options going forward are (a) ROLLBACK, or
+					# (b) ROLLBACK TO SAVEPOINT (if one was set). If the later case, the only
+					# option is ROLLBACK, since the snapshots would have been released.
+					$this->trxStatus = self::STATUS_TRX_ERROR;
+					$this->trxStatusCause =
+						$this->makeQueryException( $lastError, $lastErrno, $sql, $fname );
+					$tempIgnore = false; // cannot recover
+					$this->trxStatusIgnoredCause = null;
 				}
 			}
 
@@ -1722,7 +1712,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 
 		if ( isset( $options['LIMIT'] ) ) {
 			$sql = $this->limitResult( $sql, $options['LIMIT'],
-				isset( $options['OFFSET'] ) ? $options['OFFSET'] : false );
+				$options['OFFSET'] ?? false );
 		}
 		$sql = "$sql $postLimitTail";
 
@@ -1875,7 +1865,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			if ( !$var ) {
 				$column = null;
 			} elseif ( count( $var ) == 1 ) {
-				$column = isset( $var[0] ) ? $var[0] : reset( $var );
+				$column = $var[0] ?? reset( $var );
 			} else {
 				throw new DBUnexpectedError( $this, __METHOD__ . ': got multiple columns.' );
 			}
@@ -2583,9 +2573,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 * @return string
 	 */
 	protected function indexName( $index ) {
-		return isset( $this->indexAliases[$index] )
-			? $this->indexAliases[$index]
-			: $index;
+		return $this->indexAliases[$index] ?? $index;
 	}
 
 	public function addQuotes( $s ) {
@@ -3138,8 +3126,8 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		// $conds. Then union them together (using UNION ALL, because the
 		// product *should* already be distinct).
 		$orderBy = $this->makeOrderBy( $options );
-		$limit = isset( $options['LIMIT'] ) ? $options['LIMIT'] : null;
-		$offset = isset( $options['OFFSET'] ) ? $options['OFFSET'] : false;
+		$limit = $options['LIMIT'] ?? null;
+		$offset = $options['OFFSET'] ?? false;
 		$all = empty( $options['NOTALL'] ) && !in_array( 'NOTALL', $options );
 		if ( !$this->unionSupportsOrderAndLimit() ) {
 			unset( $options['ORDER BY'], $options['LIMIT'], $options['OFFSET'] );
@@ -3448,16 +3436,11 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->trxIdleCallbacks = []; // consumed (and recursion guard)
 			$this->trxEndCallbacks = []; // consumed (recursion guard)
 			foreach ( $callbacks as $callback ) {
+				++$count;
+				list( $phpCallback ) = $callback;
+				$this->clearFlag( self::DBO_TRX ); // make each query its own transaction
 				try {
-					++$count;
-					list( $phpCallback ) = $callback;
-					$this->clearFlag( self::DBO_TRX ); // make each query its own transaction
 					call_user_func( $phpCallback, $trigger, $this );
-					if ( $autoTrx ) {
-						$this->setFlag( self::DBO_TRX ); // restore automatic begin()
-					} else {
-						$this->clearFlag( self::DBO_TRX ); // restore auto-commit
-					}
 				} catch ( Exception $ex ) {
 					call_user_func( $this->errorLogger, $ex );
 					$e = $e ?: $ex;
@@ -3465,6 +3448,12 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 					// their transactions are ended so other callbacks don't fail
 					if ( $this->trxLevel() ) {
 						$this->rollback( __METHOD__, self::FLUSHING_INTERNAL );
+					}
+				} finally {
+					if ( $autoTrx ) {
+						$this->setFlag( self::DBO_TRX ); // restore automatic begin()
+					} else {
+						$this->clearFlag( self::DBO_TRX ); // restore auto-commit
 					}
 				}
 			}
@@ -4638,5 +4627,12 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 }
 
-class_alias( Database::class, 'DatabaseBase' ); // b/c for old name
-class_alias( Database::class, 'Database' ); // b/c global alias
+/**
+ * @deprecated since 1.28
+ */
+class_alias( Database::class, 'DatabaseBase' );
+
+/**
+ * @deprecated since 1.29
+ */
+class_alias( Database::class, 'Database' );

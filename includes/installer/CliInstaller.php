@@ -38,7 +38,6 @@ class CliInstaller extends Installer {
 		'dbpass' => 'wgDBpassword',
 		'dbprefix' => 'wgDBprefix',
 		'dbtableoptions' => 'wgDBTableOptions',
-		'dbmysql5' => 'wgDBmysql5',
 		'dbport' => 'wgDBport',
 		'dbschema' => 'wgDBmwschema',
 		'dbpath' => 'wgSQLiteDataDir',
@@ -97,7 +96,7 @@ class CliInstaller extends Installer {
 			$this->setVar( '_InstallUser',
 				$option['installdbuser'] );
 			$this->setVar( '_InstallPassword',
-				isset( $option['installdbpass'] ) ? $option['installdbpass'] : "" );
+				$option['installdbpass'] ?? "" );
 
 			// Assume that if we're given the installer user, we'll create the account.
 			$this->setVar( '_CreateDBAccount', true );

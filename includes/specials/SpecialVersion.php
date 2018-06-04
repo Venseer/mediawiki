@@ -233,7 +233,9 @@ class SpecialVersion extends SpecialPage {
 		}
 		$software[$dbr->getSoftwareLink()] = $dbr->getServerInfo();
 
-		$software['[http://site.icu-project.org/ ICU]'] = INTL_ICU_VERSION;
+		if ( defined( 'INTL_ICU_VERSION' ) ) {
+			$software['[http://site.icu-project.org/ ICU]'] = INTL_ICU_VERSION;
+		}
 
 		// Allow a hook to add/remove items.
 		Hooks::run( 'SoftwareInfo', [ &$software ] );
@@ -394,7 +396,7 @@ class SpecialVersion extends SpecialPage {
 	public static function getExtensionTypeName( $type ) {
 		$types = self::getExtensionTypes();
 
-		return isset( $types[$type] ) ? $types[$type] : $types['other'];
+		return $types[$type] ?? $types['other'];
 	}
 
 	/**
@@ -656,13 +658,7 @@ class SpecialVersion extends SpecialPage {
 	 * @return int
 	 */
 	public function compare( $a, $b ) {
-		if ( $a['name'] === $b['name'] ) {
-			return 0;
-		} else {
-			return $this->getLanguage()->lc( $a['name'] ) > $this->getLanguage()->lc( $b['name'] )
-				? 1
-				: -1;
-		}
+		return $this->getLanguage()->lc( $a['name'] ) <=> $this->getLanguage()->lc( $b['name'] );
 	}
 
 	/**
@@ -836,7 +832,7 @@ class SpecialVersion extends SpecialPage {
 		$description = $out->parseInline( $description );
 
 		// ... now get the authors for this extension
-		$authors = isset( $extension['author'] ) ? $extension['author'] : [];
+		$authors = $extension['author'] ?? [];
 		$authors = $this->listAuthors( $authors, $extension['name'], $extensionPath );
 
 		// Finally! Create the table

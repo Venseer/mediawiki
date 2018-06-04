@@ -976,7 +976,7 @@ abstract class Skin extends ContextSource {
 		if ( is_string( $icon ) ) {
 			$html = $icon;
 		} else { // Assuming array
-			$url = isset( $icon["url"] ) ? $icon["url"] : null;
+			$url = $icon["url"] ?? null;
 			unset( $icon["url"] );
 			if ( isset( $icon["src"] ) && $withImage === 'withImage' ) {
 				// do this the lazy way, just pass icon data as an attribute array
@@ -1454,7 +1454,7 @@ abstract class Skin extends ContextSource {
 
 		if ( count( $newtalks ) == 1 && $newtalks[0]['wiki'] === wfWikiID() ) {
 			$uTalkTitle = $user->getTalkPage();
-			$lastSeenRev = isset( $newtalks[0]['rev'] ) ? $newtalks[0]['rev'] : null;
+			$lastSeenRev = $newtalks[0]['rev'] ?? null;
 			$nofAuthors = 0;
 			if ( $lastSeenRev !== null ) {
 				$plural = true; // Default if we have a last seen revision: if unknown, use plural
@@ -1605,8 +1605,7 @@ abstract class Skin extends ContextSource {
 	}
 
 	/**
-	 * Create a section edit link.  This supersedes editSectionLink() and
-	 * editSectionLinkForOther().
+	 * Create a section edit link.
 	 *
 	 * @param Title $nt The title being linked to (may not be the same as
 	 *   the current page, if the section is included from a template)

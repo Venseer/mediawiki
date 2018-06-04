@@ -45,7 +45,7 @@ use MWTimestamp;
 use OutputPage;
 use Parser;
 use ParserOptions;
-use PreferencesForm;
+use PreferencesFormLegacy;
 use Psr\Log\LoggerAwareTrait;
 use Psr\Log\NullLogger;
 use Skin;
@@ -185,9 +185,7 @@ class DefaultPreferencesFactory implements PreferencesFactory {
 				$info['disabled'] = 'disabled';
 			}
 			$field = HTMLForm::loadInputFromParameters( $name, $info, $dummyForm ); // For validation
-			$globalDefault = isset( $defaultOptions[$name] )
-				? $defaultOptions[$name]
-				: null;
+			$globalDefault = $defaultOptions[$name] ?? null;
 
 			// If it validates, set it as the default
 			if ( isset( $info['default'] ) ) {
@@ -221,7 +219,7 @@ class DefaultPreferencesFactory implements PreferencesFactory {
 		if ( ( isset( $info['type'] ) && $info['type'] == 'multiselect' ) ||
 				( isset( $info['class'] ) && $info['class'] == \HTMLMultiSelectField::class ) ) {
 			$options = HTMLFormField::flattenOptions( $info['options'] );
-			$prefix = isset( $info['prefix'] ) ? $info['prefix'] : $name;
+			$prefix = $info['prefix'] ?? $name;
 			$val = [];
 
 			foreach ( $options as $value ) {
@@ -236,7 +234,7 @@ class DefaultPreferencesFactory implements PreferencesFactory {
 				( isset( $info['class'] ) && $info['class'] == \HTMLCheckMatrix::class ) ) {
 			$columns = HTMLFormField::flattenOptions( $info['columns'] );
 			$rows = HTMLFormField::flattenOptions( $info['rows'] );
-			$prefix = isset( $info['prefix'] ) ? $info['prefix'] : $name;
+			$prefix = $info['prefix'] ?? $name;
 			$val = [];
 
 			foreach ( $columns as $column ) {
@@ -1488,7 +1486,7 @@ class DefaultPreferencesFactory implements PreferencesFactory {
 	public function getForm(
 		User $user,
 		IContextSource $context,
-		$formClass = PreferencesForm::class,
+		$formClass = PreferencesFormLegacy::class,
 		array $remove = []
 	) {
 		if ( SpecialPreferences::isOouiEnabled( $context ) ) {
@@ -1723,9 +1721,8 @@ class DefaultPreferencesFactory implements PreferencesFactory {
 	protected function submitForm( array $formData, HTMLForm $form ) {
 		$res = $this->saveFormData( $formData, $form );
 
-		if ( $res ) {
+		if ( $res === true ) {
 			$context = $form->getContext();
-
 			$urlOptions = [];
 
 			if ( $res === 'eauth' ) {
@@ -1749,7 +1746,7 @@ class DefaultPreferencesFactory implements PreferencesFactory {
 			$context->getOutput()->redirect( $url );
 		}
 
-		return Status::newGood();
+		return ( $res === true ? Status::newGood() : $res );
 	}
 
 	/**

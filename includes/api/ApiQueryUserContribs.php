@@ -367,11 +367,11 @@ class ApiQueryUserContribs extends ApiQueryBase {
 				if ( $batchSize === 1 ) { // One user, can't be different
 					$ret = 0;
 				} elseif ( $this->orderBy === 'id' ) {
-					$ret = $a[0]->rev_user - $b[0]->rev_user;
+					$ret = $a[0]->rev_user <=> $b[0]->rev_user;
 				} elseif ( $this->orderBy === 'name' ) {
 					$ret = strcmp( $a[0]->rev_user_text, $b[0]->rev_user_text );
 				} else {
-					$ret = $a[0]->rev_actor - $b[0]->rev_actor;
+					$ret = $a[0]->rev_actor <=> $b[0]->rev_actor;
 				}
 
 				if ( !$ret ) {
@@ -382,7 +382,7 @@ class ApiQueryUserContribs extends ApiQueryBase {
 				}
 
 				if ( !$ret ) {
-					$ret = $a[0]->rev_id - $b[0]->rev_id;
+					$ret = $a[0]->rev_id <=> $b[0]->rev_id;
 				}
 
 				return $neg * $ret;
@@ -691,9 +691,7 @@ class ApiQueryUserContribs extends ApiQueryBase {
 			&& !is_null( $row->rev_len )
 			&& !is_null( $row->rev_parent_id )
 		) {
-			$parentLen = isset( $this->parentLens[$row->rev_parent_id] )
-				? $this->parentLens[$row->rev_parent_id]
-				: 0;
+			$parentLen = $this->parentLens[$row->rev_parent_id] ?? 0;
 			$vals['sizediff'] = intval( $row->rev_len - $parentLen );
 		}
 
@@ -832,4 +830,8 @@ class ApiQueryUserContribs extends ApiQueryBase {
 	}
 }
 
+/**
+ * @since 1.9
+ * @deprecated since 1.32
+ */
 class_alias( ApiQueryUserContribs::class, 'ApiQueryContributions' );

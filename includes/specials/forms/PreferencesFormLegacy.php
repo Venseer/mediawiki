@@ -104,7 +104,7 @@ class PreferencesFormLegacy extends HTMLForm {
 		foreach ( $this->mFlatFields as $fieldname => $field ) {
 			if ( $field instanceof HTMLNestedFilterable ) {
 				$info = $field->mParams;
-				$prefix = isset( $info['prefix'] ) ? $info['prefix'] : $fieldname;
+				$prefix = $info['prefix'] ?? $fieldname;
 				foreach ( $field->filterDataForSubmit( $data[$fieldname] ) as $key => $value ) {
 					$data["$prefix$key"] = $value;
 				}
@@ -144,9 +144,10 @@ class PreferencesFormLegacy extends HTMLForm {
 	}
 }
 
-// Retain the old class name for backwards compatibility.
-// In the future, this alias will be changed to point to PreferencesFormOOUI.
-class PreferencesForm extends PreferencesFormLegacy {
-}
-// Phan doesn't understand class_alias()?
-// class_alias( PreferencesFormLegacy::class, 'PreferencesForm' );
+/**
+ * Retain the old class name for backwards compatibility.
+ * In the future, this alias will be changed to point to PreferencesFormOOUI.
+ *
+ * @deprecated since 1.32
+ */
+class_alias( PreferencesFormLegacy::class, 'PreferencesForm' );

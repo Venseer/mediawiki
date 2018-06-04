@@ -496,7 +496,7 @@ class DatabaseSqlite extends Database {
 		}
 		$e = $this->conn->errorInfo();
 
-		return isset( $e[2] ) ? $e[2] : '';
+		return $e[2] ?? '';
 	}
 
 	/**
@@ -1106,4 +1106,7 @@ class DatabaseSqlite extends Database {
 	}
 }
 
+/**
+ * @deprecated since 1.29
+ */
 class_alias( DatabaseSqlite::class, 'DatabaseSqlite' );

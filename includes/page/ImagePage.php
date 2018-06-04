@@ -1015,11 +1015,8 @@ EOT
 	 * @return int Result of string comparison, or namespace comparison
 	 */
 	protected function compare( $a, $b ) {
-		if ( $a->page_namespace == $b->page_namespace ) {
-			return strcmp( $a->page_title, $b->page_title );
-		} else {
-			return $a->page_namespace - $b->page_namespace;
-		}
+		return $a->page_namespace <=> $b->page_namespace
+			?: strcmp( $a->page_title, $b->page_title );
 	}
 
 	/**
@@ -1045,9 +1042,8 @@ EOT
 			$option = 0;
 		}
 
-		return isset( $wgImageLimits[$option] )
-			? $wgImageLimits[$option]
-			: [ 800, 600 ]; // if nothing is set, fallback to a hardcoded default
+		// if nothing is set, fallback to a hardcoded default
+		return $wgImageLimits[$option] ?? [ 800, 600 ];
 	}
 
 	/**
