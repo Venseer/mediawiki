@@ -185,7 +185,8 @@ class MysqlUpdater extends DatabaseUpdater {
 			[ 'doClFieldsUpdate' ],
 			[ 'addTable', 'module_deps', 'patch-module_deps.sql' ],
 			[ 'dropIndex', 'archive', 'ar_page_revid', 'patch-archive_kill_ar_page_revid.sql' ],
-			[ 'addIndex', 'archive', 'ar_revid', 'patch-archive_ar_revid.sql' ],
+			[ 'addIndexIfNoneExist',
+				'archive', [ 'ar_revid', 'ar_revid_uniq' ], 'patch-archive_ar_revid.sql' ],
 			[ 'doLangLinksLengthUpdate' ],
 
 			// 1.18
@@ -356,6 +357,7 @@ class MysqlUpdater extends DatabaseUpdater {
 				'patch-externallinks-el_index_60-drop-default.sql' ],
 			[ 'runMaintenance', DeduplicateArchiveRevId::class, 'maintenance/deduplicateArchiveRevId.php' ],
 			[ 'addField', 'change_tag', 'ct_tag_id', 'patch-change_tag-tag_id.sql' ],
+			[ 'addIndex', 'archive', 'ar_revid_uniq', 'patch-archive-ar_rev_id-unique.sql' ],
 		];
 	}
 

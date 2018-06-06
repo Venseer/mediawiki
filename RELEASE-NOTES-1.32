@@ -24,6 +24,7 @@ production.
 * New configuration variable has been added: $wgCookieSetOnIpBlock.
   This determines whether to set a cookie when an IP user is blocked. Doing so means
   that a blocked user, even after moving to a new IP address, will still be blocked.
+* The archive table's ar_rev_id field is now unique.
 
 === New features in 1.32 ===
 * (T112474) Generalized the ResourceLoader mechanism for overriding modules
@@ -35,6 +36,7 @@ production.
   temporary user groups.
 * (T152462) A cookie can now be set when an IP user is blocked to track that user if
   they move to a new IP address. This is disabled by default.
+* (T194950) Added 'ApiMaxLagInfo' hook.
 
 === External library changes in 1.32 ===
 * …
@@ -43,6 +45,7 @@ production.
 * Updated QUnit from 2.4.0 to 2.6.0.
 * Updated wikimedia/scoped-callback from 1.0.0 to 2.0.0.
 ** ScopedCallback objects can no longer be serialized.
+* Updated wikimedia/wrappedstring from 2.3.0 to 3.0.1.
 
 ==== New external libraries ====
 * Added wikimedia/xmp-reader 0.5.1
@@ -71,6 +74,7 @@ production.
 * Added 'ApiParseMakeOutputPage' hook.
 * Parameter names may no longer contain '{' or '}', as these are now used for
   templated parameters.
+* (T194950) Added 'ApiMaxLagInfo' hook.
 
 === Languages updated in 1.32 ===
 MediaWiki supports over 350 languages. Many localisations are updated regularly.
@@ -139,6 +143,8 @@ because of Phabricator reports.
   were removed. Use the ParserCache class instead.
 * ScopedCallback (deprecated in 1.28) was removed. Use Wikimedia\ScopedCallback
   instead.
+* Support for ResourceLoaderModule::getModifiedTime() and getModifiedHash(),
+  deprecated since 1.26, was removed. Use getDefinitionSummary() instead.
 
 === Deprecations in 1.32 ===
 * Use of a StartProfiler.php file is deprecated in favour of placing

@@ -2059,6 +2059,8 @@ $wgDBerrorLogTZ = false;
  * Even correct usage may cause failures with Unicode supplementary
  * characters (those not in the Basic Multilingual Plane) unless MySQL
  * has enhanced their Unicode support.
+ *
+ * @deprecated since 1.31
  */
 $wgDBmysql5 = false;
 
@@ -4877,6 +4879,7 @@ $wgDefaultUserOptions = [
 	'watchlistunwatchlinks' => 0,
 	'watchmoves' => 0,
 	'watchrollback' => 0,
+	'wlenhancedfilters-disable' => 0,
 	'wllimit' => 250,
 	'useeditwarning' => 1,
 	'prefershttps' => 1,
@@ -6870,6 +6873,15 @@ $wgUseRCPatrol = true;
  * @since 1.30
  */
 $wgStructuredChangeFiltersShowPreference = false;
+
+/**
+ * Whether a preference is displayed for structured change filters on watchlist.
+ * Works just like $wgStructuredChangeFiltersShowPreference.
+ *
+ * Temporary variable during development and will be removed
+ * @since 1.32
+ */
+$wgStructuredChangeFiltersShowWatchlistPreference = false;
 
 /**
  * Whether to enable RCFilters app on Special:Watchlist
