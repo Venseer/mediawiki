@@ -37,6 +37,10 @@ production.
 * (T152462) A cookie can now be set when an IP user is blocked to track that user if
   they move to a new IP address. This is disabled by default.
 * (T194950) Added 'ApiMaxLagInfo' hook.
+* SpecialPage::checkLoginSecurityLevel() will now preserve POST data when
+  reauthenticating.
+* FormSpecialPage::execute() will now call checkLoginSecurityLevel() if
+  getLoginSecurityLevel() returns non-false.
 
 === External library changes in 1.32 ===
 * …
@@ -55,7 +59,8 @@ production.
 * …
 
 === Bug fixes in 1.32 ===
-* …
+* SpecialPage::execute() will now only call checkLoginSecurityLevel() if
+  getLoginSecurityLevel() returns non-false.
 
 === Action API changes in 1.32 ===
 * Added templated parameters.
@@ -145,6 +150,12 @@ because of Phabricator reports.
   instead.
 * Support for ResourceLoaderModule::getModifiedTime() and getModifiedHash(),
   deprecated since 1.26, was removed. Use getDefinitionSummary() instead.
+* (T195256) Skins are recommended not to rely on JavaScript for the "mw-jump"
+  and "jump-to-nav" accessibility links. To this end, the "jquery.mw-jump"
+  is no longer loaded by default. The Vector and MonoBook skins have made a
+  minor change to implement the toggle feature with CSS instead. To restore
+  prior functionality, either explicitly load "jquery.mw-jump" in your skin
+  or refer to T195256 for details on how to make the same change.
 
 === Deprecations in 1.32 ===
 * Use of a StartProfiler.php file is deprecated in favour of placing
