@@ -449,7 +449,7 @@ class CoreParserFunctions {
 				$parser->mOutput->setDisplayTitle( $text );
 			}
 			if ( $old !== false && $old !== $text && !$arg ) {
-				$converter = $parser->getConverterLanguage()->getConverter();
+				$converter = $parser->getTargetLanguage()->getConverter();
 				return '<span class="error">' .
 					wfMessage( 'duplicate-displaytitle',
 						// Message should be parsed, but these params should only be escaped.
@@ -461,7 +461,7 @@ class CoreParserFunctions {
 				return '';
 			}
 		} else {
-			$converter = $parser->getConverterLanguage()->getConverter();
+			$converter = $parser->getTargetLanguage()->getConverter();
 			$parser->getOutput()->addWarning(
 				wfMessage( 'restricted-displaytitle',
 					// Message should be parsed, but this param should only be escaped.
@@ -882,7 +882,7 @@ class CoreParserFunctions {
 	 * Unicode-safe str_pad with the restriction that $length is forced to be <= 500
 	 * @param Parser $parser
 	 * @param string $string
-	 * @param int $length
+	 * @param string $length
 	 * @param string $padding
 	 * @param int $direction
 	 * @return string
@@ -897,7 +897,12 @@ class CoreParserFunctions {
 		}
 
 		# The remaining length to add counts down to 0 as padding is added
-		$length = min( $length, 500 ) - mb_strlen( $string );
+		$length = min( (int)$length, 500 ) - mb_strlen( $string );
+		if ( $length <= 0 ) {
+			// Nothing to add
+			return $string;
+		}
+
 		# $finalPadding is just $padding repeated enough times so that
 		# mb_strlen( $string ) + mb_strlen( $finalPadding ) == $length
 		$finalPadding = '';
@@ -977,7 +982,7 @@ class CoreParserFunctions {
 		if ( $old === false || $old == $text || $arg ) {
 			return '';
 		} else {
-			$converter = $parser->getConverterLanguage()->getConverter();
+			$converter = $parser->getTargetLanguage()->getConverter();
 			return '<span class="error">' .
 				wfMessage( 'duplicate-defaultsort',
 					// Message should be parsed, but these params should only be escaped.
@@ -1157,7 +1162,7 @@ class CoreParserFunctions {
 		}
 
 		// Check the link cache, maybe something already looked it up.
-		$linkCache = LinkCache::singleton();
+		$linkCache = MediaWikiServices::getInstance()->getLinkCache();
 		$pdbk = $t->getPrefixedDBkey();
 		$id = $linkCache->getGoodLinkID( $pdbk );
 		if ( $id != 0 ) {

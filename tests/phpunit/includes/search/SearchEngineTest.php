@@ -84,10 +84,8 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 		$this->assertTrue( is_object( $results ) );
 
 		$matches = [];
-		$row = $results->next();
-		while ( $row ) {
+		foreach ( $results as $row ) {
 			$matches[] = $row->getTitle()->getPrefixedText();
-			$row = $results->next();
 		}
 		$results->free();
 		# Search is not guaranteed to return results in a certain order;
@@ -173,7 +171,7 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 	public function testPhraseSearchHighlight() {
 		$phrase = "smithee is one who smiths";
 		$res = $this->search->searchText( "\"$phrase\"" );
-		$match = $res->next();
+		$match = $res->getIterator()->current();
 		$snippet = "A <span class='searchmatch'>" . $phrase . "</span>";
 		$this->assertStringStartsWith( $snippet,
 			$match->getTextSnippet( $res->termMatches() ),
@@ -277,7 +275,7 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 		$this->mergeMwGlobalArrayValue( 'wgHooks',
 			[ 'SearchResultsAugment' => [ [ $this, 'addAugmentors' ] ] ] );
 		$this->search->augmentSearchResults( $resultSet );
-		for ( $result = $resultSet->next(); $result; $result = $resultSet->next() ) {
+		foreach ( $resultSet as $result ) {
 			$id = $result->getTitle()->getArticleID();
 			$augmentData = "Result:$id:" . $result->getTitle()->getText();
 			$augmentData2 = "Result2:$id:" . $result->getTitle()->getText();
@@ -292,11 +290,10 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 			->method( 'augmentAll' )
 			->willReturnCallback( function ( SearchResultSet $resultSet ) {
 				$data = [];
-				for ( $result = $resultSet->next(); $result; $result = $resultSet->next() ) {
+				foreach ( $resultSet as $result ) {
 					$id = $result->getTitle()->getArticleID();
 					$data[$id] = "Result:$id:" . $result->getTitle()->getText();
 				}
-				$resultSet->rewind();
 				return $data;
 			} );
 		$setAugmentors['testSet'] = $setAugmentor;
@@ -309,5 +306,38 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 				return "Result2:$id:" . $result->getTitle()->getText();
 			} );
 		$rowAugmentors['testRow'] = $rowAugmentor;
+	}
+
+	public function testFiltersMissing() {
+		$availableResults = [];
+		foreach ( range( 0, 11 ) as $i ) {
+			$title = "Search_Result_$i";
+			$availableResults[] = $title;
+			// pages not created must be filtered
+			if ( $i % 2 == 0 ) {
+				$this->editPage( $title );
+			}
+		}
+		MockCompletionSearchEngine::addMockResults( 'foo', $availableResults );
+
+		$engine = new MockCompletionSearchEngine();
+		$engine->setLimitOffset( 10, 0 );
+		$results = $engine->completionSearch( 'foo' );
+		$this->assertEquals( 5, $results->getSize() );
+		$this->assertTrue( $results->hasMoreResults() );
+
+		$engine->setLimitOffset( 10, 10 );
+		$results = $engine->completionSearch( 'foo' );
+		$this->assertEquals( 1, $results->getSize() );
+		$this->assertFalse( $results->hasMoreResults() );
+	}
+
+	private function editPage( $title ) {
+		$page = WikiPage::factory( Title::newFromText( $title ) );
+		$page->doEditContent(
+			new WikitextContent( 'UTContent' ),
+			'UTPageSummary',
+			EDIT_NEW | EDIT_SUPPRESS_RC
+		);
 	}
 }

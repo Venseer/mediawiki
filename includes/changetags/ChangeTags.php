@@ -21,7 +21,9 @@
  * @ingroup Change tagging
  */
 
+use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Storage\NameTableStore;
 use Wikimedia\Rdbms\Database;
 
 class ChangeTags {
@@ -346,31 +348,32 @@ class ChangeTags {
 		if ( count( $tagsToAdd ) ) {
 			$changeTagMapping = [];
 			if ( $wgChangeTagsSchemaMigrationStage > MIGRATION_OLD ) {
-				$tagDefRows = [];
+				$changeTagDefStore = new NameTableStore(
+					MediaWikiServices::getInstance()->getDBLoadBalancer(),
+					MediaWikiServices::getInstance()->getMainWANObjectCache(),
+					LoggerFactory::getInstance( 'NameTableSqlStore' ),
+					'change_tag_def',
+					'ctd_id',
+					'ctd_name',
+					null,
+					false,
+					function ( $insertFields ) {
+						$insertFields['ctd_user_defined'] = 0;
+						$insertFields['ctd_count'] = 0;
+						return $insertFields;
+					}
+				);
+
 				foreach ( $tagsToAdd as $tag ) {
-					$tagDefRows[] = [
-						'ctd_name' => $tag,
-						'ctd_user_defined' => 0,
-						'ctd_count' => 1
-					];
+					$changeTagMapping[$tag] = $changeTagDefStore->acquireId( $tag );
 				}
 
-				$dbw->upsert(
+				$dbw->update(
 					'change_tag_def',
-					$tagDefRows,
-					[ 'ctd_name' ],
 					[ 'ctd_count = ctd_count + 1' ],
+					[ 'ctd_name' => $tagsToAdd ],
 					__METHOD__
 				);
-
-				$res = $dbw->select(
-					'change_tag_def',
-					[ 'ctd_name', 'ctd_id' ],
-					[ 'ctd_name' => $tagsToAdd ]
-				);
-				foreach ( $res as $row ) {
-					$changeTagMapping[$row->ctd_name] = $row->ctd_id;
-				}
 			}
 
 			$tagsRows = [];
@@ -386,7 +389,7 @@ class ChangeTags {
 						'ct_log_id' => $log_id,
 						'ct_rev_id' => $rev_id,
 						'ct_params' => $params,
-						'ct_tag_id' => isset( $changeTagMapping[$tag] ) ? $changeTagMapping[$tag] : null,
+						'ct_tag_id' => $changeTagMapping[$tag] ?? null,
 					]
 				);
 
@@ -466,7 +469,7 @@ class ChangeTags {
 		// $prevTags can be out of date on replica DBs, especially when addTags is called consecutively,
 		// causing loss of tags added recently in tag_summary table.
 		$prevTags = $dbw->selectField( 'tag_summary', 'ts_tags', $tsConds, __METHOD__ );
-		$prevTags = $prevTags ? $prevTags : '';
+		$prevTags = $prevTags ?: '';
 		$prevTags = array_filter( explode( ',', $prevTags ) );
 
 		// add tags

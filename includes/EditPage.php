@@ -486,17 +486,15 @@ class EditPage {
 
 	/**
 	 * Get the context title object.
-	 * If not set, $wgTitle will be returned. This behavior might change in
-	 * the future to return $this->mTitle instead.
+	 *
+	 * If not set, $wgTitle will be returned, but this is deprecated. This will
+	 * throw an exception.
 	 *
 	 * @return Title
 	 */
 	public function getContextTitle() {
 		if ( is_null( $this->mContextTitle ) ) {
-			wfDebugLog(
-				'GlobalTitleFail',
-				__METHOD__ . ' called by ' . wfGetAllCallers( 5 ) . ' with no title set.'
-			);
+			wfDeprecated( __METHOD__ . ' called with no title set', '1.32' );
 			global $wgTitle;
 			return $wgTitle;
 		} else {
@@ -1495,7 +1493,11 @@ class EditPage {
 	 * @return Status The resulting status object.
 	 */
 	public function attemptSave( &$resultDetails = false ) {
-		# Allow bots to exempt some edits from bot flagging
+		// TODO: MCR: treat $this->minoredit like $this->bot and check isAllowed( 'minoredit' )!
+		// Also, add $this->autopatrol like $this->bot and check isAllowed( 'autopatrol' )!
+		// This is needed since PageUpdater no longer checks these rights!
+
+		// Allow bots to exempt some edits from bot flagging
 		$bot = $this->context->getUser()->isAllowed( 'bot' ) && $this->bot;
 		$status = $this->internalAttemptSave( $resultDetails, $bot );
 
@@ -2812,7 +2814,7 @@ ERROR;
 			$this->autoSumm = md5( '' );
 		}
 
-		$autosumm = $this->autoSumm ? $this->autoSumm : md5( $this->summary );
+		$autosumm = $this->autoSumm ?: md5( $this->summary );
 		$out->addHTML( Html::hidden( 'wpAutoSummary', $autosumm ) );
 
 		$out->addHTML( Html::hidden( 'oldid', $this->oldid ) );
@@ -4224,28 +4226,6 @@ ERROR;
 					'id' => $options['label-id'] ?? null,
 				]
 			);
-		}
-
-		// Backwards-compatibility hack to run the EditPageBeforeEditChecks hook. It's important,
-		// people have used it for the weirdest things completely unrelated to checkboxes...
-		// And if we're gonna run it, might as well allow its legacy checkboxes to be shown.
-		$legacyCheckboxes = [];
-		if ( !$this->isNew ) {
-			$legacyCheckboxes['minor'] = '';
-		}
-		$legacyCheckboxes['watch'] = '';
-		// Copy new-style checkboxes into an old-style structure
-		foreach ( $checkboxes as $name => $oouiLayout ) {
-			$legacyCheckboxes[$name] = (string)$oouiLayout;
-		}
-		// Avoid PHP 7.1 warning of passing $this by reference
-		$ep = $this;
-		Hooks::run( 'EditPageBeforeEditChecks', [ &$ep, &$legacyCheckboxes, &$tabindex ], '1.29' );
-		// Copy back any additional old-style checkboxes into the new-style structure
-		foreach ( $legacyCheckboxes as $name => $html ) {
-			if ( $html && !isset( $checkboxes[$name] ) ) {
-				$checkboxes[$name] = new OOUI\Widget( [ 'content' => new OOUI\HtmlSnippet( $html ) ] );
-			}
 		}
 
 		return $checkboxes;

@@ -39,29 +39,6 @@ class Linker {
 	const TOOL_LINKS_EMAIL = 2;
 
 	/**
-	 * Return the CSS colour of a known link
-	 *
-	 * @deprecated since 1.28, use LinkRenderer::getLinkClasses() instead
-	 *
-	 * @since 1.16.3
-	 * @param LinkTarget $t
-	 * @param int $threshold User defined threshold
-	 * @return string CSS class
-	 */
-	public static function getLinkColour( LinkTarget $t, $threshold ) {
-		wfDeprecated( __METHOD__, '1.28' );
-		$services = MediaWikiServices::getInstance();
-		$linkRenderer = $services->getLinkRenderer();
-		if ( $threshold !== $linkRenderer->getStubThreshold() ) {
-			// Need to create a new instance with the right stub threshold...
-			$linkRenderer = $services->getLinkRendererFactory()->create();
-			$linkRenderer->setStubThreshold( $threshold );
-		}
-
-		return $linkRenderer->getLinkClasses( $t );
-	}
-
-	/**
 	 * This function returns an HTML link to the given target.  It serves a few
 	 * purposes:
 	 *   1) If $target is a Title, the correct URL to link to will be figured
@@ -328,7 +305,9 @@ class Linker {
 		$res = null;
 		$dummy = new DummyLinker;
 		if ( !Hooks::run( 'ImageBeforeProduceHTML', [ &$dummy, &$title,
-			&$file, &$frameParams, &$handlerParams, &$time, &$res ] ) ) {
+			&$file, &$frameParams, &$handlerParams, &$time, &$res,
+			$parser, &$query, &$widthOption
+		] ) ) {
 			return $res;
 		}
 
@@ -504,7 +483,7 @@ class Linker {
 	 * @param string $manualthumb
 	 * @return string
 	 */
-	public static function makeThumbLinkObj( Title $title, $file, $label = '', $alt,
+	public static function makeThumbLinkObj( Title $title, $file, $label = '', $alt = '',
 		$align = 'right', $params = [], $framed = false, $manualthumb = ""
 	) {
 		$frameParams = [
@@ -826,7 +805,7 @@ class Linker {
 			$key = strtolower( $name );
 		}
 
-		return self::linkKnown( SpecialPage::getTitleFor( $name ), wfMessage( $key )->text() );
+		return self::linkKnown( SpecialPage::getTitleFor( $name ), wfMessage( $key )->escaped() );
 	}
 
 	/**

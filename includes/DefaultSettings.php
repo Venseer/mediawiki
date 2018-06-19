@@ -1895,6 +1895,11 @@ $wgSQLMode = '';
 $wgDBmwschema = null;
 
 /**
+ * Default group to use when getting database connections.
+ */
+$wgDBDefaultGroup = null;
+
+/**
  * To override default SQLite data directory ($docroot/../data)
  */
 $wgSQLiteDataDir = '';
@@ -4731,10 +4736,10 @@ $wgPasswordDefault = 'pbkdf2';
  * $wgPasswordConfig['bcrypt-peppered'] = [
  *     'class' => EncryptedPassword::class,
  *     'underlying' => 'bcrypt',
- *     'secrets' => [],
- *     'cipher' => MCRYPT_RIJNDAEL_256,
- *     'mode' => MCRYPT_MODE_CBC,
- *     'cost' => 5,
+ *     'secrets' => [
+ *         hash( 'sha256', 'secret', true ),
+ *     ],
+ *     'cipher' => 'aes-256-cbc',
  * ];
  * @endcode
  *
@@ -8892,6 +8897,17 @@ $wgInterwikiPrefixDisplayTypes = [];
  * @var int One of the MIGRATION_* constants
  */
 $wgCommentTableSchemaMigrationStage = MIGRATION_OLD;
+
+/**
+ * RevisionStore table schema migration stage (content, slots, content_models & slot_roles tables)
+ *
+ * @see Task: https://phabricator.wikimedia.org/T174028
+ * @see Commit: https://gerrit.wikimedia.org/r/#/c/378724/
+ *
+ * @since 1.32
+ * @var int One of the MIGRATION_* constants
+ */
+$wgMultiContentRevisionSchemaMigrationStage = MIGRATION_OLD;
 
 /**
  * Actor table schema migration stage.

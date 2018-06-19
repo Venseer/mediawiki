@@ -163,7 +163,7 @@ class RepoGroup {
 			}
 		}
 
-		$image = $image ? $image : false; // type sanity
+		$image = $image ?: false; // type sanity
 		# Cache file existence or non-existence
 		if ( $useCache && ( !$image || $image->isCacheable() ) ) {
 			$this->cache->set( $dbkey, $time, $image );
@@ -324,11 +324,8 @@ class RepoGroup {
 		}
 		if ( $index === 'local' ) {
 			return $this->localRepo;
-		} elseif ( isset( $this->foreignRepos[$index] ) ) {
-			return $this->foreignRepos[$index];
-		} else {
-			return false;
 		}
+		return $this->foreignRepos[$index] ?? false;
 	}
 
 	/**
@@ -372,8 +369,7 @@ class RepoGroup {
 			$this->initialiseRepos();
 		}
 		foreach ( $this->foreignRepos as $repo ) {
-			$args = array_merge( [ $repo ], $params );
-			if ( call_user_func_array( $callback, $args ) ) {
+			if ( $callback( $repo, ...$params ) ) {
 				return true;
 			}
 		}

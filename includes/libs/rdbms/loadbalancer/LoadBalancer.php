@@ -123,6 +123,9 @@ class LoadBalancer implements ILoadBalancer {
 	/** @var string Stage of the current transaction round in the transaction round life-cycle */
 	private $trxRoundStage = self::ROUND_CURSORY;
 
+	/** @var string|null */
+	private $defaultGroup = null;
+
 	/** @var int Warn when this many connection are held */
 	const CONN_HELD_WARN_THRESHOLD = 10;
 
@@ -259,6 +262,8 @@ class LoadBalancer implements ILoadBalancer {
 				$this->trxRoundStage = self::ROUND_ROLLBACK_CALLBACKS;
 			}
 		}
+
+		$this->defaultGroup = $params['defaultGroup'] ?? null;
 	}
 
 	/**
@@ -717,8 +722,11 @@ class LoadBalancer implements ILoadBalancer {
 			}
 		}
 
+		// Check one "group" per default: the generic pool
+		$defaultGroups = $this->defaultGroup ? [ $this->defaultGroup ] : [ false ];
+
 		$groups = ( $groups === false || $groups === [] )
-			? [ false ] // check one "group": the generic pool
+			? $defaultGroups
 			: (array)$groups;
 
 		$masterOnly = ( $i == self::DB_MASTER || $i == $this->getWriterIndex() );
@@ -864,7 +872,7 @@ class LoadBalancer implements ILoadBalancer {
 			$this->connLogger->debug( __METHOD__ . ': calling initLB() before first connection.' );
 			// Load any "waitFor" positions before connecting so that doWait() is triggered
 			$this->connectionAttempted = true;
-			call_user_func( $this->chronologyCallback, $this );
+			( $this->chronologyCallback )( $this );
 		}
 
 		// Check if an auto-commit connection is being requested. If so, it will not reuse the
@@ -1370,7 +1378,7 @@ class LoadBalancer implements ILoadBalancer {
 				try {
 					$conn->commit( $fname, $conn::FLUSHING_ALL_PEERS );
 				} catch ( DBError $e ) {
-					call_user_func( $this->errorLogger, $e );
+					( $this->errorLogger )( $e );
 					$failures[] = "{$conn->getServer()}: {$e->getMessage()}";
 				}
 			}
@@ -1723,8 +1731,7 @@ class LoadBalancer implements ILoadBalancer {
 		foreach ( $this->conns as $connsByServer ) {
 			foreach ( $connsByServer as $serverConns ) {
 				foreach ( $serverConns as $conn ) {
-					$mergedParams = array_merge( [ $conn ], $params );
-					call_user_func_array( $callback, $mergedParams );
+					$callback( $conn, ...$params );
 				}
 			}
 		}
@@ -1736,8 +1743,7 @@ class LoadBalancer implements ILoadBalancer {
 			if ( isset( $connsByServer[$masterIndex] ) ) {
 				/** @var IDatabase $conn */
 				foreach ( $connsByServer[$masterIndex] as $conn ) {
-					$mergedParams = array_merge( [ $conn ], $params );
-					call_user_func_array( $callback, $mergedParams );
+					$callback( $conn, ...$params );
 				}
 			}
 		}
@@ -1750,8 +1756,7 @@ class LoadBalancer implements ILoadBalancer {
 					continue; // skip master
 				}
 				foreach ( $serverConns as $conn ) {
-					$mergedParams = array_merge( [ $conn ], $params );
-					call_user_func_array( $callback, $mergedParams );
+					$callback( $conn, ...$params );
 				}
 			}
 		}

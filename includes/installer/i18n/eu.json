@@ -5,7 +5,8 @@
 			"පසිඳු කාවින්ද",
 			"Subi",
 			"Sator",
-			"Mikel Ibaiba"
+			"Mikel Ibaiba",
+			"Fitoschido"
 		]
 	},
 	"config-desc": "MediaWiki instalatzailea",
@@ -293,7 +294,6 @@
 	"config-install-interwiki-exists": "<strong>Oharra:</strong> Interwikiko taula badirudi sarrerak dituela. \nTaula estandarra saltatzen.",
 	"config-install-stats": "Estatistikak hasten",
 	"config-install-keys": "Gako sekretuak sortzen",
-	"config-insecure-keys": "<strong>Oharra:</strong> ($1) instalazioan zehar sortu {{PLURAL:$2|den|diren}} {{PLURAL:$2|gako segurua|gako seguruak}}ez d(ir)a guztiz segurua(k). Kontuan hartu {{PLURAL:$2|hau|hauek}} eskuz aldatzeko aukera.",
 	"config-install-updates": "Saihestu egikaratzen behar ez diren aktualizazioak",
 	"config-install-updates-failed": "<strong>Errore</strong> Sartzea eguneratze-gakoak taulen barruan huts egin du hurrengo errorearekin: $1",
 	"config-install-sysop": "Administratzaile kontua sortzen",
@@ -307,7 +307,7 @@
 	"config-install-done-path": "<strong>Zorionak!</strong>\nMediaWiki instalatu duzu.\n\nInstalatzaileak sortu egin du <code>LocalSettings.php</code>\nZure konfigurazio guztia dauka.\n\nDeskargatu egin behar duzu eta jarri <code>$4</code> -ean . Deskarga automakikoki hasiko da.\n\nEz badizu deskargatzeko aukerarik eman, edo kantzalatu egin baduzu, hurrengo linkean klikatu berrabiatzeko:\n\n$3\n\n<strong>Oharra:</strong> Instalazio prozesuatik ateratzen bazara konfigurazio artxikoa deskargatu barik, gero ez da egongo eskuragarri.\n\nBehin hori eginda, <strong>[$2 enter your wiki]</strong> ahal duzu.",
 	"config-install-success": "MediaWiki arrakastaz instalatu da. Orain <$1$2> bisitatu dezakezu zure wikia ikusteko.\nGalderarik izanez gero, begiratu gure maiztasunez egiten diren galderen zerrenda:\n<https://www.mediawiki.org/wiki/Manual:FAQ> edo erabili orrialde honi lotuta dauden laguntza foroetako bat.",
 	"config-download-localsettings": "Jaitsi <code>LocalSettings.php</code>",
-	"config-help": "Laguntza",
+	"config-help": "laguntza",
 	"config-help-tooltip": "sakatu zabaltzeko",
 	"config-nofile": "Ezin da \"$1\" fitxategia aurkitu. Ezabatua izan da?",
 	"config-extension-link": "Ba al zenekien wikiak [https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Extensions extensions] onartzen dituela?\n\nArakatu [https://www.mediawiki.org/wiki/Special:MyLanguage/Category:Extensions_by_category extensions by category] edo [https://www.mediawiki.org/wiki/Extension_Matrix Extension Matrix] ikusi ahal izateko luzapenen zerrenda.",

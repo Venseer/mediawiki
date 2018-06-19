@@ -91,6 +91,9 @@ abstract class LBFactory implements ILBFactory {
 	/** @var string One of the ROUND_* class constants */
 	private $trxRoundStage = self::ROUND_CURSORY;
 
+	/** @var string|null */
+	private $defaultGroup = null;
+
 	const ROUND_CURSORY = 'cursory';
 	const ROUND_BEGINNING = 'within-begin';
 	const ROUND_COMMITTING = 'within-commit';
@@ -138,6 +141,7 @@ abstract class LBFactory implements ILBFactory {
 		$this->cliMode = $conf['cliMode'] ?? ( PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg' );
 		$this->hostname = $conf['hostname'] ?? gethostname();
 		$this->agent = $conf['agent'] ?? '';
+		$this->defaultGroup = $conf['defaultGroup'] ?? null;
 
 		$this->ticket = mt_rand();
 	}
@@ -202,7 +206,7 @@ abstract class LBFactory implements ILBFactory {
 	protected function forEachLBCallMethod( $methodName, array $args = [] ) {
 		$this->forEachLB(
 			function ( ILoadBalancer $loadBalancer, $methodName, array $args ) {
-				call_user_func_array( [ $loadBalancer, $methodName ], $args );
+				$loadBalancer->$methodName( ...$args );
 			},
 			[ $methodName, $args ]
 		);
@@ -505,6 +509,10 @@ abstract class LBFactory implements ILBFactory {
 			// Request opted out of using position wait logic. This is useful for requests
 			// done by the job queue or background ETL that do not have a meaningful session.
 			$this->chronProt->setWaitEnabled( false );
+		} elseif ( $this->memStash instanceof EmptyBagOStuff ) {
+			// No where to store any DB positions and wait for them to appear
+			$this->chronProt->setEnabled( false );
+			$this->replLogger->info( 'Cannot use ChronologyProtector with EmptyBagOStuff.' );
 		}
 
 		$this->replLogger->debug( __METHOD__ . ': using request info ' .
@@ -575,6 +583,7 @@ abstract class LBFactory implements ILBFactory {
 			'hostname' => $this->hostname,
 			'cliMode' => $this->cliMode,
 			'agent' => $this->agent,
+			'defaultGroup' => $this->defaultGroup,
 			'chronologyCallback' => function ( ILoadBalancer $lb ) {
 				// Defer ChronologyProtector construction in case setRequestInfo() ends up
 				// being called later (but before the first connection attempt) (T192611)
@@ -650,14 +659,14 @@ abstract class LBFactory implements ILBFactory {
 
 	/**
 	 * @param string $value Possible result of LBFactory::makeCookieValueFromCPIndex()
-	 * @param int $minTimestamp Lowest UNIX timestamp of non-expired values (if present)
+	 * @param int $minTimestamp Lowest UNIX timestamp that a non-expired value can have
 	 * @return array (index: int or null, clientId: string or null)
 	 * @since 1.32
 	 */
 	public static function getCPInfoFromCookieValue( $value, $minTimestamp ) {
 		static $placeholder = [ 'index' => null, 'clientId' => null ];
 
-		if ( !preg_match( '/^(\d+)(?:@(\d+))?(?:#([0-9a-f]{32}))?$/', $value, $m ) ) {
+		if ( !preg_match( '/^(\d+)@(\d+)#([0-9a-f]{32})$/', $value, $m ) ) {
 			return $placeholder; // invalid
 		}
 

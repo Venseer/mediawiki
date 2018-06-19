@@ -2952,6 +2952,7 @@ class Language {
 	 * @deprecated No-op since 1.28
 	 */
 	function initEncoding() {
+		wfDeprecated( __METHOD__, '1.28' );
 		// No-op.
 	}
 
@@ -2961,6 +2962,7 @@ class Language {
 	 * @deprecated No-op since 1.28
 	 */
 	function recodeForEdit( $s ) {
+		wfDeprecated( __METHOD__, '1.28' );
 		return $s;
 	}
 
@@ -2970,6 +2972,7 @@ class Language {
 	 * @deprecated No-op since 1.28
 	 */
 	function recodeInput( $s ) {
+		wfDeprecated( __METHOD__, '1.28' );
 		return $s;
 	}
 
@@ -3152,7 +3155,7 @@ class Language {
 			return;
 		}
 		$this->mMagicHookDone = true;
-		Hooks::run( 'LanguageGetMagic', [ &$this->mMagicExtensions, $this->getCode() ] );
+		Hooks::run( 'LanguageGetMagic', [ &$this->mMagicExtensions, $this->getCode() ], '1.16' );
 	}
 
 	/**
@@ -3208,7 +3211,7 @@ class Language {
 			$this->mExtendedSpecialPageAliases =
 				self::$dataCache->getItem( $this->mCode, 'specialPageAliases' );
 			Hooks::run( 'LanguageGetSpecialPageAliases',
-				[ &$this->mExtendedSpecialPageAliases, $this->getCode() ] );
+				[ &$this->mExtendedSpecialPageAliases, $this->getCode() ], '1.16' );
 		}
 
 		return $this->mExtendedSpecialPageAliases;
@@ -3554,7 +3557,7 @@ class Language {
 	 * @return string
 	 */
 	private function truncateInternal(
-		$string, $length, $ellipsis = '...', $adjustLength = true, $measureLength, $getSubstring
+		$string, $length, $ellipsis, $adjustLength, $measureLength, $getSubstring
 	) {
 		if ( !is_callable( $measureLength ) || !is_callable( $getSubstring ) ) {
 			throw new InvalidArgumentException( 'Invalid callback provided' );
@@ -4321,13 +4324,18 @@ class Language {
 	 * the "raw" tag (-{R| }-) to prevent conversion.
 	 *
 	 * This function is called "markNoConversion" for historical
-	 * reasons.
+	 * reasons *BUT DIFFERS SIGNIFICANTLY* from
+	 * LanguageConverter::markNoConversion(), with which it is easily
+	 * confused.
 	 *
 	 * @param string $text Text to be used for external link
 	 * @param bool $noParse Wrap it without confirming it's a real URL first
 	 * @return string The tagged text
+	 * @deprecated since 1.32, use LanguageConverter::markNoConversion()
+	 *  instead.
 	 */
 	public function markNoConversion( $text, $noParse = false ) {
+		wfDeprecated( __METHOD__, '1.32' );
 		// Excluding protocal-relative URLs may avoid many false positives.
 		if ( $noParse || preg_match( '/^(?:' . wfUrlProtocolsWithoutProtRel() . ')/', $text ) ) {
 			return $this->mConverter->markNoConversion( $text );
@@ -4471,7 +4479,7 @@ class Language {
 	 * @throws MWException
 	 * @return string $prefix . $mangledCode . $suffix
 	 */
-	public static function getFileName( $prefix = 'Language', $code, $suffix = '.php' ) {
+	public static function getFileName( $prefix, $code, $suffix = '.php' ) {
 		if ( !self::isValidBuiltInCode( $code ) ) {
 			throw new MWException( "Invalid language code \"$code\"" );
 		}

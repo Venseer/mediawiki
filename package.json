@@ -5,7 +5,7 @@
     "qunit": "grunt qunit",
     "doc": "jsduck",
     "postdoc": "grunt copy:jsduck",
-    "selenium": "./tests/selenium/selenium.sh",
+    "selenium": "bash ./tests/selenium/selenium.sh",
     "selenium-test": "wdio ./tests/selenium/wdio.conf.js"
   },
   "devDependencies": {
@@ -13,10 +13,10 @@
     "eslint": "4.9.0",
     "eslint-config-wikimedia": "0.5.0",
     "eslint-plugin-qunit": "3.2.1",
-    "grunt": "1.0.1",
+    "grunt": "1.0.3",
     "grunt-banana-checker": "0.6.0",
     "grunt-contrib-copy": "1.0.0",
-    "grunt-contrib-watch": "1.0.1",
+    "grunt-contrib-watch": "1.1.0",
     "grunt-eslint": "20.1.0",
     "grunt-jsonlint": "1.1.0",
     "grunt-karma": "2.0.0",

@@ -36,7 +36,7 @@ abstract class BaseTemplate extends QuickTemplate {
 	 * @return Message
 	 */
 	public function getMsg( $name /* ... */ ) {
-		return call_user_func_array( [ $this->getSkin(), 'msg' ], func_get_args() );
+		return $this->getSkin()->msg( ...func_get_args() );
 	}
 
 	function msg( $str ) {
@@ -597,10 +597,7 @@ abstract class BaseTemplate extends QuickTemplate {
 
 		if ( $option == 'flat' ) {
 			// fold footerlinks into a single array using a bit of trickery
-			$validFooterLinks = call_user_func_array(
-				'array_merge',
-				array_values( $validFooterLinks )
-			);
+			$validFooterLinks = array_merge( ...array_values( $validFooterLinks ) );
 		}
 
 		return $validFooterLinks;

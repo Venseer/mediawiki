@@ -460,11 +460,11 @@ class Parser {
 			|| isset( $this->mDoubleUnderscores['notitleconvert'] )
 			|| $this->mOutput->getDisplayTitle() !== false )
 		) {
-			$convruletitle = $this->getConverterLanguage()->getConvRuleTitle();
+			$convruletitle = $this->getTargetLanguage()->getConvRuleTitle();
 			if ( $convruletitle ) {
 				$this->mOutput->setTitleText( $convruletitle );
 			} else {
-				$titleText = $this->getConverterLanguage()->convertTitle( $title );
+				$titleText = $this->getTargetLanguage()->convertTitle( $title );
 				$this->mOutput->setTitleText( $titleText );
 			}
 		}
@@ -897,6 +897,7 @@ class Parser {
 
 	/**
 	 * Get the language object for language conversion
+	 * @deprecated since 1.32, just use getTargetLanguage()
 	 * @return Language|null
 	 */
 	public function getConverterLanguage() {
@@ -1380,7 +1381,7 @@ class Parser {
 				# The position of the convert() call should not be changed. it
 				# assumes that the links are all replaced and the only thing left
 				# is the <nowiki> mark.
-				$text = $this->getConverterLanguage()->convert( $text );
+				$text = $this->getTargetLanguage()->convert( $text );
 			}
 		}
 
@@ -1605,7 +1606,7 @@ class Parser {
 		if ( $text === false ) {
 			# Not an image, make a link
 			$text = Linker::makeExternalLink( $url,
-				$this->getConverterLanguage()->markNoConversion( $url, true ),
+				$this->getTargetLanguage()->getConverter()->markNoConversion( $url ),
 				true, 'free',
 				$this->getExternalLinkAttribs( $url ), $this->mTitle );
 			# Register it in the output object...
@@ -1894,7 +1895,10 @@ class Parser {
 				list( $dtrail, $trail ) = Linker::splitTrail( $trail );
 			}
 
-			$text = $this->getConverterLanguage()->markNoConversion( $text );
+			// Excluding protocol-relative URLs may avoid many false positives.
+			if ( preg_match( '/^(?:' . wfUrlProtocolsWithoutProtRel() . ')/', $text ) ) {
+				$text = $this->getTargetLanguage()->getConverter()->markNoConversion( $text );
+			}
 
 			$url = Sanitizer::cleanUrl( $url );
 
@@ -2360,7 +2364,7 @@ class Parser {
 					}
 					$sortkey = Sanitizer::decodeCharReferences( $sortkey );
 					$sortkey = str_replace( "\n", '', $sortkey );
-					$sortkey = $this->getConverterLanguage()->convertCategoryKey( $sortkey );
+					$sortkey = $this->getTargetLanguage()->convertCategoryKey( $sortkey );
 					$this->mOutput->addCategory( $nt->getDBkey(), $sortkey );
 
 					continue;
@@ -2641,7 +2645,7 @@ class Parser {
 					$this->mOutput->setFlag( 'vary-revision' );
 					wfDebug( __METHOD__ . ": {{PAGEID}} used in a new page, setting vary-revision...\n" );
 				}
-				$value = $pageid ? $pageid : null;
+				$value = $pageid ?: null;
 				break;
 			case 'revisionid':
 				# Let the edit saving system know we should parse the page
@@ -3185,8 +3189,8 @@ class Parser {
 			if ( $title ) {
 				$titleText = $title->getPrefixedText();
 				# Check for language variants if the template is not found
-				if ( $this->getConverterLanguage()->hasVariants() && $title->getArticleID() == 0 ) {
-					$this->getConverterLanguage()->findVariantLink( $part1, $title, true );
+				if ( $this->getTargetLanguage()->hasVariants() && $title->getArticleID() == 0 ) {
+					$this->getTargetLanguage()->findVariantLink( $part1, $title, true );
 				}
 				# Do recursion depth check
 				$limit = $this->mOptions->getMaxTemplateDepth();
@@ -3435,7 +3439,7 @@ class Parser {
 			}
 		}
 
-		$result = call_user_func_array( $callback, $allArgs );
+		$result = $callback( ...$allArgs );
 
 		# The interface for function hooks allows them to return a wikitext
 		# string or an array containing the string and any flags. This mungs
@@ -3631,7 +3635,7 @@ class Parser {
 			$rev_id = $rev ? $rev->getId() : 0;
 			# If there is no current revision, there is no page
 			if ( $id === false && !$rev ) {
-				$linkCache = LinkCache::singleton();
+				$linkCache = MediaWikiServices::getInstance()->getLinkCache();
 				$linkCache->addBadLinkObj( $title );
 			}
 

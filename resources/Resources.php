@@ -321,15 +321,8 @@ return [
 		'styles' => 'resources/src/jquery.tablesorter/jquery.tablesorter.less',
 		'messages' => [ 'sort-descending', 'sort-ascending' ],
 		'dependencies' => [
-			'jquery.tablesorter.styles',
 			'mediawiki.RegExp',
 			'mediawiki.language.months',
-		],
-	],
-	'jquery.tablesorter.styles' => [
-		'targets' => [ 'desktop', 'mobile' ],
-		'styles' => [
-			'resources/src/jquery/jquery.tablesorter.styles.less',
 		],
 	],
 	'jquery.textSelection' => [
@@ -1894,6 +1887,8 @@ return [
 		'messages' => [
 			'rcfilters-tag-remove',
 			'rcfilters-activefilters',
+			'rcfilters-activefilters-hide',
+			'rcfilters-activefilters-show',
 			'rcfilters-advancedfilters',
 			'rcfilters-group-results-by-page',
 			'rcfilters-limit-title',

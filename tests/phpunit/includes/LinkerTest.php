@@ -1,6 +1,5 @@
 <?php
 
-use MediaWiki\MediaWikiServices;
 
 /**
  * @group Database
@@ -370,6 +369,7 @@ class LinkerTest extends MediaWikiLangTestCase {
 	 * @dataProvider provideLinkBeginHook
 	 */
 	public function testLinkBeginHook( $callback, $expected ) {
+		$this->hideDeprecated( 'LinkBegin hook (used in hook-LinkBegin-closure)' );
 		$this->setMwGlobals( [
 			'wgArticlePath' => '/wiki/$1',
 			'wgServer' => '//example.org',
@@ -417,6 +417,7 @@ class LinkerTest extends MediaWikiLangTestCase {
 	 * @dataProvider provideLinkEndHook
 	 */
 	public function testLinkEndHook( $callback, $expected ) {
+		$this->hideDeprecated( 'LinkEnd hook (used in hook-LinkEnd-closure)' );
 		$this->setMwGlobals( [
 			'wgArticlePath' => '/wiki/$1',
 		] );
@@ -426,55 +427,5 @@ class LinkerTest extends MediaWikiLangTestCase {
 		$title = SpecialPage::getTitleFor( 'Blankpage' );
 		$out = Linker::link( $title );
 		$this->assertEquals( $expected, $out );
-	}
-
-	/**
-	 * @covers Linker::getLinkColour
-	 */
-	public function testGetLinkColour() {
-		$this->hideDeprecated( 'Linker::getLinkColour' );
-		$linkCache = MediaWikiServices::getInstance()->getLinkCache();
-		$foobarTitle = Title::makeTitle( NS_MAIN, 'FooBar' );
-		$redirectTitle = Title::makeTitle( NS_MAIN, 'Redirect' );
-		$userTitle = Title::makeTitle( NS_USER, 'Someuser' );
-		$linkCache->addGoodLinkObj(
-			1, // id
-			$foobarTitle,
-			10, // len
-			0 // redir
-		);
-		$linkCache->addGoodLinkObj(
-			2, // id
-			$redirectTitle,
-			10, // len
-			1 // redir
-		);
-
-		$linkCache->addGoodLinkObj(
-			3, // id
-			$userTitle,
-			10, // len
-			0 // redir
-		);
-
-		$this->assertEquals(
-			'',
-			Linker::getLinkColour( $foobarTitle, 0 )
-		);
-
-		$this->assertEquals(
-			'stub',
-			Linker::getLinkColour( $foobarTitle, 20 )
-		);
-
-		$this->assertEquals(
-			'mw-redirect',
-			Linker::getLinkColour( $redirectTitle, 0 )
-		);
-
-		$this->assertEquals(
-			'',
-			Linker::getLinkColour( $userTitle, 20 )
-		);
 	}
 }

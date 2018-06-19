@@ -150,6 +150,8 @@ $wgAutoloadClasses += [
 
 	# tests/phpunit/includes/Storage
 	'MediaWiki\Tests\Storage\McrSchemaDetection' => "$testDir/phpunit/includes/Storage/McrSchemaDetection.php",
+	'MediaWiki\Tests\Storage\McrSchemaOverride' => "$testDir/phpunit/includes/Storage/McrSchemaOverride.php",
+	'MediaWiki\Tests\Storage\McrWriteBothSchemaOverride' => "$testDir/phpunit/includes/Storage/McrWriteBothSchemaOverride.php",
 	'MediaWiki\Tests\Storage\RevisionSlotsTest' => "$testDir/phpunit/includes/Storage/RevisionSlotsTest.php",
 	'MediaWiki\Tests\Storage\RevisionRecordTests' => "$testDir/phpunit/includes/Storage/RevisionRecordTests.php",
 	'MediaWiki\Tests\Storage\RevisionStoreDbTestBase' => "$testDir/phpunit/includes/Storage/RevisionStoreDbTestBase.php",
@@ -184,6 +186,10 @@ $wgAutoloadClasses += [
 		=> "$testDir/phpunit/mocks/session/DummySessionBackend.php",
 	'DummySessionProvider' => "$testDir/phpunit/mocks/session/DummySessionProvider.php",
 	'MockMessageLocalizer' => "$testDir/phpunit/mocks/MockMessageLocalizer.php",
+	'MockCompletionSearchEngine' => "$testDir/phpunit/mocks/search/MockCompletionSearchEngine.php",
+	'MockSearchEngine' => "$testDir/phpunit/mocks/search/MockSearchEngine.php",
+	'MockSearchResultSet' => "$testDir/phpunit/mocks/search/MockSearchResultSet.php",
+	'MockSearchResult' => "$testDir/phpunit/mocks/search/MockSearchResult.php",
 
 	# tests/suites
 	'ParserTestFileSuite' => "$testDir/phpunit/suites/ParserTestFileSuite.php",

@@ -179,6 +179,55 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	}
 
 	/**
+	 * Returns a WikiPage representing an existing page.
+	 *
+	 * @since 1.32
+	 *
+	 * @param Title|string|null $title
+	 * @return WikiPage
+	 * @throws MWException
+	 */
+	protected function getExistingTestPage( $title = null ) {
+		$title = ( $title === null ) ? 'UTPage' : $title;
+		$title = is_string( $title ) ? Title::newFromText( $title ) : $title;
+		$page = WikiPage::factory( $title );
+
+		if ( !$page->exists() ) {
+			$user = self::getTestSysop()->getUser();
+			$page->doEditContent(
+				new WikitextContent( 'UTContent' ),
+				'UTPageSummary',
+				EDIT_NEW | EDIT_SUPPRESS_RC,
+				false,
+				$user
+			);
+		}
+
+		return $page;
+	}
+
+	/**
+	 * Returns a WikiPage representing a non-existing page.
+	 *
+	 * @since 1.32
+	 *
+	 * @param Title|string|null $title
+	 * @return WikiPage
+	 * @throws MWException
+	 */
+	protected function getNonexistingTestPage( $title = null ) {
+		$title = ( $title === null ) ? 'UTPage-' . rand( 0, 100000 ) : $title;
+		$title = is_string( $title ) ? Title::newFromText( $title ) : $title;
+		$page = WikiPage::factory( $title );
+
+		if ( $page->exists() ) {
+			$page->doDeleteArticle( 'Testing' );
+		}
+
+		return $page;
+	}
+
+	/**
 	 * Prepare service configuration for unit testing.
 	 *
 	 * This calls MediaWikiServices::resetGlobalInstance() to allow some critical services
@@ -1023,7 +1072,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 * Should be called from addDBData().
 	 *
 	 * @since 1.25 ($namespace in 1.28)
-	 * @param string|title $pageName Page name or title
+	 * @param string|Title $pageName Page name or title
 	 * @param string $text Page's content
 	 * @param int $namespace Namespace id (name cannot already contain namespace)
 	 * @return array Title object and page id
@@ -1081,7 +1130,10 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	public function addDBData() {
 	}
 
-	private function addCoreDBData() {
+	/**
+	 * @since 1.32
+	 */
+	protected function addCoreDBData() {
 		if ( $this->db->getType() == 'oracle' ) {
 			# Insert 0 user to prevent FK violations
 			# Anonymous user
@@ -1335,8 +1387,10 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	/**
 	 * @throws LogicException if the given database connection is not a set up to use
 	 * mock tables.
+	 *
+	 * @since 1.31 this is no longer private.
 	 */
-	private function ensureMockDatabaseConnection( IDatabase $db ) {
+	protected function ensureMockDatabaseConnection( IDatabase $db ) {
 		if ( $db->tablePrefix() !== $this->dbPrefix() ) {
 			throw new LogicException(
 				'Trying to delete mock tables, but table prefix does not indicate a mock database.'
@@ -1486,7 +1540,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 			if ( $tbl === 'page' ) {
 				// Forget about the pages since they don't
 				// exist in the DB.
-				LinkCache::singleton()->clear();
+				MediaWikiServices::getInstance()->getLinkCache()->clear();
 			}
 		}
 	}
@@ -1550,8 +1604,10 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	private function resetDB( $db, $tablesUsed ) {
 		if ( $db ) {
 			$userTables = [ 'user', 'user_groups', 'user_properties', 'actor' ];
-			$pageTables = [ 'page', 'revision', 'ip_changes', 'revision_comment_temp',
-				'revision_actor_temp', 'comment', 'archive' ];
+			$pageTables = [
+				'page', 'revision', 'ip_changes', 'revision_comment_temp', 'comment', 'archive',
+				'revision_actor_temp', 'slots', 'content', 'content_models', 'slot_roles',
+			];
 			$coreDBDataTables = array_merge( $userTables, $pageTables );
 
 			// If any of the user or page tables were marked as used, we should clear all of them.
@@ -1601,7 +1657,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 				if ( $tbl === 'page' ) {
 					// Forget about the pages since they don't
 					// exist in the DB.
-					LinkCache::singleton()->clear();
+					MediaWikiServices::getInstance()->getLinkCache()->clear();
 				}
 			}
 

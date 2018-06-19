@@ -60,6 +60,8 @@ class NameTableStore {
 	private $nameField;
 	/** @var null|callable */
 	private $normalizationCallback = null;
+	/** @var null|callable */
+	private $insertCallback = null;
 
 	/**
 	 * @param LoadBalancer $dbLoadBalancer A load balancer for acquiring database connections
@@ -71,6 +73,8 @@ class NameTableStore {
 	 * @param callable $normalizationCallback Normalization to be applied to names before being
 	 * saved or queried. This should be a callback that accepts and returns a single string.
 	 * @param bool|string $wikiId The ID of the target wiki database. Use false for the local wiki.
+	 * @param callable $insertCallback Callback to change insert fields accordingly.
+	 * This parameter was introduced in 1.32
 	 */
 	public function __construct(
 		LoadBalancer $dbLoadBalancer,
@@ -80,7 +84,8 @@ class NameTableStore {
 		$idField,
 		$nameField,
 		callable $normalizationCallback = null,
-		$wikiId = false
+		$wikiId = false,
+		callable $insertCallback = null
 	) {
 		$this->loadBalancer = $dbLoadBalancer;
 		$this->cache = $cache;
@@ -91,6 +96,7 @@ class NameTableStore {
 		$this->normalizationCallback = $normalizationCallback;
 		$this->wikiId = $wikiId;
 		$this->cacheTTL = IExpiringStore::TTL_MONTH;
+		$this->insertCallback = $insertCallback;
 	}
 
 	/**
@@ -348,7 +354,7 @@ class NameTableStore {
 
 		$dbw->insert(
 			$this->table,
-			[ $this->nameField => $name ],
+			$this->getFieldsToStore( $name ),
 			__METHOD__,
 			[ 'IGNORE' ]
 		);
@@ -361,6 +367,18 @@ class NameTableStore {
 		}
 
 		return $dbw->insertId();
+	}
+
+	/**
+	 * @param string $name
+	 * @return array
+	 */
+	private function getFieldsToStore( $name ) {
+		$fields = [ $this->nameField => $name ];
+		if ( $this->insertCallback !== null ) {
+			$fields = call_user_func( $this->insertCallback, $fields );
+		}
+		return $fields;
 	}
 
 }

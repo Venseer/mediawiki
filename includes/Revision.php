@@ -1038,7 +1038,18 @@ class Revision implements IDBAccessObject {
 			? SqlBlobStore::makeAddressFromTextId( $row->old_id )
 			: null;
 
-		return self::getBlobStore( $wiki )->expandBlob( $text, $flags, $cacheKey );
+		$revisionText = self::getBlobStore( $wiki )->expandBlob( $text, $flags, $cacheKey );
+
+		if ( $revisionText === false ) {
+			if ( isset( $row->old_id ) ) {
+				wfLogWarning( __METHOD__ . ": Bad data in text row {$row->old_id}! " );
+			} else {
+				wfLogWarning( __METHOD__ . ": Bad data in text row! " );
+			}
+			return false;
+		}
+
+		return $revisionText;
 	}
 
 	/**
@@ -1094,8 +1105,6 @@ class Revision implements IDBAccessObject {
 
 		// Avoid PHP 7.1 warning of passing $this by reference
 		$revision = $this;
-		// TODO: hard-deprecate in 1.32 (or even 1.31?)
-		Hooks::run( 'RevisionInsertComplete', [ &$revision, null, null ] );
 
 		return $rec->getId();
 	}

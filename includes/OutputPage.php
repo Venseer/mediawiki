@@ -755,11 +755,7 @@ class OutputPage extends ContextSource {
 	 * @return mixed Property value or null if not found
 	 */
 	public function getProperty( $name ) {
-		if ( isset( $this->mProperties[$name] ) ) {
-			return $this->mProperties[$name];
-		} else {
-			return null;
-		}
+		return $this->mProperties[$name] ?? null;
 	}
 
 	/**
@@ -1368,7 +1364,8 @@ class OutputPage extends ContextSource {
 		);
 
 		# Add the results to the link cache
-		$lb->addResultToCache( LinkCache::singleton(), $res );
+		$linkCache = MediaWikiServices::getInstance()->getLinkCache();
+		$lb->addResultToCache( $linkCache, $res );
 
 		return $res;
 	}
@@ -2645,13 +2642,13 @@ class OutputPage extends ContextSource {
 
 			foreach ( $errors as $error ) {
 				$text .= '<li>';
-				$text .= call_user_func_array( [ $this, 'msg' ], $error )->plain();
+				$text .= $this->msg( ...$error )->plain();
 				$text .= "</li>\n";
 			}
 			$text .= '</ul>';
 		} else {
 			$text .= "<div class=\"permissions-errors\">\n" .
-					call_user_func_array( [ $this, 'msg' ], reset( $errors ) )->plain() .
+					$this->msg( ...reset( $errors ) )->plain() .
 					"\n</div>";
 		}
 
@@ -3111,13 +3108,13 @@ class OutputPage extends ContextSource {
 
 		// Pre-process information
 		$separatorTransTable = $lang->separatorTransformTable();
-		$separatorTransTable = $separatorTransTable ? $separatorTransTable : [];
+		$separatorTransTable = $separatorTransTable ?: [];
 		$compactSeparatorTransTable = [
 			implode( "\t", array_keys( $separatorTransTable ) ),
 			implode( "\t", $separatorTransTable ),
 		];
 		$digitTransTable = $lang->digitTransformTable();
-		$digitTransTable = $digitTransTable ? $digitTransTable : [];
+		$digitTransTable = $digitTransTable ?: [];
 		$compactDigitTransTable = [
 			implode( "\t", array_keys( $digitTransTable ) ),
 			implode( "\t", $digitTransTable ),
@@ -4018,8 +4015,8 @@ class OutputPage extends ContextSource {
 		}
 		if ( $this->CSPNonce === null ) {
 			// XXX It might be expensive to generate randomness
-			// on every request, on windows.
-			$rand = MWCryptRand::generate( 15 );
+			// on every request, on Windows.
+			$rand = random_bytes( 15 );
 			$this->CSPNonce = base64_encode( $rand );
 		}
 		return $this->CSPNonce;

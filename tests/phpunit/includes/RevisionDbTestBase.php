@@ -43,6 +43,10 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 		);
 	}
 
+	protected function addCoreDBData() {
+		// Blank out. This would fail with a modified schema, and we don't need it.
+	}
+
 	/**
 	 * @return int
 	 */
@@ -262,7 +266,6 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 			[
 				'rev_id',
 				'rev_page',
-				'rev_text_id',
 				'rev_minor_edit',
 				'rev_deleted',
 				'rev_len',
@@ -273,7 +276,6 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 			[ [
 				strval( $rev->getId() ),
 				strval( $this->testPage->getId() ),
-				strval( $textId ),
 				'0',
 				'0',
 				'13',
@@ -283,19 +285,52 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 		);
 	}
 
-	/**
-	 * @covers Revision::insertOn
-	 */
-	public function testInsertOn_exceptionOnNoPage() {
-		// If an ExternalStore is set don't use it.
-		$this->setMwGlobals( 'wgDefaultExternalStore', false );
-		$this->setExpectedException(
+	public function provideInsertOn_exceptionOnIncomplete() {
+		$content = new TextContent( '' );
+		$user = User::newFromName( 'Foo' );
+
+		yield 'no parent' => [
+			[
+				'content' => $content,
+				'comment' => 'test',
+				'user' => $user,
+			],
 			IncompleteRevisionException::class,
 			"rev_page field must not be 0!"
-		);
+		];
+
+		yield 'no comment' => [
+			[
+				'content' => $content,
+				'page' => 7,
+				'user' => $user,
+			],
+			IncompleteRevisionException::class,
+			"comment must not be NULL!"
+		];
+
+		yield 'no content' => [
+			[
+				'comment' => 'test',
+				'page' => 7,
+				'user' => $user,
+			],
+			IncompleteRevisionException::class,
+			"Uninitialized field: content_address" // XXX: message may change
+		];
+	}
+
+	/**
+	 * @dataProvider provideInsertOn_exceptionOnIncomplete
+	 * @covers Revision::insertOn
+	 */
+	public function testInsertOn_exceptionOnIncomplete( $array, $expException, $expMessage ) {
+		// If an ExternalStore is set don't use it.
+		$this->setMwGlobals( 'wgDefaultExternalStore', false );
+		$this->setExpectedException( $expException, $expMessage );
 
 		$title = Title::newFromText( 'Nonexistant-' . __METHOD__ );
-		$rev = new Revision( [], 0, $title );
+		$rev = new Revision( $array, 0, $title );
 
 		$rev->insertOn( wfGetDB( DB_MASTER ) );
 	}
@@ -410,6 +445,9 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 			$services->getService( '_SqlBlobStore' ),
 			$services->getMainWANObjectCache(),
 			$services->getCommentStore(),
+			$services->getContentModelStore(),
+			$services->getSlotRoleStore(),
+			$this->getMcrMigrationStage(),
 			$services->getActorMigration()
 		);
 
@@ -915,7 +953,7 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 		$rev = new Revision( [
 			'page' => $this->testPage->getId(),
 			'content_model' => $this->testPage->getContentModel(),
-			'text_id' => 123456789, // not in the test DB
+			'id' => 123456789, // not in the test DB
 		] );
 
 		Wikimedia\suppressWarnings(); // bad text_id will trigger a warning.
@@ -1374,7 +1412,7 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 		$rev = $this->testPage->getRevision();
 
 		// Clear any previous cache for the revision during creation
-		$key = $cache->makeGlobalKey( 'revision-row-1.29',
+		$key = $cache->makeGlobalKey( RevisionStore::ROW_CACHE_KEY,
 			$db->getDomainID(),
 			$rev->getPage(),
 			$rev->getId()

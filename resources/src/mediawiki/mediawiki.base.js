@@ -18,7 +18,11 @@
 ( function () {
 	'use strict';
 
-	var slice = Array.prototype.slice;
+	var slice = Array.prototype.slice,
+		mwLoaderTrack = mw.track,
+		trackCallbacks = $.Callbacks( 'memory' ),
+		trackHandlers = [],
+		hasOwn = Object.prototype.hasOwnProperty;
 
 	/**
 	 * Object constructor for messages.
@@ -283,4 +287,303 @@
 	mw.msg = function () {
 		return mw.message.apply( mw.message, arguments ).toString();
 	};
+
+	/**
+	 * Track an analytic event.
+	 *
+	 * This method provides a generic means for MediaWiki JavaScript code to capture state
+	 * information for analysis. Each logged event specifies a string topic name that describes
+	 * the kind of event that it is. Topic names consist of dot-separated path components,
+	 * arranged from most general to most specific. Each path component should have a clear and
+	 * well-defined purpose.
+	 *
+	 * Data handlers are registered via `mw.trackSubscribe`, and receive the full set of
+	 * events that match their subcription, including those that fired before the handler was
+	 * bound.
+	 *
+	 * @param {string} topic Topic name
+	 * @param {Object} [data] Data describing the event, encoded as an object
+	 */
+	mw.track = function ( topic, data ) {
+		mwLoaderTrack( topic, data );
+		trackCallbacks.fire( mw.trackQueue );
+	};
+
+	/**
+	 * Register a handler for subset of analytic events, specified by topic.
+	 *
+	 * Handlers will be called once for each tracked event, including any events that fired before the
+	 * handler was registered; 'this' is set to a plain object with a 'timeStamp' property indicating
+	 * the exact time at which the event fired, a string 'topic' property naming the event, and a
+	 * 'data' property which is an object of event-specific data. The event topic and event data are
+	 * also passed to the callback as the first and second arguments, respectively.
+	 *
+	 * @param {string} topic Handle events whose name starts with this string prefix
+	 * @param {Function} callback Handler to call for each matching tracked event
+	 * @param {string} callback.topic
+	 * @param {Object} [callback.data]
+	 */
+	mw.trackSubscribe = function ( topic, callback ) {
+		var seen = 0;
+		function handler( trackQueue ) {
+			var event;
+			for ( ; seen < trackQueue.length; seen++ ) {
+				event = trackQueue[ seen ];
+				if ( event.topic.indexOf( topic ) === 0 ) {
+					callback.call( event, event.topic, event.data );
+				}
+			}
+		}
+
+		trackHandlers.push( [ handler, callback ] );
+
+		trackCallbacks.add( handler );
+	};
+
+	/**
+	 * Stop handling events for a particular handler
+	 *
+	 * @param {Function} callback
+	 */
+	mw.trackUnsubscribe = function ( callback ) {
+		trackHandlers = trackHandlers.filter( function ( fns ) {
+			if ( fns[ 1 ] === callback ) {
+				trackCallbacks.remove( fns[ 0 ] );
+				// Ensure the tuple is removed to avoid holding on to closures
+				return false;
+			}
+			return true;
+		} );
+	};
+
+	// Fire events from before track() triggred fire()
+	trackCallbacks.fire( mw.trackQueue );
+
+	/**
+	 * Registry and firing of events.
+	 *
+	 * MediaWiki has various interface components that are extended, enhanced
+	 * or manipulated in some other way by extensions, gadgets and even
+	 * in core itself.
+	 *
+	 * This framework helps streamlining the timing of when these other
+	 * code paths fire their plugins (instead of using document-ready,
+	 * which can and should be limited to firing only once).
+	 *
+	 * Features like navigating to other wiki pages, previewing an edit
+	 * and editing itself – without a refresh – can then retrigger these
+	 * hooks accordingly to ensure everything still works as expected.
+	 *
+	 * Example usage:
+	 *
+	 *     mw.hook( 'wikipage.content' ).add( fn ).remove( fn );
+	 *     mw.hook( 'wikipage.content' ).fire( $content );
+	 *
+	 * Handlers can be added and fired for arbitrary event names at any time. The same
+	 * event can be fired multiple times. The last run of an event is memorized
+	 * (similar to `$(document).ready` and `$.Deferred().done`).
+	 * This means if an event is fired, and a handler added afterwards, the added
+	 * function will be fired right away with the last given event data.
+	 *
+	 * Like Deferreds and Promises, the mw.hook object is both detachable and chainable.
+	 * Thus allowing flexible use and optimal maintainability and authority control.
+	 * You can pass around the `add` and/or `fire` method to another piece of code
+	 * without it having to know the event name (or `mw.hook` for that matter).
+	 *
+	 *     var h = mw.hook( 'bar.ready' );
+	 *     new mw.Foo( .. ).fetch( { callback: h.fire } );
+	 *
+	 * Note: Events are documented with an underscore instead of a dot in the event
+	 * name due to jsduck not supporting dots in that position.
+	 *
+	 * @class mw.hook
+	 */
+	mw.hook = ( function () {
+		var lists = {};
+
+		/**
+		 * Create an instance of mw.hook.
+		 *
+		 * @method hook
+		 * @member mw
+		 * @param {string} name Name of hook.
+		 * @return {mw.hook}
+		 */
+		return function ( name ) {
+			var list = hasOwn.call( lists, name ) ?
+				lists[ name ] :
+				lists[ name ] = $.Callbacks( 'memory' );
+
+			return {
+				/**
+				 * Register a hook handler
+				 *
+				 * @param {...Function} handler Function to bind.
+				 * @chainable
+				 */
+				add: list.add,
+
+				/**
+				 * Unregister a hook handler
+				 *
+				 * @param {...Function} handler Function to unbind.
+				 * @chainable
+				 */
+				remove: list.remove,
+
+				/**
+				 * Run a hook.
+				 *
+				 * @param {...Mixed} data
+				 * @return {mw.hook}
+				 * @chainable
+				 */
+				fire: function () {
+					return list.fireWith.call( this, null, slice.call( arguments ) );
+				}
+			};
+		};
+	}() );
+
+	/**
+	 * HTML construction helper functions
+	 *
+	 *     @example
+	 *
+	 *     var Html, output;
+	 *
+	 *     Html = mw.html;
+	 *     output = Html.element( 'div', {}, new Html.Raw(
+	 *         Html.element( 'img', { src: '<' } )
+	 *     ) );
+	 *     mw.log( output ); // <div><img src="&lt;"/></div>
+	 *
+	 * @class mw.html
+	 * @singleton
+	 */
+	mw.html = ( function () {
+		function escapeCallback( s ) {
+			switch ( s ) {
+				case '\'':
+					return '&#039;';
+				case '"':
+					return '&quot;';
+				case '<':
+					return '&lt;';
+				case '>':
+					return '&gt;';
+				case '&':
+					return '&amp;';
+			}
+		}
+
+		return {
+			/**
+			 * Escape a string for HTML.
+			 *
+			 * Converts special characters to HTML entities.
+			 *
+			 *     mw.html.escape( '< > \' & "' );
+			 *     // Returns &lt; &gt; &#039; &amp; &quot;
+			 *
+			 * @param {string} s The string to escape
+			 * @return {string} HTML
+			 */
+			escape: function ( s ) {
+				return s.replace( /['"<>&]/g, escapeCallback );
+			},
+
+			/**
+			 * Create an HTML element string, with safe escaping.
+			 *
+			 * @param {string} name The tag name.
+			 * @param {Object} [attrs] An object with members mapping element names to values
+			 * @param {string|mw.html.Raw|mw.html.Cdata|null} [contents=null] The contents of the element.
+			 *
+			 *  - string: Text to be escaped.
+			 *  - null: The element is treated as void with short closing form, e.g. `<br/>`.
+			 *  - this.Raw: The raw value is directly included.
+			 *  - this.Cdata: The raw value is directly included. An exception is
+			 *    thrown if it contains any illegal ETAGO delimiter.
+			 *    See <https://www.w3.org/TR/html401/appendix/notes.html#h-B.3.2>.
+			 * @return {string} HTML
+			 */
+			element: function ( name, attrs, contents ) {
+				var v, attrName, s = '<' + name;
+
+				if ( attrs ) {
+					for ( attrName in attrs ) {
+						v = attrs[ attrName ];
+						// Convert name=true, to name=name
+						if ( v === true ) {
+							v = attrName;
+							// Skip name=false
+						} else if ( v === false ) {
+							continue;
+						}
+						s += ' ' + attrName + '="' + this.escape( String( v ) ) + '"';
+					}
+				}
+				if ( contents === undefined || contents === null ) {
+					// Self close tag
+					s += '/>';
+					return s;
+				}
+				// Regular open tag
+				s += '>';
+				switch ( typeof contents ) {
+					case 'string':
+						// Escaped
+						s += this.escape( contents );
+						break;
+					case 'number':
+					case 'boolean':
+						// Convert to string
+						s += String( contents );
+						break;
+					default:
+						if ( contents instanceof this.Raw ) {
+							// Raw HTML inclusion
+							s += contents.value;
+						} else if ( contents instanceof this.Cdata ) {
+							// CDATA
+							if ( /<\/[a-zA-z]/.test( contents.value ) ) {
+								throw new Error( 'mw.html.element: Illegal end tag found in CDATA' );
+							}
+							s += contents.value;
+						} else {
+							throw new Error( 'mw.html.element: Invalid type of contents' );
+						}
+				}
+				s += '</' + name + '>';
+				return s;
+			},
+
+			/**
+			 * Wrapper object for raw HTML passed to mw.html.element().
+			 *
+			 * @class mw.html.Raw
+			 * @constructor
+			 * @param {string} value
+			 */
+			Raw: function ( value ) {
+				this.value = value;
+			},
+
+			/**
+			 * Wrapper object for CDATA element contents passed to mw.html.element()
+			 *
+			 * @class mw.html.Cdata
+			 * @constructor
+			 * @param {string} value
+			 */
+			Cdata: function ( value ) {
+				this.value = value;
+			}
+		};
+	}() );
+
+	// Alias $j to jQuery for backwards compatibility
+	// @deprecated since 1.23 Use $ or jQuery instead
+	mw.log.deprecate( window, '$j', $, 'Use $ or jQuery instead.' );
 }() );
