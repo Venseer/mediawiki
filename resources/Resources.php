@@ -1889,6 +1889,8 @@ return [
 			'rcfilters-activefilters',
 			'rcfilters-activefilters-hide',
 			'rcfilters-activefilters-show',
+			'rcfilters-activefilters-hide-tooltip',
+			'rcfilters-activefilters-show-tooltip',
 			'rcfilters-advancedfilters',
 			'rcfilters-group-results-by-page',
 			'rcfilters-limit-title',
@@ -2763,12 +2765,6 @@ return [
 			'mediawiki.api',
 			'oojs-ui-core',
 		],
-	],
-
-	/* dom-level2-shim */
-	'dom-level2-shim' => [
-		'deprecated' => 'Use of the "dom-level2-shim" module is deprecated since MediaWiki 1.29.0',
-		'targets' => [ 'desktop', 'mobile' ],
 	],
 
 	/**

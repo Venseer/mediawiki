@@ -235,7 +235,10 @@ class EditPage {
 	/** @var string */
 	public $action = 'submit';
 
-	/** @var bool */
+	/** @var bool Whether an edit conflict needs to be resolved. Detected based on whether
+	 * $editRevId is different from the current revision. When a conflict has successfully
+	 * been resolved by a 3-way-merge, this field is set to false.
+	 */
 	public $isConflict = false;
 
 	/** @var bool New page or new section */
@@ -301,7 +304,7 @@ class EditPage {
 	/** @var bool Has a summary been preset using GET parameter &summary= ? */
 	public $hasPresetSummary = false;
 
-	/** @var Revision|bool|null */
+	/** @var Revision|bool|null A revision object corresponding to $this->editRevId. */
 	public $mBaseRevision = false;
 
 	/** @var bool */
@@ -342,7 +345,16 @@ class EditPage {
 	/** @var string */
 	public $edittime = '';
 
-	/** @var int */
+	/** @var int ID of the current revision at the time editing was initiated on the client.
+	 * This is used to detect and resolve edit conflicts.
+	 *
+	 * @note 0 if the page did not exist at that time.
+	 * @note When starting an edit from an old revision, this still records the current
+	 * revision at the time , not the one the edit is based on.
+	 *
+	 * @see $oldid
+	 * @see getBaseRevision()
+	 */
 	private $editRevId = null;
 
 	/** @var string */
@@ -354,10 +366,16 @@ class EditPage {
 	/** @var string */
 	public $starttime = '';
 
-	/** @var int */
+	/** @var int Revision ID the edit is based on, or 0 if it's the current revision.
+	 * @see $editRevId
+	 */
 	public $oldid = 0;
 
-	/** @var int */
+	/** @var int Revision ID the edit is based on, adjusted when an edit conflict is resolved.
+	 * @see $editRevId
+	 * @see $oldid
+	 * @see getparentRevId()
+	 */
 	public $parentRevId = 0;
 
 	/** @var string */
@@ -1184,6 +1202,7 @@ class EditPage {
 				if ( $undo > 0 && $undoafter > 0 ) {
 					$undorev = Revision::newFromId( $undo );
 					$oldrev = Revision::newFromId( $undoafter );
+					$undoMsg = null;
 
 					# Sanity check, make sure it's the right page,
 					# the revisions exist and they were not deleted.
@@ -1192,12 +1211,19 @@ class EditPage {
 						!$undorev->isDeleted( Revision::DELETED_TEXT ) &&
 						!$oldrev->isDeleted( Revision::DELETED_TEXT )
 					) {
-						$content = $this->page->getUndoContent( $undorev, $oldrev );
-
-						if ( $content === false ) {
-							# Warn the user that something went wrong
-							$undoMsg = 'failure';
+						if ( WikiPage::hasDifferencesOutsideMainSlot( $undorev, $oldrev ) ) {
+							// Cannot yet undo edits that involve anything other the main slot.
+							$undoMsg = 'main-slot-only';
 						} else {
+							$content = $this->page->getUndoContent( $undorev, $oldrev );
+
+							if ( $content === false ) {
+								# Warn the user that something went wrong
+								$undoMsg = 'failure';
+							}
+						}
+
+						if ( $undoMsg === null ) {
 							$oldContent = $this->page->getContent( Revision::RAW );
 							$popts = ParserOptions::newFromUserAndLang( $user, $wgContLang );
 							$newContent = $content->preSaveTransform( $this->mTitle, $user, $popts );
@@ -1254,7 +1280,8 @@ class EditPage {
 					}
 
 					$out = $this->context->getOutput();
-					// Messages: undo-success, undo-failure, undo-norev, undo-nochange
+					// Messages: undo-success, undo-failure, undo-main-slot-only, undo-norev,
+					// undo-nochange.
 					$class = ( $undoMsg == 'success' ? '' : 'error ' ) . "mw-undo-{$undoMsg}";
 					$this->editFormPageTop .= $out->parse( "<div class=\"{$class}\">" .
 						$this->context->msg( 'undo-' . $undoMsg )->plain() . '</div>', true, /* interface */true );
@@ -2021,7 +2048,10 @@ ERROR;
 
 			wfDebug( "timestamp: {$timestamp}, edittime: {$this->edittime}\n" );
 
-			// Check editRevId if set, which handles same-second timestamp collisions
+			// An edit conflict is detected if the current revision is different from the
+			// revision that was current when editing was initiated on the client.
+			// This is checked based on the timestamp and revision ID.
+			// TODO: the timestamp based check can probably go away now.
 			if ( $timestamp != $this->edittime
 				|| ( $this->editRevId !== null && $this->editRevId != $latest )
 			) {
@@ -2301,7 +2331,8 @@ ERROR;
 	private function mergeChangesIntoContent( &$editContent ) {
 		$db = wfGetDB( DB_MASTER );
 
-		// This is the revision the editor started from
+		// This is the revision that was current at the time editing was initiated on the client,
+		// even if the edit was based on an old revision.
 		$baseRevision = $this->getBaseRevision();
 		$baseContent = $baseRevision ? $baseRevision->getContent() : null;
 
@@ -2332,9 +2363,16 @@ ERROR;
 	}
 
 	/**
-	 * @note: this method is very poorly named. If the user opened the form with ?oldid=X,
-	 *        one might think of X as the "base revision", which is NOT what this returns.
-	 * @return Revision|null Current version when the edit was started
+	 * Returns the revision that was current at the time editing was initiated on the client,
+	 * even if the edit was based on an old revision.
+	 *
+	 * @warning: this method is very poorly named. If the user opened the form with ?oldid=X,
+	 *        one might think of X as the "base revision", which is NOT what this returns,
+	 *        see oldid for that. One might further assume that this corresponds to the $baseRevId
+	 *        parameter of WikiPage::doEditContent, which is not the case either.
+	 *        getExpectedParentRevision() would perhaps be a better name.
+	 *
+	 * @return Revision|null Current version when editing was initiated on the client
 	 */
 	public function getBaseRevision() {
 		if ( !$this->mBaseRevision ) {

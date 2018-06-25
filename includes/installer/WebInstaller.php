@@ -529,7 +529,7 @@ class WebInstaller extends Installer {
 	public function getAcceptLanguage() {
 		global $wgLanguageCode, $wgRequest;
 
-		$mwLanguages = Language::fetchLanguageNames();
+		$mwLanguages = Language::fetchLanguageNames( null, 'mwfile' );
 		$headerLanguages = array_keys( $wgRequest->getAcceptLang() );
 
 		foreach ( $headerLanguages as $lang ) {
@@ -758,7 +758,7 @@ class WebInstaller extends Installer {
 	 */
 	public function label( $msg, $forId, $contents, $helpData = "" ) {
 		if ( strval( $msg ) == '' ) {
-			$labelText = '&#160;';
+			$labelText = '\u{00A0}';
 		} else {
 			$labelText = wfMessage( $msg )->escaped();
 		}
@@ -1047,7 +1047,7 @@ class WebInstaller extends Installer {
 
 			$items[$value] =
 				Xml::radio( $params['controlName'], $value, $checked, $itemAttribs ) .
-				'&#160;' .
+				'\u{00A0}' .
 				Xml::tags( 'label', [ 'for' => $id ], $this->parse(
 					isset( $params['itemLabels'] ) ?
 						wfMessage( $params['itemLabels'][$value] )->plain() :

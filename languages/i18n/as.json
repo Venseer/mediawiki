@@ -21,7 +21,9 @@
 			"Dibya Dutta",
 			"Matma Rex",
 			"চাণক্য কুমাৰ দাস",
-			"Fitoschido"
+			"Fitoschido",
+			"Sagsag",
+			"Bodhisattwa"
 		]
 	},
 	"tog-underline": "সংযোগসমূহ অধোৰেখিত কৰক:",
@@ -1155,6 +1157,7 @@
 	"rcfilters-quickfilters-placeholder-title": "এতিয়ালৈকে কোনো ছেকনী সাঁচি থোৱা নাই",
 	"rcfilters-quickfilters-placeholder-description": "আপোনাৰ ছেকনীৰ ছেটিংছ সাঁচি থ'বলৈ আৰু পাছত সেয়া ব্যৱহাৰ কৰিবলৈ তলত থকা সক্ৰিয় পৰিস্ৰাৱক ক্ষেত্ৰৰ বুক্‌মাৰ্ক চিহ্নটো ক্লিক কৰক।",
 	"rcfilters-savedqueries-defaultlabel": "সঞ্চিত পৰিস্ৰাৱক",
+	"rcfilters-savedqueries-remove": "মচি পেলাওক",
 	"rcfilters-show-new-changes": "নতুন সালসলনিবোৰ চাওক",
 	"rcfilters-search-placeholder": "পৰিৱৰ্তনসমূহ ছেকক (ছেকনীৰ নামৰ বাবে মেন্যু বা সন্ধান ব্যৱহাৰ কৰক)",
 	"rcfilters-highlightbutton-title": "ফলাফলসমূহ উজ্জ্বল কৰক",
@@ -3038,7 +3041,7 @@
 	"special-characters-group-hebrew": "হিব্ৰু",
 	"special-characters-group-bangla": "বাংলা",
 	"special-characters-group-tamil": "তামিল",
-	"special-characters-group-telugu": "তেলেগু",
+	"special-characters-group-telugu": "তেলুগু",
 	"special-characters-group-sinhala": "সিংহলী",
 	"special-characters-group-gujarati": "গুজৰাটী",
 	"special-characters-group-devanagari": "দেবনাগৰী",

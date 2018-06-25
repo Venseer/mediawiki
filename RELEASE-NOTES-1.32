@@ -78,6 +78,9 @@ production.
     templated parameters.
 * It is now an error to submit too many values for a multi-valued parameter.
   This has generated a warning since MediaWiki 1.14.
+* Assertion failures from the 'assert' and 'assertuser' parameters will no
+  longer use the action module's custom response format, for the few modules
+  that use custom formatters that handle errors.
 
 === Action API internal changes in 1.32 ===
 * Added 'ApiParseMakeOutputPage' hook.
@@ -129,6 +132,7 @@ because of Phabricator reports.
   removed. Use JobQueueGroup::singleton()->push() instead.
 * The jquery.footHovzer module, for mediawiki.debug, was removed.
 * The es5-shim module, empty and deprecated since 1.29, was removed.
+* the dom-level2-shim module, empty and deprecated since 1.29, was removed.
 * The mediawiki.widgets.visibleByteLimit module alias, deprecated in 1.32, was
   removed. Use mediawiki.widgets.visibleLengthLimit instead.
 * The jquery.farbtastic module, unused since 1.18, was removed.
