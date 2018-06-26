@@ -336,7 +336,7 @@ class ResourceLoaderStartUpModule extends ResourceLoaderModule {
 	 * @return array
 	 */
 	public static function getStartupModules() {
-		return [ 'jquery', 'mediawiki' ];
+		return [ 'jquery', 'mediawiki', 'mediawiki.base' ];
 	}
 
 	public static function getLegacyModules() {
@@ -396,7 +396,7 @@ class ResourceLoaderStartUpModule extends ResourceLoaderModule {
 			// This url may be preloaded. See getPreloadLinks().
 			'$VARS.baseModulesUri' => self::getStartupModulesUrl( $context ),
 		] );
-		$pairs['$CODE.registrations()'] = str_replace(
+		$pairs['$CODE.registrations();'] = str_replace(
 			"\n",
 			"\n\t",
 			trim( $this->getModuleRegistrations( $context ) )
@@ -429,8 +429,8 @@ class ResourceLoaderStartUpModule extends ResourceLoaderModule {
 			// Detect changes to the module registrations
 			'moduleHashes' => $this->getAllModuleHashes( $context ),
 
-			'fileMtimes' => [
-				filemtime( "$IP/resources/src/startup.js" ),
+			'fileHashes' => [
+				$this->safeFileHash( "$IP/resources/src/startup.js" ),
 			],
 		];
 		return $summary;

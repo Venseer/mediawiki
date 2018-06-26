@@ -228,6 +228,7 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.hidpi' => [
+		'deprecated' => 'Use of the srcset polyfill is deprecated since MediaWiki 1.32.0',
 		'scripts' => 'resources/src/jquery/jquery.hidpi.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -848,10 +849,16 @@ return [
 		'scripts' => [
 			'resources/src/mediawiki/mediawiki.js',
 			'resources/src/mediawiki/mediawiki.requestIdleCallback.js',
-			'resources/src/mediawiki/mediawiki.errorLogger.js',
-			'resources/src/mediawiki/mediawiki.base.js',
 		],
 		'debugScripts' => 'resources/src/mediawiki/mediawiki.log.js',
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+	'mediawiki.base' => [
+		// Keep in sync with maintenance/jsduck/eg-iframe.html
+		'scripts' => [
+			'resources/src/mediawiki.base/mediawiki.errorLogger.js',
+			'resources/src/mediawiki.base/mediawiki.base.js',
+		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.apihelp' => [
@@ -1043,12 +1050,6 @@ return [
 		'styles' => [
 			'resources/src/mediawiki.helplink/helplink.less',
 		],
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.hidpi' => [
-		'scripts' => 'resources/src/mediawiki.hidpi/hidpi.js',
-		'dependencies' => 'jquery.hidpi',
-		'skipFunction' => 'resources/src/mediawiki.hidpi/skip.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.hlist' => [
