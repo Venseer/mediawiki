@@ -1835,6 +1835,7 @@ return [
 			'resources/src/mediawiki.rcfilters/ui/mw.rcfilters.ui.SaveFiltersPopupButtonWidget.js',
 			'resources/src/mediawiki.rcfilters/ui/mw.rcfilters.ui.FormWrapperWidget.js',
 			'resources/src/mediawiki.rcfilters/ui/mw.rcfilters.ui.FilterItemHighlightButton.js',
+			'resources/src/mediawiki.rcfilters/ui/mw.rcfilters.ui.HighlightPopupWidget.js',
 			'resources/src/mediawiki.rcfilters/ui/mw.rcfilters.ui.HighlightColorPickerWidget.js',
 			'resources/src/mediawiki.rcfilters/ui/mw.rcfilters.ui.LiveUpdateButtonWidget.js',
 			'resources/src/mediawiki.rcfilters/ui/mw.rcfilters.ui.MarkSeenButtonWidget.js',
@@ -2643,7 +2644,7 @@ return [
 	],
 	'mediawiki.widgets.CategoryMultiselectWidget' => [
 		'scripts' => [
-			'resources/src/mediawiki.widgets/mw.widgets.CategoryCapsuleItemWidget.js',
+			'resources/src/mediawiki.widgets/mw.widgets.CategoryTagItemWidget.js',
 			'resources/src/mediawiki.widgets/mw.widgets.CategoryMultiselectWidget.js',
 		],
 		'dependencies' => [
