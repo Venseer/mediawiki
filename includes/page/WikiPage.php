@@ -2527,17 +2527,9 @@ class WikiPage implements Page, IDBAccessObject {
 		// Note array_intersect() preserves keys from the first arg, and we're
 		// assuming $revQuery has `revision` primary and isn't using subtables
 		// for anything we care about.
-		$tablesFlat = [];
-		array_walk_recursive(
-			$revQuery['tables'],
-			function ( $a ) use ( &$tablesFlat ) {
-				$tablesFlat[] = $a;
-			}
-		);
-
 		$res = $dbw->select(
 			array_intersect(
-				$tablesFlat,
+				$revQuery['tables'],
 				[ 'revision', 'revision_comment_temp', 'revision_actor_temp' ]
 			),
 			'1',
@@ -2969,6 +2961,13 @@ class WikiPage implements Page, IDBAccessObject {
 		$updater->setOriginalRevisionId( $target->getId() );
 		$updater->setUndidRevisionId( $current->getId() );
 		$updater->addTags( $tags );
+
+		// TODO: this logic should not be in the storage layer, it's here for compatibility
+		// with 1.31 behavior. Applying the 'autopatrol' right should be done in the same
+		// place the 'bot' right is handled, which is currently in EditPage::attemptSave.
+		if ( $wgUseRCPatrol && $this->getTitle()->userCan( 'autopatrol', $guser ) ) {
+			$updater->setRcPatrolStatus( RecentChange::PRC_AUTOPATROLLED );
+		}
 
 		// Actually store the rollback
 		$rev = $updater->saveRevision(
