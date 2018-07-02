@@ -21,6 +21,9 @@ use MediaWiki\Storage\NameTableStore;
 use MediaWiki\Storage\RevisionFactory;
 use MediaWiki\Storage\RevisionLookup;
 use MediaWiki\Storage\RevisionStore;
+use MediaWiki\Storage\RevisionStoreFactory;
+use OldRevisionImporter;
+use UploadRevisionImporter;
 use Wikimedia\Rdbms\LBFactory;
 use LinkCache;
 use Wikimedia\Rdbms\LoadBalancer;
@@ -758,6 +761,14 @@ class MediaWikiServices extends ServiceContainer {
 	}
 
 	/**
+	 * @since 1.32
+	 * @return RevisionStoreFactory
+	 */
+	public function getRevisionStoreFactory() {
+		return $this->getService( 'RevisionStoreFactory' );
+	}
+
+	/**
 	 * @since 1.31
 	 * @return RevisionLookup
 	 */
@@ -827,6 +838,22 @@ class MediaWikiServices extends ServiceContainer {
 	 */
 	public function getActorMigration() {
 		return $this->getService( 'ActorMigration' );
+	}
+
+	/**
+	 * @since 1.32
+	 * @return UploadRevisionImporter
+	 */
+	public function getUploadRevisionImporter() {
+		return $this->getService( 'UploadRevisionImporter' );
+	}
+
+	/**
+	 * @since 1.32
+	 * @return OldRevisionImporter
+	 */
+	public function getOldRevisionImporter() {
+		return $this->getService( 'OldRevisionImporter' );
 	}
 
 	///////////////////////////////////////////////////////////////////////////
