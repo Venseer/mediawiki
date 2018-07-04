@@ -2272,6 +2272,83 @@ hi
 <link rel="mw:PageProp/Category" href="./Category:Ho" />
 !! end
 
+!! test
+Paragraph wrapping following unclosed table
+!! options
+parsoid=wt2html,html2html
+!! wikitext
+{|
+|-
+
+{|
+| x
+|}
+
+a
+
+b
+
+c
+!! html/php+tidy
+<table>
+
+
+</table><table>
+<tbody><tr>
+<td>x
+</td></tr></tbody></table>
+<p>a
+</p><p>b
+</p><p>c
+</p>
+!! html/parsoid
+<table data-parsoid='{"autoInsertedEnd":true}'>
+<tbody><tr class="mw-empty-elt" data-parsoid='{"startTagSrc":"|-"}'></tr>
+
+</tbody></table><table>
+<tbody><tr data-parsoid='{"autoInsertedStart":true}'><td>x</td></tr>
+</tbody></table>
+
+<p>a</p>
+
+<p>b</p>
+
+<p>c</p>
+!! end
+
+!! test
+Paragraph wrapping suppressed in html p
+!! options
+parsoid=wt2html,html2html
+!! wikitext
+<p>
+
+
+hi
+
+
+
+</p>
+!! html/php+tidy
+<p>
+
+
+hi
+
+
+
+</p>
+!! html/parsoid
+<p data-parsoid='{"stx":"html"}'>
+
+
+hi
+
+
+
+</p>
+!! end
+
 ###
 ### Preformatted text
 ###
@@ -7240,10 +7317,10 @@ a
 a
 <table></table>
 !! html/parsoid
-<p data-parsoid='{"fostered":true,"autoInsertedEnd":true}'>a</p><table>
-<tbody><tr data-parsoid='{"startTagSrc":"|-","autoInsertedEnd":true}'>
-
-</tr></tbody></table>
+<span data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true}'>
+a
+</span><table>
+<tbody><tr class="mw-empty-elt" data-parsoid='{"startTagSrc":"|-"}'></tr></tbody></table>
 !! end
 
 !! test
@@ -12786,16 +12863,22 @@ Templates: Block Tags: 2. Back-to-back template uses
 
 !!end
 
-# This is an edge case relating to paragraph wrapping.
-!!test
+## This is an edge case relating to paragraph wrapping.
+## Note that Parsoid fails to match Remex because it's using the closing tag
+## as a heuristic to determine if it's in a block, rather than SAX based events.
+!! test
 Templates: Correctly encapsulate templates producing </p> tag without a corresponding <p> tag
 !! wikitext
 {{echo|a
 b</p>}}
+!! html/php+tidy
+<p>a
+</p><p>
+b</p><p class="mw-empty-elt"></p>
 !! html/parsoid
-<p about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"echo","href":"./Template:Echo"},"params":{"1":{"wt":"a\nb&lt;/p>"}},"i":0}}]}'>a
-b</p>
-!!end
+<p about="#mwt1" typeof="mw:Transclusion" data-mw='{"parts":[{"template":{"target":{"wt":"echo","href":"./Template:Echo"},"params":{"1":{"wt":"a\nb&lt;/p>"}},"i":0}}]}'>a</p><span about="#mwt1">
+</span><span about="#mwt1">b</span><p about="#mwt1" data-parsoid='{"autoInsertedStart":true,"stx":"html"}'></p>
+!! end
 
 !!test
 Templates: Links: 1. Simple example
@@ -13164,13 +13247,13 @@ parsoid=wt2html,wt2wt
 <link rel="mw:PageProp/Category" href="./Category:Bar1"><link rel="mw:PageProp/Category" href="./Category:Bar2"><table><tbody><tr><td>foo</td></tr></tbody></table>
 !!end
 
-!!test
+!! test
 Templates: Wiki Tables: 1a. Fostering of entire template content
 !! wikitext
 {|
 {{echo|a}}
 |}
-!! html
+!! html/php
 <table>
 a
 <tr><td></td></tr></table>
@@ -13180,7 +13263,7 @@ a
 a
 <table><tbody><tr><td></td></tr></tbody></table>
 !! html/parsoid
-<p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"firstWikitextNode":"TABLE","pi":[[{"k":"1"}]]}' data-mw='{"parts":["{|\n",{"template":{"target":{"wt":"echo","href":"./Template:Echo"},"params":{"1":{"wt":"a"}},"i":0}},"\n|}"]}'>a</p><table about="#mwt2">
+<span about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE","pi":[[{"k":"1"}]]}' data-mw='{"parts":["{|\n",{"template":{"target":{"wt":"echo","href":"./Template:Echo"},"params":{"1":{"wt":"a"}},"i":0}},"\n|}"]}'>a</span><table about="#mwt2">
 
 </table>
 !! end
@@ -13216,14 +13299,14 @@ foo
 </table>
 !! end
 
-!!test
+!! test
 Templates: Wiki Tables: 2. Fostering of partial template content
 !! wikitext
 {|
 {{echo|a
 <div>b</div>}}
 |}
-!! html
+!! html/php
 <table>
 a
 <div>b</div>
@@ -13235,7 +13318,7 @@ a
 <div>b</div><table>
 <tbody><tr><td></td></tr></tbody></table>
 !! html/parsoid
-<p about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"firstWikitextNode":"TABLE","pi":[[{"k":"1"}]]}' data-mw='{"parts":["{|\n",{"template":{"target":{"wt":"echo","href":"./Template:Echo"},"params":{"1":{"wt":"a\n&lt;div>b&lt;/div>"}},"i":0}},"\n|}"]}'>a</p><div about="#mwt2">b</div><table about="#mwt2">
+<span about="#mwt2" typeof="mw:Transclusion" data-parsoid='{"fostered":true,"autoInsertedEnd":true,"autoInsertedStart":true,"firstWikitextNode":"TABLE","pi":[[{"k":"1"}]]}' data-mw='{"parts":["{|\n",{"template":{"target":{"wt":"echo","href":"./Template:Echo"},"params":{"1":{"wt":"a\n&lt;div>b&lt;/div>"}},"i":0}},"\n|}"]}'>a</span><div about="#mwt2">b</div><table about="#mwt2">
 
 
 </table>
@@ -22099,11 +22182,11 @@ conversion:
 
 ==Latinski==
 !! html/php
-<h2><span id="-.7BNaslov.7D-"></span><span class="mw-headline" id="-{Naslov}-">Naslov</span><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=1" title="Уреди одељак „Naslov“">уреди</a><span class="mw-editsection-bracket">]</span></span></h2>
+<h2><span id="-.7BNaslov.7D-"></span><span class="mw-headline" id="-{Naslov}-">Naslov</span><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=1" title="Уредите одељак „Naslov“">уреди</a><span class="mw-editsection-bracket">]</span></span></h2>
 <p>Ноте тхат евен ан унпротецтед хеадлине ИД ис нот аффецтед бy лангуаге
 цонверсион:
 </p>
-<h2><span class="mw-headline" id="Latinski">Латински</span><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=2" title="Уреди одељак „Латински“">уреди</a><span class="mw-editsection-bracket">]</span></span></h2>
+<h2><span class="mw-headline" id="Latinski">Латински</span><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=Parser_test&amp;action=edit&amp;section=2" title="Уредите одељак „Латински“">уреди</a><span class="mw-editsection-bracket">]</span></span></h2>
 
 !! html/parsoid
 <h2 id="-{Naslov}-"><span id="-.7BNaslov.7D-" typeof="mw:FallbackId"></span><span typeof="mw:LanguageVariant" data-mw-variant='{"disabled":{"t":"Naslov"}}'></span></h2>
@@ -22871,7 +22954,7 @@ language=sr
 !! wikitext
 [[Датотека:Foobar.jpg|thumb|-{R|caption:}-]]
 !! html/php
-<div class="thumb tright"><div class="thumbinner" style="width:182px;"><a href="/wiki/%D0%94%D0%B0%D1%82%D0%BE%D1%82%D0%B5%D0%BA%D0%B0:Foobar.jpg" class="image"><img alt="" src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" width="180" height="20" class="thumbimage" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x" /></a>  <div class="thumbcaption"><div class="magnify"><a href="/wiki/%D0%94%D0%B0%D1%82%D0%BE%D1%82%D0%B5%D0%BA%D0%B0:Foobar.jpg" class="internal" title="Повећај"></a></div>caption:</div></div></div>
+<div class="thumb tright"><div class="thumbinner" style="width:182px;"><a href="/wiki/%D0%94%D0%B0%D1%82%D0%BE%D1%82%D0%B5%D0%BA%D0%B0:Foobar.jpg" class="image"><img alt="" src="http://example.com/images/thumb/3/3a/Foobar.jpg/180px-Foobar.jpg" width="180" height="20" class="thumbimage" srcset="http://example.com/images/thumb/3/3a/Foobar.jpg/270px-Foobar.jpg 1.5x, http://example.com/images/thumb/3/3a/Foobar.jpg/360px-Foobar.jpg 2x" /></a>  <div class="thumbcaption"><div class="magnify"><a href="/wiki/%D0%94%D0%B0%D1%82%D0%BE%D1%82%D0%B5%D0%BA%D0%B0:Foobar.jpg" class="internal" title="Повећајте"></a></div>caption:</div></div></div>
 
 !! html/parsoid
 <figure class="mw-default-size" typeof="mw:Image/Thumb" data-parsoid='{"optList":[{"ck":"thumbnail","ak":"thumb"}]}'><a href="./Датотека:Foobar.jpg"><img resource="./Датотека:Foobar.jpg" src="//example.com/images/thumb/3/3a/Foobar.jpg/220px-Foobar.jpg" data-file-width="1941" data-file-height="220" data-file-type="bitmap" height="25" width="220"/></a><figcaption><span typeof="mw:LanguageVariant" data-mw-variant='{"disabled":{"t":"caption:"}}' data-parsoid='{"fl":["R"]}'></span></figcaption></figure>
@@ -23415,7 +23498,12 @@ Line two
 
 !! end
 
-# FIXME: Why does/should the blockquote+div combo suppress p-wrapping here?
+## This is a corner case interaction between the paragraph wrapping in the
+## php parser's BlockLevelPass and Remex.  `doBlockLevels` has a notion of
+## some tags which close paragraphs (and thus prevent wrapping on their line),
+## of which "div" is one, but do p-wrapping inside them.  These are referred
+## to as "never suppressing".  Remex, for its part, doesn't traverse into
+## "div"s to p-wrap.  Hence, we only get this partial wrapping.
 !! test
 Paragraphs inside blockquotes/divs (no extra line breaks)
 !! wikitext
