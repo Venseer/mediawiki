@@ -138,7 +138,7 @@ class CommentStore {
 	 * @return string
 	 */
 	private function getKey( $methodKey = null ) {
-		$key = $this->key !== null ? $this->key : $methodKey;
+		$key = $this->key ?? $methodKey;
 		if ( $key === null ) {
 			// @codeCoverageIgnoreStart
 			throw new InvalidArgumentException( '$key should not be null' );
@@ -158,7 +158,7 @@ class CommentStore {
 	 *
 	 * @since 1.30
 	 * @since 1.31 Method signature changed, $key parameter added (with deprecated back compat)
-	 * @param string $key A key such as "rev_comment" identifying the comment
+	 * @param string|null $key A key such as "rev_comment" identifying the comment
 	 *  field being fetched.
 	 * @return string[] to include in the `$vars` to `IDatabase->select()`. All
 	 *  fields are aliased, so `+` is safe to use.
@@ -191,7 +191,7 @@ class CommentStore {
 	 *
 	 * @since 1.30
 	 * @since 1.31 Method signature changed, $key parameter added (with deprecated back compat)
-	 * @param string $key A key such as "rev_comment" identifying the comment
+	 * @param string|null $key A key such as "rev_comment" identifying the comment
 	 *  field being fetched.
 	 * @return array With three keys:
 	 *   - tables: (string[]) to include in the `$table` to `IDatabase->select()`
@@ -381,7 +381,7 @@ class CommentStore {
 	 * @since 1.31 Method signature changed, $key parameter added (with deprecated back compat)
 	 * @param string $key A key such as "rev_comment" identifying the comment
 	 *  field being fetched.
-	 * @param object|array $row Result row.
+	 * @param object|array|null $row Result row.
 	 * @param bool $fallback If true, fall back as well as possible instead of throwing an exception.
 	 * @return CommentStoreComment
 	 */
@@ -415,7 +415,7 @@ class CommentStore {
 	 * @param IDatabase $db Database handle to use for lookup
 	 * @param string $key A key such as "rev_comment" identifying the comment
 	 *  field being fetched.
-	 * @param object|array $row Result row.
+	 * @param object|array|null $row Result row.
 	 * @param bool $fallback If true, fall back as well as possible instead of throwing an exception.
 	 * @return CommentStoreComment
 	 */
@@ -458,16 +458,7 @@ class CommentStore {
 		$comment = CommentStoreComment::newUnsavedComment( $comment, $data );
 
 		# Truncate comment in a Unicode-sensitive manner
-		$comment->text = $this->lang->truncate( $comment->text, self::MAX_COMMENT_LENGTH );
-		if ( mb_strlen( $comment->text, 'UTF-8' ) > self::COMMENT_CHARACTER_LIMIT ) {
-			$ellipsis = wfMessage( 'ellipsis' )->inLanguage( $this->lang )->escaped();
-			if ( mb_strlen( $ellipsis ) >= self::COMMENT_CHARACTER_LIMIT ) {
-				// WTF?
-				$ellipsis = '...';
-			}
-			$maxLength = self::COMMENT_CHARACTER_LIMIT - mb_strlen( $ellipsis, 'UTF-8' );
-			$comment->text = mb_substr( $comment->text, 0, $maxLength, 'UTF-8' ) . $ellipsis;
-		}
+		$comment->text = $this->lang->truncateForVisual( $comment->text, self::COMMENT_CHARACTER_LIMIT );
 
 		if ( $this->stage > MIGRATION_OLD && !$comment->id ) {
 			$dbData = $comment->data;
@@ -530,7 +521,7 @@ class CommentStore {
 		$comment = $this->createComment( $dbw, $comment, $data );
 
 		if ( $this->stage <= MIGRATION_WRITE_BOTH ) {
-			$fields[$key] = $this->lang->truncate( $comment->text, 255 );
+			$fields[$key] = $this->lang->truncateForDatabase( $comment->text, 255 );
 		}
 
 		if ( $this->stage >= MIGRATION_WRITE_BOTH ) {
@@ -567,7 +558,7 @@ class CommentStore {
 	 * @param IDatabase $dbw Database handle to insert on
 	 * @param string $key A key such as "rev_comment" identifying the comment
 	 *  field being fetched.
-	 * @param string|Message|CommentStoreComment $comment As for `self::createComment()`
+	 * @param string|Message|CommentStoreComment|null $comment As for `self::createComment()`
 	 * @param array|null $data As for `self::createComment()`
 	 * @return array Fields for the insert or update
 	 */
@@ -606,7 +597,7 @@ class CommentStore {
 	 * @param IDatabase $dbw Database handle to insert on
 	 * @param string $key A key such as "rev_comment" identifying the comment
 	 *  field being fetched.
-	 * @param string|Message|CommentStoreComment $comment As for `self::createComment()`
+	 * @param string|Message|CommentStoreComment|null $comment As for `self::createComment()`
 	 * @param array|null $data As for `self::createComment()`
 	 * @return array Two values:
 	 *  - array Fields for the insert or update

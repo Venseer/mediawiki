@@ -70,10 +70,10 @@ class NameTableStore {
 	 * @param string $table
 	 * @param string $idField
 	 * @param string $nameField
-	 * @param callable $normalizationCallback Normalization to be applied to names before being
+	 * @param callable|null $normalizationCallback Normalization to be applied to names before being
 	 * saved or queried. This should be a callback that accepts and returns a single string.
 	 * @param bool|string $wikiId The ID of the target wiki database. Use false for the local wiki.
-	 * @param callable $insertCallback Callback to change insert fields accordingly.
+	 * @param callable|null $insertCallback Callback to change insert fields accordingly.
 	 * This parameter was introduced in 1.32
 	 */
 	public function __construct(
@@ -109,8 +109,20 @@ class NameTableStore {
 		return $this->loadBalancer->getConnection( $index, [], $this->wikiId, $flags );
 	}
 
+	/**
+	 * Gets the cache key for names.
+	 *
+	 * The cache key is constructed based on the wiki ID passed to the constructor, and allows
+	 * sharing of name tables cached for a specific database between wikis.
+	 *
+	 * @return string
+	 */
 	private function getCacheKey() {
-		return $this->cache->makeKey( 'NameTableSqlStore', $this->table, $this->wikiId );
+		return $this->cache->makeGlobalKey(
+			'NameTableSqlStore',
+			$this->table,
+			$this->loadBalancer->resolveDomainID( $this->wikiId )
+		);
 	}
 
 	/**

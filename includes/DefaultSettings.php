@@ -3004,11 +3004,6 @@ $wgAllUnicodeFixes = false;
 $wgLegacyEncoding = false;
 
 /**
- * @deprecated since 1.30, does nothing
- */
-$wgBrowserBlackList = [];
-
-/**
  * If set to true, the MediaWiki 1.4 to 1.5 schema conversion will
  * create stub reference rows in the text table instead of copying
  * the full text of all current entries from 'cur' to 'text'.
@@ -4870,7 +4865,7 @@ $wgDefaultUserOptions = [
 	'watchdefault' => 1,
 	'watchdeletion' => 0,
 	'watchuploads' => 1,
-	'watchlistdays' => 3.0,
+	'watchlistdays' => 7.0,
 	'watchlisthideanons' => 0,
 	'watchlisthidebots' => 0,
 	'watchlisthideliu' => 0,
@@ -7892,7 +7887,7 @@ $wgNewUserLog = true;
  * Maintain a log of page creations at Special:Log/create?
  * @since 1.32
  */
-$wgPageCreationLog = false;
+$wgPageCreationLog = true;
 
 /** @} */ # end logging }
 
@@ -8764,6 +8759,8 @@ $wgMaxJobDBWriteDuration = false;
  *    $wgCrossSiteAJAXdomains as an allowed load sources.
  *  'unsafeFallback' Add unsafe-inline as a script source, as a fallback for
  *    browsers that do not understand nonce-sources [default on].
+ *  'useNonces' Require nonces on all inline scripts. If disabled and 'unsafeFallback'
+ *    is on, then all inline scripts will be allowed [default true].
  *  'script-src' Array of additional places that are allowed to have JS be loaded from.
  *  'report-uri' true to use MW api [default], false to disable, string for alternate uri
  * @warning May cause slowness on windows due to slow random number generator.
@@ -8897,13 +8894,23 @@ $wgInterwikiPrefixDisplayTypes = [];
 $wgCommentTableSchemaMigrationStage = MIGRATION_OLD;
 
 /**
- * RevisionStore table schema migration stage (content, slots, content_models & slot_roles tables)
+ * RevisionStore table schema migration stage (content, slots, content_models & slot_roles tables).
+ * Use the SCHEMA_COMPAT_XXX flags. Supported values:
+ *
+ * - SCHEMA_COMPAT_OLD
+ * - SCHEMA_COMPAT_WRITE_BOTH | SCHEMA_COMPAT_READ_OLD
+ * - SCHEMA_COMPAT_WRITE_BOTH | SCHEMA_COMPAT_READ_NEW
+ * - SCHEMA_COMPAT_OLD
+ *
+ * Note that reading the old and new schema at the same time is not supported.
+ * Attempting to set both read bits in $wgMultiContentRevisionSchemaMigrationStage
+ * will result in an InvalidArgumentException.
  *
  * @see Task: https://phabricator.wikimedia.org/T174028
  * @see Commit: https://gerrit.wikimedia.org/r/#/c/378724/
  *
  * @since 1.32
- * @var int One of the MIGRATION_* constants
+ * @var int An appropriate combination of SCHEMA_COMPAT_XXX flags.
  */
 $wgMultiContentRevisionSchemaMigrationStage = MIGRATION_OLD;
 

@@ -344,6 +344,10 @@ class PageUpdater {
 		// TODO: MCR: check the role and the content's model against the list of supported
 		// roles, see T194046.
 
+		if ( $role !== 'main' ) {
+			throw new InvalidArgumentException( 'Only the main slot is presently supported' );
+		}
+
 		$this->slotsUpdate->modifyContent( $role, $content );
 	}
 
@@ -611,7 +615,6 @@ class PageUpdater {
 		// Defend against mistakes caused by differences with the
 		// signature of WikiPage::doEditContent.
 		Assert::parameterType( 'integer', $flags, '$flags' );
-		Assert::parameterType( 'CommentStoreComment', $summary, '$summary' );
 
 		if ( $this->wasCommitted() ) {
 			throw new RuntimeException( 'saveRevision() has already been called on this PageUpdater!' );

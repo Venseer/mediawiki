@@ -1090,7 +1090,7 @@ class Language {
 	 * @param string $ts 14-character timestamp
 	 *      YYYYMMDDHHMMSS
 	 *      01234567890123
-	 * @param DateTimeZone $zone Timezone of $ts
+	 * @param DateTimeZone|null $zone Timezone of $ts
 	 * @param int &$ttl The amount of time (in seconds) the output may be cached for.
 	 * Only makes sense if $ts is the current time.
 	 * @todo handling of "o" format character for Iranian, Hebrew, Hijri & Thai?
@@ -1883,6 +1883,14 @@ class Language {
 			# Add 543 years to the Gregorian calendar
 			# Months and days are identical
 			$gy_offset = $gy + 543;
+			# fix for dates between 1912 and 1941
+			# https://en.wikipedia.org/?oldid=836596673#New_year
+			if ( $gy >= 1912 && $gy <= 1940 ) {
+				if ( $gm <= 3 ) {
+					$gy_offset--;
+				}
+				$gm = ( $gm - 3 ) % 12;
+			}
 		} elseif ( ( !strcmp( $cName, 'minguo' ) ) || !strcmp( $cName, 'juche' ) ) {
 			# Minguo dates
 			# Deduct 1911 years from the Gregorian calendar
@@ -4076,7 +4084,7 @@ class Language {
 	 * match up with it.
 	 *
 	 * @param string $str The validated block duration in English
-	 * @param User $user User object to use timezone from or null for $wgUser
+	 * @param User|null $user User object to use timezone from or null for $wgUser
 	 * @param int $now Current timestamp, for formatting relative block durations
 	 * @return string Somehow translated block duration
 	 * @see LanguageFi.php for example implementation
@@ -4400,7 +4408,7 @@ class Language {
 	 * @return bool
 	 */
 	public function equals( Language $lang ) {
-		return $lang->getCode() === $this->mCode;
+		return $lang === $this || $lang->getCode() === $this->mCode;
 	}
 
 	/**

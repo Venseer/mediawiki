@@ -327,8 +327,8 @@ class SearchHighlighter {
 	 * @param string $text
 	 * @param int $start
 	 * @param int $end
-	 * @param int &$posStart (out) actual start position
-	 * @param int &$posEnd (out) actual end position
+	 * @param int|null &$posStart (out) actual start position
+	 * @param int|null &$posEnd (out) actual end position
 	 * @return string
 	 */
 	function extract( $text, $start, $end, &$posStart = null, &$posEnd = null ) {
@@ -525,12 +525,12 @@ class SearchHighlighter {
 			}
 			--$contextlines;
 			// truncate function changes ... to relevant i18n message.
-			$pre = $wgContLang->truncate( $m[1], - $contextchars, '...', false );
+			$pre = $wgContLang->truncateForVisual( $m[1], - $contextchars, '...', false );
 
 			if ( count( $m ) < 3 ) {
 				$post = '';
 			} else {
-				$post = $wgContLang->truncate( $m[3], $contextchars, '...', false );
+				$post = $wgContLang->truncateForVisual( $m[3], $contextchars, '...', false );
 			}
 
 			$found = $m[2];

@@ -17,7 +17,7 @@ trait McrWriteBothSchemaOverride {
 	 * @return int
 	 */
 	protected function getMcrMigrationStage() {
-		return MIGRATION_WRITE_BOTH;
+		return SCHEMA_COMPAT_WRITE_BOTH | SCHEMA_COMPAT_READ_OLD;
 	}
 
 	/**

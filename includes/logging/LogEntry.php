@@ -625,7 +625,7 @@ class ManualLogEntry extends LogEntryBase {
 	/**
 	 * Insert the entry into the `logging` table.
 	 *
-	 * @param IDatabase $dbw
+	 * @param IDatabase|null $dbw
 	 * @return int ID of the log entry
 	 * @throws MWException
 	 */
@@ -821,7 +821,7 @@ class ManualLogEntry extends LogEntryBase {
 	}
 
 	public function getTimestamp() {
-		$ts = $this->timestamp !== null ? $this->timestamp : wfTimestampNow();
+		$ts = $this->timestamp ?? wfTimestampNow();
 
 		return wfTimestamp( TS_MW, $ts );
 	}

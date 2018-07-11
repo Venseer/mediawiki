@@ -121,6 +121,22 @@ interface ILoadBalancer {
 	public function __construct( array $params );
 
 	/**
+	 * Get the local (and default) database domain ID of connection handles
+	 *
+	 * @see DatabaseDomain
+	 * @return string Database domain ID; this specifies DB name, schema, and table prefix
+	 * @since 1.31
+	 */
+	public function getLocalDomainID();
+
+	/**
+	 * @param DatabaseDomain|string|bool $domain Database domain
+	 * @return string Value of $domain if provided or the local domain otherwise
+	 * @since 1.32
+	 */
+	public function resolveDomainID( $domain );
+
+	/**
 	 * Get the index of the reader connection, which may be a replica DB
 	 *
 	 * This takes into account load ratios and lag times. It should
@@ -154,7 +170,7 @@ interface ILoadBalancer {
 	 * This can be used a faster proxy for waitForAll()
 	 *
 	 * @param DBMasterPos|bool $pos Master position or false
-	 * @param int $timeout Max seconds to wait; default is mWaitTimeout
+	 * @param int|null $timeout Max seconds to wait; default is mWaitTimeout
 	 * @return bool Success (able to connect and no timeouts reached)
 	 */
 	public function waitForOne( $pos, $timeout = null );
@@ -163,7 +179,7 @@ interface ILoadBalancer {
 	 * Set the master wait position and wait for ALL replica DBs to catch up to it
 	 *
 	 * @param DBMasterPos|bool $pos Master position or false
-	 * @param int $timeout Max seconds to wait; default is mWaitTimeout
+	 * @param int|null $timeout Max seconds to wait; default is mWaitTimeout
 	 * @return bool Success (able to connect and no timeouts reached)
 	 */
 	public function waitForAll( $pos, $timeout = null );
@@ -486,7 +502,7 @@ interface ILoadBalancer {
 	 * Check if this load balancer object had any recent or still
 	 * pending writes issued against it by this PHP thread
 	 *
-	 * @param float $age How many seconds ago is "recent" [defaults to mWaitTimeout]
+	 * @param float|null $age How many seconds ago is "recent" [defaults to mWaitTimeout]
 	 * @return bool
 	 */
 	public function hasOrMadeRecentMasterChanges( $age = null );
