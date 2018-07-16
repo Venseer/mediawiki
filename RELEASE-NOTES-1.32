@@ -48,6 +48,11 @@ production.
 * The 'ImageBeforeProduceHTML' hook is now passed three new parameters, $parser,
   &$query and &$widthOption, allowing extensions even finer control over the
   resulting HTML code.
+* Added new 'ArticleShowPatrolFooter' hook, which allows extensions to determine
+  if the [mark as patrolled] link should be shown at the footer of patrollable
+  pages.
+* The array of hidden options ($opts) passed to the 'SpecialSearchPowerBox' hook
+  is now passed by reference, allowing extensions to modify or even unset it.
 
 === External library changes in 1.32 ===
 * …
@@ -183,6 +188,9 @@ because of Phabricator reports.
   * getItemsData: Use getItems instead and get the data property
 * The hook 'LogEventsListGetExtraInputs' now needs a form descriptor array
   and not plain HTML.
+* LanguageCode::bcp47() now always returns a valid BCP 47 code.  This means
+  that some MediaWiki-specific language codes, such as `simple`, are mapped
+  into valid BCP 47 codes (eg `en-simple`).
 
 === Deprecations in 1.32 ===
 * Use of a StartProfiler.php file is deprecated in favour of placing
@@ -229,6 +237,12 @@ because of Phabricator reports.
   it had unexpected behavior (only marking text if it looked like a URL)
   and was only used in a single place in the code.  Use
   LanguageConverter::markNoConversion() instead.
+* (T197492) Language::truncate() was soft deprecated in 1.31 and is
+  hard deprecated in this release.  It has been split into two similar
+  methods, Language::truncateForVisual() and Language::truncateForDatabase(),
+  which measure length in characters and bytes, respectively.  Use
+  Language::truncateForVisual() when possible to provide equity to users
+  of multibyte scripts.
 * (T176526) EditPage::getContextTitle() falling back to $wgTitle when the
   context title is unset is now deprecated; anything creating an EditPage
   instance should set the context title via ::setContextTitle().
@@ -236,10 +250,21 @@ because of Phabricator reports.
 * ResourceLoaderStartUpModule::getStartupModules() and ::getLegacyModules()
   are deprecated. These concepts are obsolete and have no replacement.
 * String type for $lang of DifferenceEngine::setTextLanguage is deprecated.
+* The following methods of OutputPage are now deprecated in favour
+  of using showFatalError directly: OutputPage::showFileDeleteError()
+  OutputPage::showFileNotFoundError(), OutputPage::showFileRenameError()
+  OutputPage::showFileCopyError() and OutputPage::showUnexpectedValueError().
+* The Replacer, DoubleReplacer, HashtableReplacer, and RegexlikeReplacer
+  classes are now deprecated. Use a Closure instead.
+* (T194263) ContentHandler::makeParserOptions() is deprecated. Use
+  WikiPage::makeParserOptions() or ParserOptions::newCanonical() instead.
+* (T100681) Use of the Parsoid v1 API with the VirtualRESTService, deprecated in
+  MediaWiki 1.26,  is now hard-deprecated. All known clients were converted to
+  the Parsoid v3 API in May 2015.
 
 === Other changes in 1.32 ===
-* (T198811) The following tables have had their UNIQUE indexes turned into proper
-  PRIMARY KEYs for increased maintainability: interwiki, page_props,
+* (T198811) The following tables have had their UNIQUE indexes turned into
+  proper PRIMARY KEYs for increased maintainability: interwiki, page_props,
   protected_titles and site_identifiers.
 * …
 
