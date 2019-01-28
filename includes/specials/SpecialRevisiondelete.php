@@ -205,7 +205,7 @@ class SpecialRevisionDelete extends UnlistedSpecialPage {
 
 		# Either submit or create our form
 		if ( $this->mIsAllowed && $this->submitClicked ) {
-			$this->submit( $request );
+			$this->submit();
 		} else {
 			$this->showForm();
 		}
@@ -641,10 +641,9 @@ class SpecialRevisionDelete extends UnlistedSpecialPage {
 	protected function failure( $status ) {
 		// Messages: revdelete-failure, logdelete-failure
 		$this->getOutput()->setPageTitle( $this->msg( 'actionfailed' ) );
-		$this->getOutput()->addWikiText(
-			Html::errorBox(
-				$status->getWikiText( $this->typeLabels['failure'] )
-			)
+		$this->getOutput()->wrapWikiTextAsInterface(
+			'errorbox',
+			$status->getWikiText( $this->typeLabels['failure'] )
 		);
 		$this->showForm();
 	}

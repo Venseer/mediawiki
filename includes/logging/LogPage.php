@@ -223,10 +223,10 @@ class LogPage {
 	public static function actionText( $type, $action, $title = null, $skin = null,
 		$params = [], $filterWikilinks = false
 	) {
-		global $wgLang, $wgContLang, $wgLogActions;
+		global $wgLang, $wgLogActions;
 
 		if ( is_null( $skin ) ) {
-			$langObj = $wgContLang;
+			$langObj = MediaWikiServices::getInstance()->getContentLanguage();
 			$langObjOrNull = null;
 		} else {
 			$langObj = $wgLang;
@@ -294,9 +294,11 @@ class LogPage {
 			return $title->getPrefixedText();
 		}
 
-		$linkRenderer = MediaWikiServices::getInstance()->getLinkRenderer();
+		$services = MediaWikiServices::getInstance();
+		$linkRenderer = $services->getLinkRenderer();
 		if ( $title->isSpecialPage() ) {
-			list( $name, $par ) = SpecialPageFactory::resolveAlias( $title->getDBkey() );
+			list( $name, $par ) = $services->getSpecialPageFactory()->
+				resolveAlias( $title->getDBkey() );
 
 			# Use the language name for log titles, rather than Log/X
 			if ( $name == 'Log' ) {
@@ -435,11 +437,7 @@ class LogPage {
 		global $wgLogNames;
 
 		// BC
-		if ( isset( $wgLogNames[$this->type] ) ) {
-			$key = $wgLogNames[$this->type];
-		} else {
-			$key = 'log-name-' . $this->type;
-		}
+		$key = $wgLogNames[$this->type] ?? 'log-name-' . $this->type;
 
 		return wfMessage( $key );
 	}
@@ -452,11 +450,7 @@ class LogPage {
 	public function getDescription() {
 		global $wgLogHeaders;
 		// BC
-		if ( isset( $wgLogHeaders[$this->type] ) ) {
-			$key = $wgLogHeaders[$this->type];
-		} else {
-			$key = 'log-description-' . $this->type;
-		}
+		$key = $wgLogHeaders[$this->type] ?? 'log-description-' . $this->type;
 
 		return wfMessage( $key );
 	}
@@ -468,14 +462,8 @@ class LogPage {
 	 */
 	public function getRestriction() {
 		global $wgLogRestrictions;
-		if ( isset( $wgLogRestrictions[$this->type] ) ) {
-			$restriction = $wgLogRestrictions[$this->type];
-		} else {
-			// '' always returns true with $user->isAllowed()
-			$restriction = '';
-		}
-
-		return $restriction;
+		// '' always returns true with $user->isAllowed()
+		return $wgLogRestrictions[$this->type] ?? '';
 	}
 
 	/**

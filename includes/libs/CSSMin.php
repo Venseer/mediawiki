@@ -72,13 +72,22 @@ class CSSMin {
 				$url = $match['file'][0];
 
 				// Skip fully-qualified and protocol-relative URLs and data URIs
-				// Also skips the rare `behavior` property specifying application's default behavior
 				if (
 					substr( $url, 0, 2 ) === '//' ||
-					parse_url( $url, PHP_URL_SCHEME ) ||
-					substr( $url, 0, 9 ) === '#default#'
+					parse_url( $url, PHP_URL_SCHEME )
 				) {
 					break;
+				}
+
+				// Strip trailing anchors - T115436
+				$anchor = strpos( $url, '#' );
+				if ( $anchor !== false ) {
+					$url = substr( $url, 0, $anchor );
+
+					// '#some-anchors' is not a file
+					if ( $url === '' ) {
+						break;
+					}
 				}
 
 				$files[] = $path . $url;
@@ -193,11 +202,7 @@ class CSSMin {
 	public static function getMimeType( $file ) {
 		// Infer the MIME-type from the file extension
 		$ext = strtolower( pathinfo( $file, PATHINFO_EXTENSION ) );
-		if ( isset( self::$mimeTypes[$ext] ) ) {
-			return self::$mimeTypes[$ext];
-		}
-
-		return mime_content_type( realpath( $file ) );
+		return self::$mimeTypes[$ext] ?? mime_content_type( realpath( $file ) );
 	}
 
 	/**
@@ -485,11 +490,11 @@ class CSSMin {
 
 		// Pass thru fully-qualified and protocol-relative URLs and data URIs, as well as local URLs if
 		// we can't expand them.
-		// Also skips the rare `behavior` property specifying application's default behavior
+		// Also skips anchors or the rare `behavior` property specifying application's default behavior
 		if (
 			self::isRemoteUrl( $url ) ||
 			self::isLocalUrl( $url ) ||
-			substr( $url, 0, 9 ) === '#default#'
+			substr( $url, 0, 1 ) === '#'
 		) {
 			return $url;
 		}

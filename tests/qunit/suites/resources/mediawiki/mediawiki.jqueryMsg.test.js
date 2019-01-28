@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 	/* eslint-disable camelcase */
 	var formatText, formatParse, formatnumTests, specialCharactersPageName, expectedListUsers,
 		expectedListUsersSitename, expectedLinkPagenamee, expectedEntrypoints,
@@ -364,7 +364,7 @@
 	QUnit.test( 'Match PHP parser', function ( assert ) {
 		var tasks;
 		mw.messages.set( mw.libs.phpParserData.messages );
-		tasks = $.map( mw.libs.phpParserData.tests, function ( test ) {
+		tasks = mw.libs.phpParserData.tests.map( function ( test ) {
 			var done = assert.async();
 			return function ( next, abort ) {
 				getMwLanguage( test.lang )
@@ -1154,11 +1154,78 @@
 		assert.strictEqual( logSpy.callCount, 2, 'mw.log.warn calls' );
 	} );
 
+	QUnit.test( 'Non-string parameters to various functions', function ( assert ) {
+		var i, cases;
+
+		// For jquery-param-int
+		mw.messages.set( 'x', 'y' );
+		// For jquery-param-grammar
+		mw.language.setData( 'en', 'grammarTransformations', {
+			test: [
+				[ 'x', 'y' ]
+			]
+		} );
+
+		cases = [
+			{
+				key: 'jquery-param-wikilink',
+				msg: '[[$1]] [[$1|a]]',
+				expected: '<a title="x" href="/wiki/x">x</a> <a title="x" href="/wiki/x">a</a>'
+			},
+			{
+				key: 'jquery-param-plural',
+				msg: '{{PLURAL:$1|a|b}}',
+				expected: 'b'
+			},
+			{
+				key: 'jquery-param-gender',
+				msg: '{{GENDER:$1|a|b}}',
+				expected: 'a'
+			},
+			{
+				key: 'jquery-param-grammar',
+				msg: '{{GRAMMAR:test|$1}}',
+				expected: '<b>x</b>'
+			},
+			{
+				key: 'jquery-param-int',
+				msg: '{{int:$1}}',
+				expected: 'y'
+			},
+			{
+				key: 'jquery-param-ns',
+				msg: '{{ns:$1}}',
+				expected: ''
+			},
+			{
+				key: 'jquery-param-formatnum',
+				msg: '{{formatnum:$1}}',
+				expected: '<b>x</b>'
+			},
+			{
+				key: 'jquery-param-case',
+				msg: '{{lc:$1}} {{uc:$1}} {{lcfirst:$1}} {{ucfirst:$1}}',
+				expected: 'x X x X'
+			}
+		];
+
+		for ( i = 0; i < cases.length; i++ ) {
+			mw.messages.set( cases[ i ].key, cases[ i ].msg );
+			assert.strictEqual(
+				mw.message( cases[ i ].key, $( '<b>' ).text( 'x' ) ).parse(),
+				cases[ i ].expected,
+				cases[ i ].key
+			);
+		}
+	} );
+
 	QUnit.test( 'Integration', function ( assert ) {
-		var expected, msg;
+		var expected, msg, $bar;
 
 		expected = '<b><a title="Bold" href="/wiki/Bold">Bold</a>!</b>';
 		mw.messages.set( 'integration-test', '<b>[[Bold]]!</b>' );
+		mw.messages.set( 'param-test', 'Hello $1' );
+		mw.messages.set( 'param-test-with-link', 'Hello $1 [[$2|$3]]' );
 
 		assert.strictEqual(
 			mw.message( 'integration-test' ).parse(),
@@ -1172,6 +1239,35 @@
 			'jQuery plugin $.fn.msg() works correctly'
 		);
 
+		assert.strictEqual(
+			mw.message( 'param-test', $( '<span>' ).text( 'World' ) ).parse(),
+			'Hello <span>World</span>',
+			'Passing a jQuery object as a parameter to a message without wikitext works correctly'
+		);
+
+		assert.strictEqual(
+			mw.message( 'param-test', $( '<span>' ).text( 'World' ).get( 0 ) ).parse(),
+			'Hello <span>World</span>',
+			'Passing a DOM node as a parameter to a message without wikitext works correctly'
+		);
+
+		assert.strictEqual(
+			mw.message( 'param-test', undefined ).parse(),
+			'Hello $1',
+			'Passing undefined as a parameter to a message does not throw an exception'
+		);
+
+		assert.strictEqual(
+			mw.message(
+				'param-test-with-link',
+				$( '<span>' ).text( 'cruel' ),
+				'Globe',
+				'world'
+			).parse(),
+			'Hello <span>cruel</span> <a title="Globe" href="/wiki/Globe">world</a>',
+			'Message with a jQuery parameter and a parsed link'
+		);
+
 		mw.messages.set( 'integration-test-extlink', '[$1 Link]' );
 		msg = mw.message(
 			'integration-test-extlink',
@@ -1183,6 +1279,10 @@
 			'<a href="http://example.com/">Link</a>',
 			'Calling .parse() multiple times does not duplicate link contents'
 		);
+
+		mw.config.set( 'wgUserLanguage', 'qqx' );
+		$bar = $( '<b>' ).text( 'bar' );
+		assert.strictEqual( mw.message( 'foo', $bar, 'baz' ).parse(), '(foo: <b>bar</b>, baz)', 'qqx message with parameters' );
 	} );
 
 	QUnit.test( 'setParserDefaults', function ( assert ) {
@@ -1221,4 +1321,4 @@
 			'setParserDefaults is deep if requested'
 		);
 	} );
-}( mediaWiki, jQuery ) );
+}() );

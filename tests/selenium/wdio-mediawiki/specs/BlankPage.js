@@ -1,8 +1,8 @@
 const assert = require( 'assert' ),
-	BlankPage = require( 'wdio-mediawiki/BlankPage' );
+	BlankPage = require( './../BlankPage' );
 
 describe( 'BlankPage', function () {
-	it( 'should have its title', function () {
+	it( 'should have its title @daily', function () {
 		BlankPage.open();
 
 		// check

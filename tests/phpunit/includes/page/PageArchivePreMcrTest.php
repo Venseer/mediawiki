@@ -1,7 +1,8 @@
 <?php
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\SlotRecord;
 use MediaWiki\Storage\SqlBlobStore;
-use MediaWiki\Tests\Storage\PreMcrSchemaOverride;
+use MediaWiki\Tests\Revision\PreMcrSchemaOverride;
 
 /**
  * Test class for page archiving, using the pre-MCR schema.
@@ -27,7 +28,7 @@ class PageArchivePreMcrTest extends PageArchiveTestBase {
 		$blobStore = MediaWikiServices::getInstance()->getBlobStore();
 
 		$textId = $blobStore->getTextIdFromAddress(
-			$this->firstRev->getSlot( 'main' )->getAddress()
+			$this->firstRev->getSlot( SlotRecord::MAIN )->getAddress()
 		);
 
 		$row = (object)[ 'ar_text_id' => $textId ];
@@ -53,7 +54,7 @@ class PageArchivePreMcrTest extends PageArchiveTestBase {
 				'ar_page_id' => strval( $this->ipRev->getPageId() ),
 				'ar_comment_text' => 'just a test',
 				'ar_comment_data' => null,
-				'ar_comment_cid' => null,
+				'ar_comment_cid' => '2',
 				'ar_content_format' => null,
 				'ar_content_model' => null,
 				'ts_tags' => null,
@@ -61,7 +62,7 @@ class PageArchivePreMcrTest extends PageArchiveTestBase {
 				'ar_namespace' => '0',
 				'ar_title' => 'PageArchiveTest_thePage',
 				'ar_text_id' => (string)$blobStore->getTextIdFromAddress(
-					$this->ipRev->getSlot( 'main' )->getAddress()
+					$this->ipRev->getSlot( SlotRecord::MAIN )->getAddress()
 				),
 				'ar_parent_id' => strval( $this->ipRev->getParentId() ),
 			],
@@ -78,7 +79,7 @@ class PageArchivePreMcrTest extends PageArchiveTestBase {
 				'ar_page_id' => strval( $this->firstRev->getPageId() ),
 				'ar_comment_text' => 'testing',
 				'ar_comment_data' => null,
-				'ar_comment_cid' => null,
+				'ar_comment_cid' => '1',
 				'ar_content_format' => null,
 				'ar_content_model' => null,
 				'ts_tags' => null,
@@ -86,7 +87,7 @@ class PageArchivePreMcrTest extends PageArchiveTestBase {
 				'ar_namespace' => '0',
 				'ar_title' => 'PageArchiveTest_thePage',
 				'ar_text_id' => (string)$blobStore->getTextIdFromAddress(
-					$this->firstRev->getSlot( 'main' )->getAddress()
+					$this->firstRev->getSlot( SlotRecord::MAIN )->getAddress()
 				),
 				'ar_parent_id' => '0',
 			],

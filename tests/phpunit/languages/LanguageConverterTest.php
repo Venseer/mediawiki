@@ -9,9 +9,9 @@ class LanguageConverterTest extends MediaWikiLangTestCase {
 	protected function setUp() {
 		parent::setUp();
 
+		$this->setContentLang( 'tg' );
+
 		$this->setMwGlobals( [
-			'wgContLang' => Language::factory( 'tg' ),
-			'wgLanguageCode' => 'tg',
 			'wgDefaultLanguageVariant' => false,
 			'wgRequest' => new FauxRequest( [] ),
 			'wgUser' => new User,
@@ -181,9 +181,9 @@ class LanguageConverterTest extends MediaWikiLangTestCase {
 	 * @covers LanguageConverter::getUserVariant
 	 */
 	public function testGetPreferredVariantUserOptionForForeignLanguage() {
-		global $wgContLang, $wgUser;
+		global $wgUser;
 
-		$wgContLang = Language::factory( 'en' );
+		$this->setContentLang( 'en' );
 		$wgUser = new User;
 		$wgUser->load(); // from 'defaults'
 		$wgUser->mId = 1;
@@ -199,9 +199,9 @@ class LanguageConverterTest extends MediaWikiLangTestCase {
 	 * @covers LanguageConverter::getUserVariant
 	 */
 	public function testGetPreferredVariantUserOptionForForeignLanguageDeprecated() {
-		global $wgContLang, $wgUser;
+		global $wgUser;
 
-		$wgContLang = Language::factory( 'en' );
+		$this->setContentLang( 'en' );
 		$wgUser = new User;
 		$wgUser->load(); // from 'defaults'
 		$wgUser->mId = 1;
@@ -217,9 +217,9 @@ class LanguageConverterTest extends MediaWikiLangTestCase {
 	 * @covers LanguageConverter::getUserVariant
 	 */
 	public function testGetPreferredVariantUserOptionForForeignLanguageBCP47() {
-		global $wgContLang, $wgUser;
+		global $wgUser;
 
-		$wgContLang = Language::factory( 'en' );
+		$this->setContentLang( 'en' );
 		$wgUser = new User;
 		$wgUser->load(); // from 'defaults'
 		$wgUser->mId = 1;
@@ -236,9 +236,9 @@ class LanguageConverterTest extends MediaWikiLangTestCase {
 	 * @covers LanguageConverter::getURLVariant
 	 */
 	public function testGetPreferredVariantHeaderUserVsUrl() {
-		global $wgContLang, $wgRequest, $wgUser;
+		global $wgRequest, $wgUser;
 
-		$wgContLang = Language::factory( 'tg-latn' );
+		$this->setContentLang( 'tg-latn' );
 		$wgRequest->setVal( 'variant', 'tg' );
 		$wgUser = User::newFromId( "admin" );
 		$wgUser->setId( 1 );
@@ -284,9 +284,9 @@ class LanguageConverterTest extends MediaWikiLangTestCase {
 	 * @covers LanguageConverter::getURLVariant
 	 */
 	public function testGetPreferredVariantDefaultLanguageVsUrlVariant() {
-		global $wgDefaultLanguageVariant, $wgRequest, $wgContLang;
+		global $wgDefaultLanguageVariant, $wgRequest;
 
-		$wgContLang = Language::factory( 'tg-latn' );
+		$this->setContentLang( 'tg-latn' );
 		$wgDefaultLanguageVariant = 'tg';
 		$wgRequest->setVal( 'variant', null );
 		$this->assertEquals( 'tg', $this->lc->getPreferredVariant() );
@@ -303,9 +303,8 @@ class LanguageConverterTest extends MediaWikiLangTestCase {
 			$testString .= 'xxx xxx xxx';
 		}
 		$testString .= "\n<big id='в'></big>";
-		$old = ini_set( 'pcre.backtrack_limit', 200 );
+		$this->setIniSetting( 'pcre.backtrack_limit', 200 );
 		$result = $this->lc->autoConvert( $testString, 'tg-latn' );
-		ini_set( 'pcre.backtrack_limit', $old );
 		// The в in the id attribute should not get converted to a v
 		$this->assertFalse(
 			strpos( $result, 'v' ),

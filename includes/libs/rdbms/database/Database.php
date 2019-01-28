@@ -81,8 +81,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	protected $user;
 	/** @var string Password used to establish the current connection */
 	protected $password;
-	/** @var string Database that this instance is currently connected to */
-	protected $dbName;
 	/** @var array[] Map of (table => (dbname, schema, prefix) map) */
 	protected $tableAliases = [];
 	/** @var string[] Map of (index alias => index) */
@@ -99,9 +97,9 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	protected $connLogger;
 	/** @var LoggerInterface */
 	protected $queryLogger;
-	/** @var callback Error logging callback */
+	/** @var callable Error logging callback */
 	protected $errorLogger;
-	/** @var callback Deprecation logging callback */
+	/** @var callable Deprecation logging callback */
 	protected $deprecationLogger;
 
 	/** @var resource|null Database connection */
@@ -120,10 +118,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	/** @var bool Whether to suppress triggering of transaction end callbacks */
 	protected $trxEndCallbacksSuppressed = false;
 
-	/** @var string */
-	protected $tablePrefix = '';
-	/** @var string */
-	protected $schema = '';
 	/** @var int */
 	protected $flags;
 	/** @var array */
@@ -266,7 +260,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	/** @var int[] Prior flags member variable values */
 	private $priorFlags = [];
 
-	/** @var object|string Class name or object With profileIn/profileOut methods */
+	/** @var mixed Class name or object With profileIn/profileOut methods */
 	protected $profiler;
 	/** @var TransactionProfiler */
 	protected $trxProfiler;
@@ -287,16 +281,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	const STATUS_TRX_NONE = 3;
 
 	/**
-	 * @note: exceptions for missing libraries/drivers should be thrown in initConnection()
+	 * @note exceptions for missing libraries/drivers should be thrown in initConnection()
 	 * @param array $params Parameters passed from Database::factory()
 	 */
 	protected function __construct( array $params ) {
-		foreach ( [ 'host', 'user', 'password', 'dbname' ] as $name ) {
+		foreach ( [ 'host', 'user', 'password', 'dbname', 'schema', 'tablePrefix' ] as $name ) {
 			$this->connectionParams[$name] = $params[$name];
 		}
-
-		$this->schema = $params['schema'];
-		$this->tablePrefix = $params['tablePrefix'];
 
 		$this->cliMode = $params['cliMode'];
 		// Agent name is added to SQL queries in a comment, so make sure it can't break out
@@ -329,7 +320,11 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		}
 
 		// Set initial dummy domain until open() sets the final DB/prefix
-		$this->currentDomain = DatabaseDomain::newUnspecified();
+		$this->currentDomain = new DatabaseDomain(
+			$params['dbname'] != '' ? $params['dbname'] : null,
+			$params['schema'] != '' ? $params['schema'] : null,
+			$params['tablePrefix']
+		);
 	}
 
 	/**
@@ -346,11 +341,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		}
 		// Establish the connection
 		$this->doInitConnection();
-		// Set the domain object after open() sets the relevant fields
-		if ( $this->dbName != '' ) {
-			// Domains with server scope but a table prefix are not used by IDatabase classes
-			$this->currentDomain = new DatabaseDomain( $this->dbName, null, $this->tablePrefix );
-		}
 	}
 
 	/**
@@ -366,12 +356,28 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 				$this->connectionParams['host'],
 				$this->connectionParams['user'],
 				$this->connectionParams['password'],
-				$this->connectionParams['dbname']
+				$this->connectionParams['dbname'],
+				$this->connectionParams['schema'],
+				$this->connectionParams['tablePrefix']
 			);
 		} else {
 			throw new InvalidArgumentException( "No database user provided." );
 		}
 	}
+
+	/**
+	 * Open a new connection to the database (closing any existing one)
+	 *
+	 * @param string $server Database server host
+	 * @param string $user Database user name
+	 * @param string $password Database user password
+	 * @param string $dbName Database name
+	 * @param string|null $schema Database schema name
+	 * @param string $tablePrefix Table prefix
+	 * @return bool
+	 * @throws DBConnectionError
+	 */
+	abstract protected function open( $server, $user, $password, $dbName, $schema, $tablePrefix );
 
 	/**
 	 * Construct a Database subclass instance given a database type and parameters
@@ -429,7 +435,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$p['flags'] = $p['flags'] ?? 0;
 			$p['variables'] = $p['variables'] ?? [];
 			$p['tablePrefix'] = $p['tablePrefix'] ?? '';
-			$p['schema'] = $p['schema'] ?? '';
+			$p['schema'] = $p['schema'] ?? null;
 			$p['cliMode'] = $p['cliMode'] ?? ( PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg' );
 			$p['agent'] = $p['agent'] ?? '';
 			if ( !isset( $p['connLogger'] ) ) {
@@ -587,24 +593,37 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	}
 
 	public function tablePrefix( $prefix = null ) {
-		$old = $this->tablePrefix;
+		$old = $this->currentDomain->getTablePrefix();
 		if ( $prefix !== null ) {
-			$this->tablePrefix = $prefix;
-			$this->currentDomain = ( $this->dbName != '' )
-				? new DatabaseDomain( $this->dbName, null, $this->tablePrefix )
-				: DatabaseDomain::newUnspecified();
+			$this->currentDomain = new DatabaseDomain(
+				$this->currentDomain->getDatabase(),
+				$this->currentDomain->getSchema(),
+				$prefix
+			);
 		}
 
 		return $old;
 	}
 
 	public function dbSchema( $schema = null ) {
-		$old = $this->schema;
+		$old = $this->currentDomain->getSchema();
 		if ( $schema !== null ) {
-			$this->schema = $schema;
+			$this->currentDomain = new DatabaseDomain(
+				$this->currentDomain->getDatabase(),
+				// DatabaseDomain uses null for unspecified schemas
+				strlen( $schema ) ? $schema : null,
+				$this->currentDomain->getTablePrefix()
+			);
 		}
 
-		return $old;
+		return (string)$old;
+	}
+
+	/**
+	 * @return string Schema to use to qualify relations in queries
+	 */
+	protected function relationSchemaQualifier() {
+		return $this->dbSchema();
 	}
 
 	public function getLBInfo( $name = null ) {
@@ -700,17 +719,25 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 
 		switch ( $type ) {
 			case self::ESTIMATE_DB_APPLY:
-				$this->ping( $rtt );
-				$rttAdjTotal = $this->trxWriteAdjQueryCount * $rtt;
-				$applyTime = max( $this->trxWriteAdjDuration - $rttAdjTotal, 0 );
-				// For omitted queries, make them count as something at least
-				$omitted = $this->trxWriteQueryCount - $this->trxWriteAdjQueryCount;
-				$applyTime += self::TINY_WRITE_SEC * $omitted;
-
-				return $applyTime;
+				return $this->pingAndCalculateLastTrxApplyTime();
 			default: // everything
 				return $this->trxWriteDuration;
 		}
+	}
+
+	/**
+	 * @return float Time to apply writes to replicas based on trxWrite* fields
+	 */
+	private function pingAndCalculateLastTrxApplyTime() {
+		$this->ping( $rtt );
+
+		$rttAdjTotal = $this->trxWriteAdjQueryCount * $rtt;
+		$applyTime = max( $this->trxWriteAdjDuration - $rttAdjTotal, 0 );
+		// For omitted queries, make them count as something at least
+		$omitted = $this->trxWriteQueryCount - $this->trxWriteAdjQueryCount;
+		$applyTime += self::TINY_WRITE_SEC * $omitted;
+
+		return $applyTime;
 	}
 
 	public function pendingWriteCallers() {
@@ -888,7 +915,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		return array_merge(
 			[
 				'db_server' => $this->server,
-				'db_name' => $this->dbName,
+				'db_name' => $this->getDBname(),
 				'db_user' => $this->user,
 			],
 			$extras
@@ -899,7 +926,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$exception = null; // error to throw after disconnecting
 
 		if ( $this->conn ) {
-			// Resolve any dangling transaction first
+			// Roll back any dangling transaction first
 			if ( $this->trxLevel ) {
 				if ( $this->trxAtomicLevels ) {
 					// Cannot let incomplete atomic sections be committed
@@ -910,6 +937,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 					);
 				} elseif ( $this->trxAutomatic ) {
 					// Only the connection manager can commit non-empty DBO_TRX transactions
+					// (empty ones we can silently roll back)
 					if ( $this->writesOrCallbacksPending() ) {
 						$exception = new DBUnexpectedError(
 							$this,
@@ -917,11 +945,12 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 							": mass commit/rollback of peer transaction required (DBO_TRX set)."
 						);
 					}
-				} elseif ( $this->trxLevel ) {
-					// Commit explicit transactions as if this was commit()
-					$this->queryLogger->warning(
-						__METHOD__ . ": writes or callbacks still pending.",
-						[ 'trace' => ( new RuntimeException() )->getTraceAsString() ]
+				} else {
+					// Manual transactions should have been committed or rolled
+					// back, even if empty.
+					$exception = new DBUnexpectedError(
+						$this,
+						__METHOD__ . ": transaction is still open (from {$this->trxFname})."
 					);
 				}
 
@@ -932,15 +961,8 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 					);
 				}
 
-				// Commit or rollback the changes and run any callbacks as needed
-				if ( $this->trxStatus === self::STATUS_TRX_OK && !$exception ) {
-					$this->commit(
-						__METHOD__,
-						$this->trxAutomatic ? self::FLUSHING_INTERNAL : self::FLUSHING_ONE
-					);
-				} else {
-					$this->rollback( __METHOD__, self::FLUSHING_INTERNAL );
-				}
+				// Rollback the changes and run any callbacks as needed
+				$this->rollback( __METHOD__, self::FLUSHING_INTERNAL );
 			}
 
 			// Close the actual connection in the binding handle
@@ -1008,15 +1030,39 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	abstract protected function doQuery( $sql );
 
 	/**
-	 * Determine whether a query writes to the DB.
-	 * Should return true if unsure.
+	 * Determine whether a query writes to the DB. When in doubt, this returns true.
+	 *
+	 * Main use cases:
+	 *
+	 * - Subsequent web requests should not need to wait for replication from
+	 *   the master position seen by this web request, unless this request made
+	 *   changes to the master. This is handled by ChronologyProtector by checking
+	 *   doneWrites() at the end of the request. doneWrites() returns true if any
+	 *   query set lastWriteTime; which query() does based on isWriteQuery().
+	 *
+	 * - Reject write queries to replica DBs, in query().
 	 *
 	 * @param string $sql
 	 * @return bool
 	 */
 	protected function isWriteQuery( $sql ) {
+		// BEGIN and COMMIT queries are considered read queries here.
+		// Database backends and drivers (MySQL, MariaDB, php-mysqli) generally
+		// treat these as write queries, in that their results have "affected rows"
+		// as meta data as from writes, instead of "num rows" as from reads.
+		// But, we treat them as read queries because when reading data (from
+		// either replica or master) we use transactions to enable repeatable-read
+		// snapshots, which ensures we get consistent results from the same snapshot
+		// for all queries within a request. Use cases:
+		// - Treating these as writes would trigger ChronologyProtector (see method doc).
+		// - We use this method to reject writes to replicas, but we need to allow
+		//   use of transactions on replicas for read snapshots. This fine given
+		//   that transactions by themselves don't make changes, only actual writes
+		//   within the transaction matter, which we still detect.
 		return !preg_match(
-			'/^(?:SELECT|BEGIN|ROLLBACK|COMMIT|SET|SHOW|EXPLAIN|\(SELECT)\b/i', $sql );
+			'/^(?:SELECT|BEGIN|ROLLBACK|COMMIT|SAVEPOINT|RELEASE|SET|SHOW|EXPLAIN|\(SELECT)\b/i',
+			$sql
+		);
 	}
 
 	/**
@@ -1029,9 +1075,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 
 	/**
 	 * Determine whether a SQL statement is sensitive to isolation level.
+	 *
 	 * A SQL statement is considered transactable if its result could vary
 	 * depending on the transaction isolation level. Operational commands
 	 * such as 'SET' and 'SHOW' are not considered to be transactable.
+	 *
+	 * Main purpose: Used by query() to decide whether to begin a transaction
+	 * before the current query (in DBO_TRX mode, on by default).
 	 *
 	 * @param string $sql
 	 * @return bool
@@ -1039,7 +1089,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	protected function isTransactableQuery( $sql ) {
 		return !in_array(
 			$this->getQueryVerb( $sql ),
-			[ 'BEGIN', 'COMMIT', 'ROLLBACK', 'SHOW', 'SET', 'CREATE', 'ALTER' ],
+			[ 'BEGIN', 'ROLLBACK', 'COMMIT', 'SET', 'SHOW', 'CREATE', 'ALTER' ],
 			true
 		);
 	}
@@ -1132,11 +1182,11 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		if ( $this->trxLevel && !$this->trxDoneWrites && $isWrite ) {
 			$this->trxDoneWrites = true;
 			$this->trxProfiler->transactionWritingIn(
-				$this->server, $this->dbName, $this->trxShortId );
+				$this->server, $this->getDomainID(), $this->trxShortId );
 		}
 
 		if ( $this->getFlag( self::DBO_DEBUG ) ) {
-			$this->queryLogger->debug( "{$this->dbName} {$commentedSql}" );
+			$this->queryLogger->debug( "{$this->getDomainID()} {$commentedSql}" );
 		}
 
 		# Send the query to the server and fetch any corresponding errors
@@ -1239,7 +1289,10 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		}
 
 		$this->trxProfiler->recordQueryCompletion(
-			$queryProf, $startTime, $isWrite, $this->affectedRows()
+			$queryProf,
+			$startTime,
+			$isWrite,
+			$isWrite ? $this->affectedRows() : $this->numRows( $ret )
 		);
 		$this->queryLogger->debug( $sql, [
 			'method' => $fname,
@@ -1308,6 +1361,16 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 				"[$iLastErrno] $iLastError"
 			);
 			$this->trxStatusIgnoredCause = null;
+		}
+	}
+
+	public function assertNoOpenTransactions() {
+		if ( $this->explicitTrxActive() ) {
+			throw new DBTransactionError(
+				$this,
+				"Explicit transaction still active. A caller may have caught an error. "
+				. "Open transactions: " . $this->flatAtomicSectionList()
+			);
 		}
 	}
 
@@ -1489,14 +1552,14 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$options = [ $options ];
 		}
 
-		$res = $this->select( $table, $var, $cond, $fname, $options, $join_conds );
+		$res = $this->select( $table, [ 'value' => $var ], $cond, $fname, $options, $join_conds );
 		if ( $res === false ) {
 			return false;
 		}
 
 		$values = [];
 		foreach ( $res as $row ) {
-			$values[] = $row->$var;
+			$values[] = $row->value;
 		}
 
 		return $values;
@@ -1701,7 +1764,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$conds = '';
 		}
 
-		if ( $conds === '' ) {
+		if ( $conds === '' || $conds === '*' ) {
 			$sql = "SELECT $startOpts $fields $from $useIndex $ignoreIndex $preLimitTail";
 		} elseif ( is_string( $conds ) ) {
 			$sql = "SELECT $startOpts $fields $from $useIndex $ignoreIndex " .
@@ -1975,10 +2038,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$options = [ $options ];
 		}
 
-		$fh = null;
-		if ( isset( $options['fileHandle'] ) ) {
-			$fh = $options['fileHandle'];
-		}
 		$options = $this->makeInsertOptions( $options );
 
 		if ( isset( $a[0] ) && is_array( $a[0] ) ) {
@@ -2006,13 +2065,9 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$sql .= '(' . $this->makeList( $a ) . ')';
 		}
 
-		if ( $fh !== null && false === fwrite( $fh, $sql ) ) {
-			return false;
-		} elseif ( $fh !== null ) {
-			return true;
-		}
+		$this->query( $sql, $fname );
 
-		return (bool)$this->query( $sql, $fname );
+		return true;
 	}
 
 	/**
@@ -2056,7 +2111,9 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$sql .= " WHERE " . $this->makeList( $conds, self::LIST_AND );
 		}
 
-		return (bool)$this->query( $sql, $fname );
+		$this->query( $sql, $fname );
+
+		return true;
 	}
 
 	public function makeList( $a, $mode = self::LIST_COMMA ) {
@@ -2241,17 +2298,26 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		return false;
 	}
 
-	public function selectDB( $db ) {
-		# Stub. Shouldn't cause serious problems if it's not overridden, but
-		# if your database engine supports a concept similar to MySQL's
-		# databases you may as well.
-		$this->dbName = $db;
+	final public function selectDB( $db ) {
+		$this->selectDomain( new DatabaseDomain(
+			$db,
+			$this->currentDomain->getSchema(),
+			$this->currentDomain->getTablePrefix()
+		) );
 
 		return true;
 	}
 
+	final public function selectDomain( $domain ) {
+		$this->doSelectDomain( DatabaseDomain::newFromId( $domain ) );
+	}
+
+	protected function doSelectDomain( DatabaseDomain $domain ) {
+		$this->currentDomain = $domain;
+	}
+
 	public function getDBname() {
-		return $this->dbName;
+		return $this->currentDomain->getDatabase();
 	}
 
 	public function getServer() {
@@ -2336,14 +2402,14 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 				$database = $this->tableAliases[$table]['dbname'];
 				$schema = is_string( $this->tableAliases[$table]['schema'] )
 					? $this->tableAliases[$table]['schema']
-					: $this->schema;
+					: $this->relationSchemaQualifier();
 				$prefix = is_string( $this->tableAliases[$table]['prefix'] )
 					? $this->tableAliases[$table]['prefix']
-					: $this->tablePrefix;
+					: $this->tablePrefix();
 			} else {
 				$database = '';
-				$schema = $this->schema; # Default schema
-				$prefix = $this->tablePrefix; # Default prefix
+				$schema = $this->relationSchemaQualifier(); # Default schema
+				$prefix = $this->tablePrefix(); # Default prefix
 			}
 		}
 
@@ -2761,8 +2827,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 * @param string $table Table name
 	 * @param array|string $rows Row(s) to insert
 	 * @param string $fname Caller function name
-	 *
-	 * @return ResultWrapper
 	 */
 	protected function nativeReplace( $table, $rows, $fname ) {
 		$table = $this->tableName( $table );
@@ -2785,13 +2849,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$sql .= '(' . $this->makeList( $row ) . ')';
 		}
 
-		return $this->query( $sql, $fname );
+		$this->query( $sql, $fname );
 	}
 
 	public function upsert( $table, array $rows, array $uniqueIndexes, array $set,
 		$fname = __METHOD__
 	) {
-		if ( !count( $rows ) ) {
+		if ( $rows === [] ) {
 			return true; // nothing to do
 		}
 
@@ -2821,13 +2885,11 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->startAtomic( $fname, self::ATOMIC_CANCELABLE );
 			# Update any existing conflicting row(s)
 			if ( $where !== false ) {
-				$ok = $this->update( $table, $set, $where, $fname );
+				$this->update( $table, $set, $where, $fname );
 				$affectedRowCount += $this->affectedRows();
-			} else {
-				$ok = true;
 			}
 			# Now insert any non-conflicting row(s)
-			$ok = $this->insert( $table, $rows, $fname, [ 'IGNORE' ] ) && $ok;
+			$this->insert( $table, $rows, $fname, [ 'IGNORE' ] );
 			$affectedRowCount += $this->affectedRows();
 			$this->endAtomic( $fname );
 			$this->affectedRowCount = $affectedRowCount;
@@ -2836,7 +2898,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			throw $e;
 		}
 
-		return $ok;
+		return true;
 	}
 
 	public function deleteJoin( $delTable, $joinTable, $delVar, $joinVar, $conds,
@@ -2889,7 +2951,9 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$sql .= ' WHERE ' . $conds;
 		}
 
-		return $this->query( $sql, $fname );
+		$this->query( $sql, $fname );
+
+		return true;
 	}
 
 	final public function insertSelect(
@@ -2904,7 +2968,18 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		if ( $this->cliMode && $this->isInsertSelectSafe( $insertOptions, $selectOptions ) ) {
 			// For massive migrations with downtime, we don't want to select everything
 			// into memory and OOM, so do all this native on the server side if possible.
-			return $this->nativeInsertSelect(
+			$this->nativeInsertSelect(
+				$destTable,
+				$srcTable,
+				$varMap,
+				$conds,
+				$fname,
+				array_diff( $insertOptions, $hints ),
+				$selectOptions,
+				$selectJoinConds
+			);
+		} else {
+			$this->nonNativeInsertSelect(
 				$destTable,
 				$srcTable,
 				$varMap,
@@ -2916,16 +2991,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			);
 		}
 
-		return $this->nonNativeInsertSelect(
-			$destTable,
-			$srcTable,
-			$varMap,
-			$conds,
-			$fname,
-			array_diff( $insertOptions, $hints ),
-			$selectOptions,
-			$selectJoinConds
-		);
+		return true;
 	}
 
 	/**
@@ -2951,7 +3017,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 * @param array $insertOptions
 	 * @param array $selectOptions
 	 * @param array $selectJoinConds
-	 * @return bool
 	 */
 	protected function nonNativeInsertSelect( $destTable, $srcTable, $varMap, $conds,
 		$fname = __METHOD__,
@@ -2969,7 +3034,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$srcTable, implode( ',', $fields ), $conds, $fname, $selectOptions, $selectJoinConds
 		);
 		if ( !$res ) {
-			return false;
+			return;
 		}
 
 		try {
@@ -3002,7 +3067,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			} else {
 				$this->cancelAtomic( $fname );
 			}
-			return $ok;
 		} catch ( Exception $e ) {
 			$this->cancelAtomic( $fname );
 			throw $e;
@@ -3022,7 +3086,6 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 * @param array $insertOptions
 	 * @param array $selectOptions
 	 * @param array $selectJoinConds
-	 * @return bool
 	 */
 	protected function nativeInsertSelect( $destTable, $srcTable, $varMap, $conds,
 		$fname = __METHOD__,
@@ -3049,7 +3112,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			" INTO $destTable (" . implode( ',', array_keys( $varMap ) ) . ') ' .
 			$selectSql;
 
-		return $this->query( $sql, $fname );
+		$this->query( $sql, $fname );
 	}
 
 	/**
@@ -3493,7 +3556,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 					list( $phpCallback ) = $callback;
 					$phpCallback( $this );
 				} catch ( Exception $ex ) {
-					$this->errorLogger( $ex );
+					( $this->errorLogger )( $ex );
 					$e = $e ?: $ex;
 				}
 			}
@@ -3622,6 +3685,8 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 
 		$sectionId = new AtomicSectionIdentifier;
 		$this->trxAtomicLevels[] = [ $fname, $sectionId, $savepointId ];
+		$this->queryLogger->debug( 'startAtomic: entering level ' .
+			( count( $this->trxAtomicLevels ) - 1 ) . " ($fname)" );
 
 		return $sectionId;
 	}
@@ -3634,6 +3699,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		// Check if the current section matches $fname
 		$pos = count( $this->trxAtomicLevels ) - 1;
 		list( $savedFname, $sectionId, $savepointId ) = $this->trxAtomicLevels[$pos];
+		$this->queryLogger->debug( "endAtomic: leaving level $pos ($fname)" );
 
 		if ( $savedFname !== $fname ) {
 			throw new DBUnexpectedError(
@@ -3666,6 +3732,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			throw new DBUnexpectedError( $this, "No atomic section is open (got $fname)." );
 		}
 
+		$excisedFnames = [];
 		if ( $sectionId !== null ) {
 			// Find the (last) section with the given $sectionId
 			$pos = -1;
@@ -3675,12 +3742,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 				}
 			}
 			if ( $pos < 0 ) {
-				throw new DBUnexpectedError( "Atomic section not found (for $fname)" );
+				throw new DBUnexpectedError( $this, "Atomic section not found (for $fname)" );
 			}
 			// Remove all descendant sections and re-index the array
 			$excisedIds = [];
 			$len = count( $this->trxAtomicLevels );
 			for ( $i = $pos + 1; $i < $len; ++$i ) {
+				$excisedFnames[] = $this->trxAtomicLevels[$i][0];
 				$excisedIds[] = $this->trxAtomicLevels[$i][1];
 			}
 			$this->trxAtomicLevels = array_slice( $this->trxAtomicLevels, 0, $pos + 1 );
@@ -3690,6 +3758,13 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		// Check if the current section matches $fname
 		$pos = count( $this->trxAtomicLevels ) - 1;
 		list( $savedFname, $savedSectionId, $savepointId ) = $this->trxAtomicLevels[$pos];
+
+		if ( $excisedFnames ) {
+			$this->queryLogger->debug( "cancelAtomic: canceling level $pos ($savedFname) " .
+				"and descendants " . implode( ', ', $excisedFnames ) );
+		} else {
+			$this->queryLogger->debug( "cancelAtomic: canceling level $pos ($savedFname)" );
+		}
 
 		if ( $savedFname !== $fname ) {
 			throw new DBUnexpectedError(
@@ -3844,14 +3919,16 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$this->assertOpen();
 
 		$this->runOnTransactionPreCommitCallbacks();
+
 		$writeTime = $this->pendingWriteQueryDuration( self::ESTIMATE_DB_APPLY );
 		$this->doCommit( $fname );
 		$this->trxStatus = self::STATUS_TRX_NONE;
+
 		if ( $this->trxDoneWrites ) {
 			$this->lastWriteTime = microtime( true );
 			$this->trxProfiler->transactionWritingOut(
 				$this->server,
-				$this->dbName,
+				$this->getDomainID(),
 				$this->trxShortId,
 				$writeTime,
 				$this->trxWriteAffectedRows
@@ -3897,11 +3974,16 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->doRollback( $fname );
 			$this->trxStatus = self::STATUS_TRX_NONE;
 			$this->trxAtomicLevels = [];
+			// Estimate the RTT via a query now that trxStatus is OK
+			$writeTime = $this->pingAndCalculateLastTrxApplyTime();
+
 			if ( $this->trxDoneWrites ) {
 				$this->trxProfiler->transactionWritingOut(
 					$this->server,
-					$this->dbName,
-					$this->trxShortId
+					$this->getDomainID(),
+					$this->trxShortId,
+					$writeTime,
+					$this->trxWriteAffectedRows
 				);
 			}
 		}
@@ -4009,7 +4091,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 * a wrapper. Nowadays, raw database objects are never exposed to external
 	 * callers, so this is unnecessary in external code.
 	 *
-	 * @param bool|ResultWrapper|resource|object $result
+	 * @param bool|ResultWrapper|resource $result
 	 * @return bool|ResultWrapper
 	 */
 	protected function resultObject( $result ) {
@@ -4057,7 +4139,14 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$this->opened = false;
 		$this->conn = false;
 		try {
-			$this->open( $this->server, $this->user, $this->password, $this->dbName );
+			$this->open(
+				$this->server,
+				$this->user,
+				$this->password,
+				$this->getDBname(),
+				$this->dbSchema(),
+				$this->tablePrefix()
+			);
 			$this->lastPing = microtime( true );
 			$ok = true;
 
@@ -4187,7 +4276,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 		$fp = fopen( $filename, 'r' );
 		Wikimedia\restoreWarnings();
 
-		if ( false === $fp ) {
+		if ( $fp === false ) {
 			throw new RuntimeException( "Could not open \"{$filename}\".\n" );
 		}
 
@@ -4238,7 +4327,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 				continue;
 			}
 
-			if ( '-' == $line[0] && '-' == $line[1] ) {
+			if ( $line[0] == '-' && $line[1] == '-' ) {
 				continue;
 			}
 
@@ -4268,7 +4357,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 						$resultCallback( $res, $this );
 					}
 
-					if ( false === $res ) {
+					if ( $res === false ) {
 						$err = $this->lastError();
 
 						return "Query \"{$cmd}\" failed with error code \"$err\".\n";
@@ -4581,7 +4670,7 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 	 */
 	public function __clone() {
 		$this->connLogger->warning(
-			"Cloning " . static::class . " is not recomended; forking connection:\n" .
+			"Cloning " . static::class . " is not recommended; forking connection:\n" .
 			( new RuntimeException() )->getTraceAsString()
 		);
 
@@ -4591,7 +4680,14 @@ abstract class Database implements IDatabase, IMaintainableDatabase, LoggerAware
 			$this->conn = false;
 			$this->trxEndCallbacks = []; // don't copy
 			$this->handleSessionLoss(); // no trx or locks anymore
-			$this->open( $this->server, $this->user, $this->password, $this->dbName );
+			$this->open(
+				$this->server,
+				$this->user,
+				$this->password,
+				$this->getDBname(),
+				$this->dbSchema(),
+				$this->tablePrefix()
+			);
 			$this->lastPing = microtime( true );
 		}
 	}

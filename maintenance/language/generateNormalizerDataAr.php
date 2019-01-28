@@ -28,6 +28,11 @@ require_once __DIR__ . '/../Maintenance.php';
  *
  * This data file is used after normalizing to NFC.
  *
+ * Example usage:
+ *
+ *    curl 'https://unicode.org/Public/6.0.0/ucd/UnicodeData.txt' > /tmp/UnicodeData.txt
+ *    php generateNormalizerDataAr.php --unicode-data-file /tmp/UnicodeData.txt
+ *
  * @ingroup MaintenanceLanguage
  */
 class GenerateNormalizerDataAr extends Maintenance {
@@ -83,7 +88,7 @@ class GenerateNormalizerDataAr extends Maintenance {
 		$pairs = [];
 
 		$lineNum = 0;
-		while ( false !== ( $line = fgets( $file ) ) ) {
+		while ( ( $line = fgets( $file ) ) !== false ) {
 			++$lineNum;
 
 			# Strip comments
@@ -122,7 +127,8 @@ class GenerateNormalizerDataAr extends Maintenance {
 		}
 
 		global $IP;
-		file_put_contents( "$IP/languages/data/normalize-ar.php", wfMakeStaticArrayFile(
+		$writer = new StaticArrayWriter();
+		file_put_contents( "$IP/languages/data/normalize-ar.php", $writer->create(
 			$pairs,
 			'File created by generateNormalizerDataAr.php'
 		) );

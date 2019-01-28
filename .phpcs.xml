@@ -8,19 +8,17 @@
 		<exclude name="MediaWiki.Commenting.FunctionComment.MissingReturn" />
 		<exclude name="MediaWiki.Commenting.FunctionComment.ExtraParamComment" />
 		<exclude name="MediaWiki.Commenting.FunctionComment.WrongStyle" />
-		<exclude name="MediaWiki.Commenting.PhpunitAnnotations.NotClassTrait" />
 		<exclude name="MediaWiki.Commenting.IllegalSingleLineComment.IllegalSingleLineCommentStart" />
 		<exclude name="MediaWiki.Commenting.IllegalSingleLineComment.IllegalSingleLineCommentEnd" />
 		<exclude name="MediaWiki.ControlStructures.AssignmentInControlStructures.AssignmentInControlStructures" />
+		<exclude name="MediaWiki.Commenting.MissingCovers.MissingCovers" />
 		<exclude name="MediaWiki.NamingConventions.LowerCamelFunctionsName.FunctionName" />
+		<exclude name="MediaWiki.Usage.DbrQueryUsage.DbrQueryFound" />
+		<exclude name="MediaWiki.Usage.ForbiddenFunctions.passthru" />
+		<exclude name="MediaWiki.VariableAnalysis.ForbiddenGlobalVariables.ForbiddenGlobal$wgTitle" />
 		<exclude name="MediaWiki.WhiteSpace.SpaceBeforeSingleLineComment.NewLineComment" />
 		<exclude name="MediaWiki.WhiteSpace.SpaceBeforeSingleLineComment.SingleSpaceBeforeSingleLineComment" />
-		<exclude name="MediaWiki.Usage.DbrQueryUsage.DbrQueryFound" />
-		<exclude name="MediaWiki.Usage.ExtendClassUsage.FunctionVarUsage" />
-		<exclude name="MediaWiki.VariableAnalysis.ForbiddenGlobalVariables.ForbiddenGlobal$wgTitle" />
 		<exclude name="Squiz.Scope.MethodScope.Missing" />
-		<exclude name="Squiz.Scope.MemberVarScope.Missing" />
-		<exclude name="MediaWiki.Commenting.MissingCovers.MissingCovers" />
 	</rule>
 	<rule ref="MediaWiki.NamingConventions.PrefixedGlobalFunctions">
 		<properties>
@@ -64,6 +62,13 @@
 		<properties>
 			<property name="ignoreList" type="array" value="$IP,$messageMemc" />
 		</properties>
+	</rule>
+	<rule ref="MediaWiki.NamingConventions.ValidGlobalName.allowedPrefix">
+		<exclude-pattern>profileinfo\.php</exclude-pattern>
+		<exclude-pattern>maintenance/language/checkLanguage\.inc</exclude-pattern>
+		<exclude-pattern>maintenance/doMaintenance\.php</exclude-pattern>
+		<exclude-pattern>maintenance/mergeMessageFileList\.php</exclude-pattern>
+		<exclude-pattern>maintenance/commandLine\.inc</exclude-pattern>
 	</rule>
 	<rule ref="Generic.Files.LineLength">
 		<exclude-pattern>*/languages/messages/Messages*\.php</exclude-pattern>
@@ -129,7 +134,6 @@
 		<exclude-pattern>*/maintenance/7zip.inc</exclude-pattern>
 		<exclude-pattern>*/maintenance/CodeCleanerGlobalsPass.inc</exclude-pattern>
 		<exclude-pattern>*/maintenance/archives/upgradeLogging\.php</exclude-pattern>
-		<exclude-pattern>*/maintenance/backup.inc</exclude-pattern>
 		<exclude-pattern>*/maintenance/benchmarks/bench_HTTP_HTTPS\.php</exclude-pattern>
 		<exclude-pattern>*/maintenance/benchmarks/bench_Wikimedia_base_convert\.php</exclude-pattern>
 		<exclude-pattern>*/maintenance/benchmarks/bench_delete_truncate\.php</exclude-pattern>
@@ -220,7 +224,6 @@
 		<exclude-pattern>*/includes/api/ApiOpenSearch\.php</exclude-pattern>
 		<exclude-pattern>*/includes/api/ApiRsd\.php</exclude-pattern>
 		<exclude-pattern>*/includes/api/ApiUsageException\.php</exclude-pattern>
-		<exclude-pattern>*/includes/auth/AuthManagerAuthPlugin\.php</exclude-pattern>
 		<exclude-pattern>*/includes/AuthPlugin\.php</exclude-pattern>
 		<exclude-pattern>*/includes/cache/CacheDependency\.php</exclude-pattern>
 		<exclude-pattern>*/includes/cache/CacheHelper\.php</exclude-pattern>
@@ -320,7 +323,6 @@
 		<exclude-pattern>includes/export/DumpPipeOutput\.php</exclude-pattern>
 		<exclude-pattern>includes/resourceloader/ResourceLoaderImage\.php</exclude-pattern>
 		<exclude-pattern>includes/shell/Command\.php</exclude-pattern>
-		<exclude-pattern>includes/tidy/RaggettExternal\.php</exclude-pattern>
 		<exclude-pattern>maintenance/dumpTextPass\.php</exclude-pattern>
 		<exclude-pattern>maintenance/mysql\.php</exclude-pattern>
 		<exclude-pattern>maintenance/storage/recompressTracked\.php</exclude-pattern>
@@ -348,5 +350,4 @@
 	<exclude-pattern type="relative">^skins/</exclude-pattern>
 	<exclude-pattern>AdminSettings\.php</exclude-pattern>
 	<exclude-pattern>LocalSettings\.php</exclude-pattern>
-	<exclude-pattern>StartProfiler\.php</exclude-pattern>
 </ruleset>

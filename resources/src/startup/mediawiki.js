@@ -1,18 +1,18 @@
 /**
  * Base library for MediaWiki.
  *
- * Exposed globally as `mediaWiki` with `mw` as shortcut.
+ * Exposed globally as `mw`, with `mediaWiki` as alias.
  *
  * @class mw
  * @alternateClassName mediaWiki
  * @singleton
  */
+/* global $VARS, $CODE */
 
 ( function () {
 	'use strict';
 
 	var mw, StringSet, log,
-		hasOwn = Object.prototype.hasOwnProperty,
 		trackQueue = [];
 
 	/**
@@ -48,22 +48,19 @@
 
 	function defineFallbacks() {
 		// <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set>
-		StringSet = window.Set || ( function () {
-			/**
-			 * @private
-			 * @class
-			 */
-			function StringSet() {
-				this.set = {};
-			}
-			StringSet.prototype.add = function ( value ) {
-				this.set[ value ] = true;
+		/**
+		 * @private
+		 * @class
+		 */
+		StringSet = window.Set || function StringSet() {
+			var set = Object.create( null );
+			this.add = function ( value ) {
+				set[ value ] = true;
 			};
-			StringSet.prototype.has = function ( value ) {
-				return hasOwn.call( this.set, value );
+			this.has = function ( value ) {
+				return value in set;
 			};
-			return StringSet;
-		}() );
+		};
 	}
 
 	/**
@@ -102,7 +99,6 @@
 	 * @param {string} [data.module] Name of module which caused the error
 	 */
 	function logError( topic, data ) {
-		/* eslint-disable no-console */
 		var msg,
 			e = data.exception,
 			source = data.source,
@@ -123,7 +119,6 @@
 				console.warn( e );
 			}
 		}
-		/* eslint-enable no-console */
 	}
 
 	/**
@@ -139,7 +134,7 @@
 	 *  copied in one direction only. Changes to globals do not reflect in the map.
 	 */
 	function Map( global ) {
-		this.values = {};
+		this.values = Object.create( null );
 		if ( global === true ) {
 			// Override #set to also set the global variable
 			this.set = function ( selection, value ) {
@@ -184,7 +179,7 @@
 				results = {};
 				for ( i = 0; i < selection.length; i++ ) {
 					if ( typeof selection[ i ] === 'string' ) {
-						results[ selection[ i ] ] = hasOwn.call( this.values, selection[ i ] ) ?
+						results[ selection[ i ] ] = selection[ i ] in this.values ?
 							this.values[ selection[ i ] ] :
 							fallback;
 					}
@@ -193,7 +188,7 @@
 			}
 
 			if ( typeof selection === 'string' ) {
-				return hasOwn.call( this.values, selection ) ?
+				return selection in this.values ?
 					this.values[ selection ] :
 					fallback;
 			}
@@ -246,19 +241,18 @@
 			var i;
 			if ( Array.isArray( selection ) ) {
 				for ( i = 0; i < selection.length; i++ ) {
-					if ( typeof selection[ i ] !== 'string' || !hasOwn.call( this.values, selection[ i ] ) ) {
+					if ( typeof selection[ i ] !== 'string' || !( selection[ i ] in this.values ) ) {
 						return false;
 					}
 				}
 				return true;
 			}
-			return typeof selection === 'string' && hasOwn.call( this.values, selection );
+			return typeof selection === 'string' && selection in this.values;
 		}
 	};
 
 	defineFallbacks();
 
-	/* eslint-disable no-console */
 	log = ( function () {
 		/**
 		 * Write a verbose message to the browser's console in debug mode.
@@ -292,7 +286,7 @@
 		 *
 		 * @param {...string} msg Messages to output to console
 		 */
-		log.warn = console && console.warn && Function.prototype.bind ?
+		log.warn = console && console.warn ?
 			Function.prototype.bind.call( console.warn, console ) :
 			function () {};
 
@@ -307,7 +301,7 @@
 		 * @since 1.26
 		 * @param {...Mixed} msg Messages to output to console
 		 */
-		log.error = console && console.error && Function.prototype.bind ?
+		log.error = console && console.error ?
 			Function.prototype.bind.call( console.error, console ) :
 			function () {};
 
@@ -322,19 +316,22 @@
 		 * @param {string} [logName=key] Optional custom name for the feature.
 		 *  This is used instead of `key` in the message and `mw.deprecate` tracking.
 		 */
-		log.deprecate = !Object.defineProperty ? function ( obj, key, val ) {
-			obj[ key ] = val;
-		} : function ( obj, key, val, msg, logName ) {
-			var logged = new StringSet();
-			logName = logName || key;
-			msg = 'Use of "' + logName + '" is deprecated.' + ( msg ? ( ' ' + msg ) : '' );
-			function uniqueTrace() {
-				var trace = new Error().stack;
-				if ( logged.has( trace ) ) {
-					return false;
+		log.deprecate = function ( obj, key, val, msg, logName ) {
+			var stacks;
+			function maybeLog() {
+				var name,
+					trace = new Error().stack;
+				if ( !stacks ) {
+					stacks = new StringSet();
 				}
-				logged.add( trace );
-				return true;
+				if ( !stacks.has( trace ) ) {
+					stacks.add( trace );
+					name = logName || key;
+					mw.track( 'mw.deprecate', name );
+					mw.log.warn(
+						'Use of "' + name + '" is deprecated.' + ( msg ? ( ' ' + msg ) : '' )
+					);
+				}
 			}
 			// Support: Safari 5.0
 			// Throws "not supported on DOM Objects" for Node or Element objects (incl. document)
@@ -344,17 +341,11 @@
 					configurable: true,
 					enumerable: true,
 					get: function () {
-						if ( uniqueTrace() ) {
-							mw.track( 'mw.deprecate', logName );
-							mw.log.warn( msg );
-						}
+						maybeLog();
 						return val;
 					},
 					set: function ( newVal ) {
-						if ( uniqueTrace() ) {
-							mw.track( 'mw.deprecate', logName );
-							mw.log.warn( msg );
-						}
+						maybeLog();
 						val = newVal;
 					}
 				} );
@@ -365,7 +356,6 @@
 
 		return log;
 	}() );
-	/* eslint-enable no-console */
 
 	/**
 	 * @class mw
@@ -381,19 +371,24 @@
 		/**
 		 * Get the current time, measured in milliseconds since January 1, 1970 (UTC).
 		 *
-		 * On browsers that implement the Navigation Timing API, this function will produce floating-point
-		 * values with microsecond precision that are guaranteed to be monotonic. On all other browsers,
-		 * it will fall back to using `Date`.
+		 * On browsers that implement the Navigation Timing API, this function will produce
+		 * floating-point values with microsecond precision that are guaranteed to be monotonic.
+		 * On all other browsers, it will fall back to using `Date`.
 		 *
 		 * @return {number} Current time
 		 */
-		now: ( function () {
+		now: function () {
+			// Optimisation: Define the shortcut on first call, not at module definition.
 			var perf = window.performance,
 				navStart = perf && perf.timing && perf.timing.navigationStart;
-			return navStart && typeof perf.now === 'function' ?
+
+			// Define the relevant shortcut
+			mw.now = navStart && typeof perf.now === 'function' ?
 				function () { return navStart + perf.now(); } :
-				function () { return Date.now(); };
-		}() ),
+				Date.now;
+
+			return mw.now();
+		},
 
 		/**
 		 * List of all analytic events emitted so far.
@@ -510,8 +505,8 @@
 			 *   - resolve: failed to sort dependencies for a module in mw.loader.load
 			 *   - store-eval: could not evaluate module code cached in localStorage
 			 *   - store-localstorage-init: localStorage or JSON parse error in mw.loader.store.init
-			 *   - store-localstorage-json: JSON conversion error in mw.loader.store.set
-			 *   - store-localstorage-update: localStorage or JSON conversion error in mw.loader.store.update
+			 *   - store-localstorage-json: JSON conversion error in mw.loader.store
+			 *   - store-localstorage-update: localStorage conversion error in mw.loader.store.
 			 */
 
 			/**
@@ -564,8 +559,8 @@
 			 *    The contents are then stashed in the registry via mw.loader#implement.
 			 * - `loaded`:
 			 *    The module has been loaded from the server and stashed via mw.loader#implement.
-			 *    If the module has no more dependencies in-flight, the module will be executed
-			 *    immediately. Otherwise execution is deferred, controlled via #handlePending.
+			 *    Once the module has no more dependencies in-flight, the module will be executed,
+			 *    controlled via #requestPropagation and #doPropagation.
 			 * - `executing`:
 			 *    The module is being executed.
 			 * - `ready`:
@@ -579,7 +574,7 @@
 			 * @property
 			 * @private
 			 */
-			var registry = {},
+			var registry = Object.create( null ),
 				// Mapping of sources, keyed by source-id, values are strings.
 				//
 				// Format:
@@ -588,7 +583,7 @@
 				//         'sourceId': 'http://example.org/w/load.php'
 				//     }
 				//
-				sources = {},
+				sources = Object.create( null ),
 
 				// For queueModuleScript()
 				handlingPendingRequests = false,
@@ -600,8 +595,7 @@
 				/**
 				 * List of callback jobs waiting for modules to be ready.
 				 *
-				 * Jobs are created by #enqueue() and run by #handlePending().
-				 *
+				 * Jobs are created by #enqueue() and run by #doPropagation().
 				 * Typically when a job is created for a module, the job's dependencies contain
 				 * both the required module and all its recursive dependencies.
 				 *
@@ -618,6 +612,16 @@
 				 */
 				jobs = [],
 
+				// For #requestPropagation() and #doPropagation()
+				willPropagate = false,
+				errorModules = [],
+
+				/**
+				 * @private
+				 * @property {Array} baseModules
+				 */
+				baseModules = $VARS.baseModules,
+
 				/**
 				 * For #addEmbeddedCSS() and #addLink()
 				 *
@@ -626,10 +630,8 @@
 				 */
 				marker = document.querySelector( 'meta[name="ResourceLoaderDynamicStyles"]' ),
 
-				// For addEmbeddedCSS()
-				cssBuffer = '',
-				cssBufferTimer = null,
-				cssCallbacks = [],
+				// For #addEmbeddedCSS()
+				nextCssBuffer,
 				rAF = window.requestAnimationFrame || setTimeout;
 
 			/**
@@ -653,65 +655,61 @@
 			}
 
 			/**
+			 * @private
+			 * @param {Object} cssBuffer
+			 */
+			function flushCssBuffer( cssBuffer ) {
+				var i;
+				// Mark this object as inactive now so that further calls to addEmbeddedCSS() from
+				// the callbacks go to a new buffer instead of this one (T105973)
+				cssBuffer.active = false;
+				newStyleTag( cssBuffer.cssText, marker );
+				for ( i = 0; i < cssBuffer.callbacks.length; i++ ) {
+					cssBuffer.callbacks[ i ]();
+				}
+			}
+
+			/**
 			 * Add a bit of CSS text to the current browser page.
 			 *
-			 * The CSS will be appended to an existing ResourceLoader-created `<style>` tag
-			 * or create a new one based on whether the given `cssText` is safe for extension.
+			 * The creation and insertion of the `<style>` element is debounced for two reasons:
+			 *
+			 * - Performing the insertion before the next paint round via requestAnimationFrame
+			 *   avoids forced or wasted style recomputations, which are expensive in browsers.
+			 * - Reduce how often new stylesheets are inserted by letting additional calls to this
+			 *   function accumulate into a buffer for at least one JavaScript tick. Modules are
+			 *   received from the server in batches, which means there is likely going to be many
+			 *   calls to this function in a row within the same tick / the same call stack.
+			 *   See also T47810.
 			 *
 			 * @private
-			 * @param {string} [cssText=cssBuffer] If called without cssText,
-			 *  the internal buffer will be inserted instead.
-			 * @param {Function} [callback]
+			 * @param {string} cssText CSS text to be added in a `<style>` tag.
+			 * @param {Function} callback Called after the insertion has occurred
 			 */
 			function addEmbeddedCSS( cssText, callback ) {
-				function fireCallbacks() {
-					var i,
-						oldCallbacks = cssCallbacks;
-					// Reset cssCallbacks variable so it's not polluted by any calls to
-					// addEmbeddedCSS() from one of the callbacks (T105973)
-					cssCallbacks = [];
-					for ( i = 0; i < oldCallbacks.length; i++ ) {
-						oldCallbacks[ i ]();
-					}
+				// Create a buffer if:
+				// - We don't have one yet.
+				// - The previous one is closed.
+				// - The next CSS chunk syntactically needs to be at the start of a stylesheet (T37562).
+				if ( !nextCssBuffer || nextCssBuffer.active === false || cssText.slice( 0, '@import'.length ) === '@import' ) {
+					nextCssBuffer = {
+						cssText: '',
+						callbacks: [],
+						active: null
+					};
 				}
 
-				if ( callback ) {
-					cssCallbacks.push( callback );
+				// Linebreak for somewhat distinguishable sections
+				nextCssBuffer.cssText += '\n' + cssText;
+				nextCssBuffer.callbacks.push( callback );
+
+				if ( nextCssBuffer.active === null ) {
+					nextCssBuffer.active = true;
+					// The flushCssBuffer callback has its parameter bound by reference, which means
+					// 1) We can still extend the buffer from our object reference after this point.
+					// 2) We can safely re-assign the variable (not the object) to start a new buffer.
+					rAF( flushCssBuffer.bind( null, nextCssBuffer ) );
 				}
-
-				// Yield once before creating the <style> tag. This lets multiple stylesheets
-				// accumulate into one buffer, allowing us to reduce how often new stylesheets
-				// are inserted in the browser. Appending a stylesheet and waiting for the
-				// browser to repaint is fairly expensive. (T47810)
-				if ( cssText ) {
-					// Don't extend the buffer if the item needs its own stylesheet.
-					// Keywords like `@import` are only valid at the start of a stylesheet (T37562).
-					if ( !cssBuffer || cssText.slice( 0, '@import'.length ) !== '@import' ) {
-						// Linebreak for somewhat distinguishable sections
-						cssBuffer += '\n' + cssText;
-						if ( !cssBufferTimer ) {
-							cssBufferTimer = rAF( function () {
-								// Wrap in anonymous function that takes no arguments
-								// Support: Firefox < 13
-								// Firefox 12 has non-standard behaviour of passing a number
-								// as first argument to a setTimeout callback.
-								// http://benalman.com/news/2009/07/the-mysterious-firefox-settime/
-								addEmbeddedCSS();
-							} );
-						}
-						return;
-					}
-
-				// This is a scheduled flush for the buffer
-				} else {
-					cssBufferTimer = null;
-					cssText = cssBuffer;
-					cssBuffer = '';
-				}
-
-				newStyleTag( cssText, marker );
-
-				fireCallbacks();
 			}
 
 			/**
@@ -720,10 +718,10 @@
 			 * @return {string} Hash of concatenated version hashes.
 			 */
 			function getCombinedVersion( modules ) {
-				var hashes = modules.map( function ( module ) {
-					return registry[ module ].version;
-				} );
-				return fnv132( hashes.join( '' ) );
+				var hashes = modules.reduce( function ( result, module ) {
+					return result + registry[ module ].version;
+				}, '' );
+				return fnv132( hashes );
 			}
 
 			/**
@@ -742,6 +740,18 @@
 					}
 				}
 				return true;
+			}
+
+			/**
+			 * Determine whether all direct and base dependencies are in state 'ready'
+			 *
+			 * @private
+			 * @param {string} module Name of the module to be checked
+			 * @return {boolean} True if all direct/base dependencies are in state 'ready'; false otherwise
+			 */
+			function allWithImplicitReady( module ) {
+				return allReady( registry[ module ].dependencies ) &&
+					( baseModules.indexOf( module ) !== -1 || allReady( baseModules ) );
 			}
 
 			/**
@@ -764,76 +774,133 @@
 			}
 
 			/**
-			 * A module has entered state 'ready', 'error', or 'missing'. Automatically update
-			 * pending jobs and modules that depend upon this module. If the given module failed,
-			 * propagate the 'error' state up the dependency tree. Otherwise, go ahead and execute
-			 * all jobs/modules now having their dependencies satisfied.
+			 * Handle propagation of module state changes and reactions to them.
 			 *
-			 * Jobs that depend on a failed module, will have their error callback ran (if any).
+			 * - When a module reaches a failure state, this should be propagated to
+			 *   modules that depend on the failed module.
+			 * - When a module reaches a final state, pending job callbacks for the
+			 *   module from mw.loader.using() should be called.
+			 * - When a module reaches the 'ready' state from #execute(), consider
+			 *   executing dependant modules now having their dependencies satisfied.
+			 * - When a module reaches the 'loaded' state from mw.loader.implement,
+			 *   consider executing it, if it has no unsatisfied dependencies.
 			 *
 			 * @private
-			 * @param {string} module Name of module that entered one of the states 'ready', 'error', or 'missing'.
 			 */
-			function handlePending( module ) {
-				var j, job, hasErrors, m, stateChange;
+			function doPropagation() {
+				var errorModule, baseModuleError, module, i, failed, job,
+					didPropagate = true;
 
-				if ( registry[ module ].state === 'error' || registry[ module ].state === 'missing' ) {
-					// If the current module failed, mark all dependent modules also as failed.
-					// Iterate until steady-state to propagate the error state upwards in the
-					// dependency tree.
-					do {
-						stateChange = false;
-						for ( m in registry ) {
-							if ( registry[ m ].state !== 'error' && registry[ m ].state !== 'missing' ) {
-								if ( anyFailed( registry[ m ].dependencies ) ) {
-									registry[ m ].state = 'error';
-									stateChange = true;
+				// Keep going until the last iteration performed no actions.
+				do {
+					didPropagate = false;
+
+					// Stage 1: Propagate failures
+					while ( errorModules.length ) {
+						errorModule = errorModules.shift();
+						baseModuleError = baseModules.indexOf( errorModule ) !== -1;
+						for ( module in registry ) {
+							if ( registry[ module ].state !== 'error' && registry[ module ].state !== 'missing' ) {
+								if ( baseModuleError && baseModules.indexOf( module ) === -1 ) {
+									// Propate error from base module to all regular (non-base) modules
+									registry[ module ].state = 'error';
+									didPropagate = true;
+								} else if ( registry[ module ].dependencies.indexOf( errorModule ) !== -1 ) {
+									// Propagate error from dependency to depending module
+									registry[ module ].state = 'error';
+									// .. and propagate it further
+									errorModules.push( module );
+									didPropagate = true;
 								}
 							}
 						}
-					} while ( stateChange );
-				}
+					}
 
-				// Execute all jobs whose dependencies are either all satisfied or contain at least one failed module.
-				for ( j = 0; j < jobs.length; j++ ) {
-					hasErrors = anyFailed( jobs[ j ].dependencies );
-					if ( hasErrors || allReady( jobs[ j ].dependencies ) ) {
-						// All dependencies satisfied, or some have errors
-						job = jobs[ j ];
-						jobs.splice( j, 1 );
-						j -= 1;
-						try {
-							if ( hasErrors ) {
-								if ( typeof job.error === 'function' ) {
-									job.error( new Error( 'Module ' + module + ' has failed dependencies' ), [ module ] );
-								}
-							} else {
-								if ( typeof job.ready === 'function' ) {
+					// Stage 2: Execute 'loaded' modules with no unsatisfied dependencies
+					for ( module in registry ) {
+						if ( registry[ module ].state === 'loaded' && allWithImplicitReady( module ) ) {
+							// Recursively execute all dependent modules that were already loaded
+							// (waiting for execution) and no longer have unsatisfied dependencies.
+							// Base modules may have dependencies amongst eachother to ensure correct
+							// execution order. Regular modules wait for all base modules.
+							// eslint-disable-next-line no-use-before-define
+							execute( module );
+							didPropagate = true;
+						}
+					}
+
+					// Stage 3: Invoke job callbacks that are no longer blocked
+					for ( i = 0; i < jobs.length; i++ ) {
+						job = jobs[ i ];
+						failed = anyFailed( job.dependencies );
+						if ( failed || allReady( job.dependencies ) ) {
+							jobs.splice( i, 1 );
+							i -= 1;
+							try {
+								if ( failed && job.error ) {
+									job.error( new Error( 'Module has failed dependencies' ), job.dependencies );
+								} else if ( !failed && job.ready ) {
 									job.ready();
 								}
+							} catch ( e ) {
+								// A user-defined callback raised an exception.
+								// Swallow it to protect our state machine!
+								mw.trackError( 'resourceloader.exception', {
+									exception: e,
+									source: 'load-callback'
+								} );
 							}
-						} catch ( e ) {
-							// A user-defined callback raised an exception.
-							// Swallow it to protect our state machine!
-							mw.trackError( 'resourceloader.exception', {
-								exception: e,
-								module: module,
-								source: 'load-callback'
-							} );
+							didPropagate = true;
 						}
 					}
-				}
+				} while ( didPropagate );
 
-				if ( registry[ module ].state === 'ready' ) {
-					// The current module became 'ready'. Set it in the module store, and recursively execute all
-					// dependent modules that are loaded and now have all dependencies satisfied.
-					mw.loader.store.set( module, registry[ module ] );
-					for ( m in registry ) {
-						if ( registry[ m ].state === 'loaded' && allReady( registry[ m ].dependencies ) ) {
-							// eslint-disable-next-line no-use-before-define
-							execute( m );
-						}
+				willPropagate = false;
+			}
+
+			/**
+			 * Request a (debounced) call to doPropagation().
+			 *
+			 * @private
+			 */
+			function requestPropagation() {
+				if ( willPropagate ) {
+					// Already scheduled, or, we're already in a doPropagation stack.
+					return;
+				}
+				willPropagate = true;
+				// Yield for two reasons:
+				// * Allow successive calls to mw.loader.implement() from the same
+				//   load.php response, or from the same asyncEval() to be in the
+				//   propagation batch.
+				// * Allow the browser to breathe between the reception of
+				//   module source code and the execution of it.
+				//
+				// Use a high priority because the user may be waiting for interactions
+				// to start being possible. But, first provide a moment (up to 'timeout')
+				// for native input event handling (e.g. scrolling/typing/clicking).
+				mw.requestIdleCallback( doPropagation, { timeout: 1 } );
+			}
+
+			/**
+			 * Update a module's state in the registry and make sure any neccesary
+			 * propagation will occur. See #doPropagation for more about propagation.
+			 * See #registry for more about how states are used.
+			 *
+			 * @private
+			 * @param {string} module
+			 * @param {string} state
+			 */
+			function setAndPropagate( module, state ) {
+				registry[ module ].state = state;
+				if ( state === 'loaded' || state === 'ready' || state === 'error' || state === 'missing' ) {
+					if ( state === 'ready' ) {
+						// Queue to later be synced to the local module store.
+						mw.loader.store.add( module );
+					} else if ( state === 'error' || state === 'missing' ) {
+						errorModules.push( module );
 					}
+					requestPropagation();
 				}
 			}
 
@@ -854,7 +921,7 @@
 			function sortDependencies( module, resolved, unresolved ) {
 				var i, deps, skip;
 
-				if ( !hasOwn.call( registry, module ) ) {
+				if ( !( module in registry ) ) {
 					throw new Error( 'Unknown dependency: ' + module );
 				}
 
@@ -865,8 +932,7 @@
 					if ( skip() ) {
 						registry[ module ].skipped = true;
 						registry[ module ].dependencies = [];
-						registry[ module ].state = 'ready';
-						handlePending( module );
+						setAndPropagate( module, 'ready' );
 						return;
 					}
 				}
@@ -879,8 +945,19 @@
 				if ( !unresolved ) {
 					unresolved = new StringSet();
 				}
+
+				// Add base modules
+				if ( baseModules.indexOf( module ) === -1 ) {
+					baseModules.forEach( function ( baseModule ) {
+						if ( resolved.indexOf( baseModule ) === -1 ) {
+							resolved.push( baseModule );
+						}
+					} );
+				}
+
 				// Tracks down dependencies
 				deps = registry[ module ].dependencies;
+				unresolved.add( module );
 				for ( i = 0; i < deps.length; i++ ) {
 					if ( resolved.indexOf( deps[ i ] ) === -1 ) {
 						if ( unresolved.has( deps[ i ] ) ) {
@@ -889,7 +966,6 @@
 							);
 						}
 
-						unresolved.add( module );
 						sortDependencies( deps[ i ], resolved, unresolved );
 					}
 				}
@@ -965,6 +1041,8 @@
 			/**
 			 * Queue the loading and execution of a script for a particular module.
 			 *
+			 * This does for debug mode what runScript() does for production.
+			 *
 			 * @private
 			 * @param {string} src URL of the script
 			 * @param {string} moduleName Name of currently executing module
@@ -972,8 +1050,8 @@
 			 */
 			function queueModuleScript( src, moduleName, callback ) {
 				pendingRequests.push( function () {
-					if ( hasOwn.call( registry, moduleName ) ) {
-						// Emulate runScript() part of execute()
+					// Keep in sync with execute()/runScript().
+					if ( moduleName !== 'jquery' ) {
 						window.require = mw.loader.require;
 						window.module = registry[ moduleName ].module;
 					}
@@ -1028,6 +1106,9 @@
 			 */
 			function domEval( code ) {
 				var script = document.createElement( 'script' );
+				if ( mw.config.get( 'wgCSPNonce' ) !== false ) {
+					script.nonce = mw.config.get( 'wgCSPNonce' );
+				}
 				script.text = code;
 				document.head.appendChild( script );
 				script.parentNode.removeChild( script );
@@ -1039,22 +1120,16 @@
 			 * See also #work().
 			 *
 			 * @private
-			 * @param {string|string[]} dependencies Module name or array of string module names
+			 * @param {string[]} dependencies Array of module names in the registry
 			 * @param {Function} [ready] Callback to execute when all dependencies are ready
 			 * @param {Function} [error] Callback to execute when any dependency fails
 			 */
 			function enqueue( dependencies, ready, error ) {
-				// Allow calling by single module name
-				if ( typeof dependencies === 'string' ) {
-					dependencies = [ dependencies ];
-				}
-
 				if ( allReady( dependencies ) ) {
 					// Run ready immediately
 					if ( ready !== undefined ) {
 						ready();
 					}
-
 					return;
 				}
 
@@ -1066,7 +1141,6 @@
 							dependencies
 						);
 					}
-
 					return;
 				}
 
@@ -1077,7 +1151,7 @@
 					jobs.push( {
 						// Narrow down the list to modules that are worth waiting for
 						dependencies: dependencies.filter( function ( module ) {
-							var state = mw.loader.getState( module );
+							var state = registry[ module ].state;
 							return state === 'registered' || state === 'loaded' || state === 'loading' || state === 'executing';
 						} ),
 						ready: ready,
@@ -1086,15 +1160,13 @@
 				}
 
 				dependencies.forEach( function ( module ) {
-					var state = mw.loader.getState( module );
 					// Only queue modules that are still in the initial 'registered' state
 					// (not ones already loading, ready or error).
-					if ( state === 'registered' && queue.indexOf( module ) === -1 ) {
+					if ( registry[ module ].state === 'registered' && queue.indexOf( module ) === -1 ) {
 						// Private modules must be embedded in the page. Don't bother queuing
 						// these as the server will deny them anyway (T101806).
 						if ( registry[ module ].group === 'private' ) {
-							registry[ module ].state = 'error';
-							handlePending( module );
+							setAndPropagate( module, 'error' );
 							return;
 						}
 						queue.push( module );
@@ -1111,25 +1183,24 @@
 			 * @param {string} module Module name to execute
 			 */
 			function execute( module ) {
-				var key, value, media, i, urls, cssHandle, checkCssHandles, runScript,
-					cssHandlesRegistered = false;
+				var key, value, media, i, urls, cssHandle, siteDeps, siteDepErr, runScript,
+					cssPending = 0;
 
-				if ( !hasOwn.call( registry, module ) ) {
-					throw new Error( 'Module has not been registered yet: ' + module );
-				}
 				if ( registry[ module ].state !== 'loaded' ) {
 					throw new Error( 'Module in state "' + registry[ module ].state + '" may not be executed: ' + module );
 				}
 
 				registry[ module ].state = 'executing';
+				$CODE.profileExecuteStart();
 
 				runScript = function () {
 					var script, markModuleReady, nestedAddScript;
 
+					$CODE.profileScriptStart();
 					script = registry[ module ].script;
 					markModuleReady = function () {
-						registry[ module ].state = 'ready';
-						handlePending( module );
+						$CODE.profileScriptEnd();
+						setAndPropagate( module, 'ready' );
 					};
 					nestedAddScript = function ( arr, callback, i ) {
 						// Recursively call queueModuleScript() in its own callback
@@ -1149,9 +1220,20 @@
 						if ( Array.isArray( script ) ) {
 							nestedAddScript( script, markModuleReady, 0 );
 						} else if ( typeof script === 'function' ) {
-							// Pass jQuery twice so that the signature of the closure which wraps
-							// the script can bind both '$' and 'jQuery'.
-							script( window.$, window.$, mw.loader.require, registry[ module ].module );
+							// Keep in sync with queueModuleScript() for debug mode
+							if ( module === 'jquery' ) {
+								// This is a special case for when 'jquery' itself is being loaded.
+								// - The standard jquery.js distribution does not set `window.jQuery`
+								//   in CommonJS-compatible environments (Node.js, AMD, RequireJS, etc.).
+								// - MediaWiki's 'jquery' module also bundles jquery.migrate.js, which
+								//   in a CommonJS-compatible environment, will use require('jquery'),
+								//   but that can't work when we're still inside that module.
+								script();
+							} else {
+								// Pass jQuery twice so that the signature of the closure which wraps
+								// the script can bind both '$' and 'jQuery'.
+								script( window.$, window.$, mw.loader.require, registry[ module ].module );
+							}
 							markModuleReady();
 
 						} else if ( typeof script === 'string' ) {
@@ -1168,12 +1250,13 @@
 					} catch ( e ) {
 						// Use mw.track instead of mw.log because these errors are common in production mode
 						// (e.g. undefined variable), and mw.log is only enabled in debug mode.
-						registry[ module ].state = 'error';
+						setAndPropagate( module, 'error' );
+						$CODE.profileScriptEnd();
 						mw.trackError( 'resourceloader.exception', {
-							exception: e, module:
-							module, source: 'module-execute'
+							exception: e,
+							module: module,
+							source: 'module-execute'
 						} );
-						handlePending( module );
 					}
 				};
 
@@ -1187,46 +1270,34 @@
 					mw.templates.set( module, registry[ module ].templates );
 				}
 
-				// Make sure we don't run the scripts until all stylesheet insertions have completed.
-				( function () {
-					var pending = 0;
-					checkCssHandles = function () {
-						var ex, dependencies;
-						// cssHandlesRegistered ensures we don't take off too soon, e.g. when
-						// one of the cssHandles is fired while we're still creating more handles.
-						if ( cssHandlesRegistered && pending === 0 && runScript ) {
-							if ( module === 'user' ) {
-								// Implicit dependency on the site module. Not real dependency because
-								// it should run after 'site' regardless of whether it succeeds or fails.
-								// Note: This is a simplified version of mw.loader.using(), inlined here
-								// as using() depends on jQuery (T192623).
-								try {
-									dependencies = resolve( [ 'site' ] );
-								} catch ( e ) {
-									ex = e;
-									runScript();
-								}
-								if ( ex === undefined ) {
-									enqueue( dependencies, runScript, runScript );
-								}
-							} else {
-								runScript();
-							}
-							runScript = undefined; // Revoke
+				// Adding of stylesheets is asynchronous via addEmbeddedCSS().
+				// The below function uses a counting semaphore to make sure we don't call
+				// runScript() until after this module's stylesheets have been inserted
+				// into the DOM.
+				cssHandle = function () {
+					// Increase semaphore, when creating a callback for addEmbeddedCSS.
+					cssPending++;
+					return function () {
+						var runScriptCopy;
+						// Decrease semaphore, when said callback is invoked.
+						cssPending--;
+						if ( cssPending === 0 ) {
+							// Paranoia:
+							// This callback is exposed to addEmbeddedCSS, which is outside the execute()
+							// function and is not concerned with state-machine integrity. In turn,
+							// addEmbeddedCSS() actually exposes stuff further into the browser (rAF).
+							// If increment and decrement callbacks happen in the wrong order, or start
+							// again afterwards, then this branch could be reached multiple times.
+							// To protect the integrity of the state-machine, prevent that from happening
+							// by making runScript() cannot be called more than once.  We store a private
+							// reference when we first reach this branch, then deference the original, and
+							// call our reference to it.
+							runScriptCopy = runScript;
+							runScript = undefined;
+							runScriptCopy();
 						}
 					};
-					cssHandle = function () {
-						var check = checkCssHandles;
-						pending++;
-						return function () {
-							if ( check ) {
-								pending--;
-								check();
-								check = undefined; // Revoke
-							}
-						};
-					};
-				}() );
+				};
 
 				// Process styles (see also mw.loader.implement)
 				// * back-compat: { <media>: css }
@@ -1280,9 +1351,29 @@
 					}
 				}
 
-				// Kick off.
-				cssHandlesRegistered = true;
-				checkCssHandles();
+				// End profiling of execute()-self before we call runScript(),
+				// which we want to measure separately without overlap.
+				$CODE.profileExecuteEnd();
+
+				if ( module === 'user' ) {
+					// Implicit dependency on the site module. Not a real dependency because it should
+					// run after 'site' regardless of whether it succeeds or fails.
+					// Note: This is a simplified version of mw.loader.using(), inlined here because
+					// mw.loader.using() is part of mediawiki.base (depends on jQuery; T192623).
+					try {
+						siteDeps = resolve( [ 'site' ] );
+					} catch ( e ) {
+						siteDepErr = e;
+						runScript();
+					}
+					if ( siteDepErr === undefined ) {
+						enqueue( siteDeps, runScript, runScript );
+					}
+				} else if ( cssPending === 0 ) {
+					// Regular module without styles
+					runScript();
+				}
+				// else: runScript will get called via cssHandle()
 			}
 
 			function sortQuery( o ) {
@@ -1340,7 +1431,7 @@
 			/**
 			 * Resolve indexed dependencies.
 			 *
-			 * ResourceLoader uses an optimization to save space which replaces module names in
+			 * ResourceLoader uses an optimisation to save space which replaces module names in
 			 * dependency lists with the index of that module within the array of module
 			 * registration data if it exists. The benefit is a significant reduction in the data
 			 * size of the startup module. This function changes those dependency lists back to
@@ -1386,7 +1477,7 @@
 			 * @param {string[]} batch
 			 */
 			function batchRequest( batch ) {
-				var reqBase, splits, maxQueryLength, b, bSource, bGroup, bSourceGroup,
+				var reqBase, splits, maxQueryLength, b, bSource, bGroup,
 					source, group, i, modules, sourceLoadScript,
 					currReqBase, currReqBaseLength, moduleMap, currReqModules, l,
 					lastDotIndex, prefix, suffix, bytesAdded;
@@ -1428,22 +1519,20 @@
 				maxQueryLength = mw.config.get( 'wgResourceLoaderMaxQueryLength', 2000 );
 
 				// Split module list by source and by group.
-				splits = {};
+				splits = Object.create( null );
 				for ( b = 0; b < batch.length; b++ ) {
 					bSource = registry[ batch[ b ] ].source;
 					bGroup = registry[ batch[ b ] ].group;
-					if ( !hasOwn.call( splits, bSource ) ) {
-						splits[ bSource ] = {};
+					if ( !splits[ bSource ] ) {
+						splits[ bSource ] = Object.create( null );
 					}
-					if ( !hasOwn.call( splits[ bSource ], bGroup ) ) {
+					if ( !splits[ bSource ][ bGroup ] ) {
 						splits[ bSource ][ bGroup ] = [];
 					}
-					bSourceGroup = splits[ bSource ][ bGroup ];
-					bSourceGroup.push( batch[ b ] );
+					splits[ bSource ][ bGroup ].push( batch[ b ] );
 				}
 
 				for ( source in splits ) {
-
 					sourceLoadScript = sources[ source ];
 
 					for ( group in splits[ source ] ) {
@@ -1469,7 +1558,7 @@
 						// We may need to split up the request to honor the query string length limit,
 						// so build it piece by piece.
 						l = currReqBaseLength;
-						moduleMap = {}; // { prefix: [ suffixes ] }
+						moduleMap = Object.create( null ); // { prefix: [ suffixes ] }
 						currReqModules = [];
 
 						for ( i = 0; i < modules.length; i++ ) {
@@ -1478,7 +1567,7 @@
 							// If lastDotIndex is -1, substr() returns an empty string
 							prefix = modules[ i ].substr( 0, lastDotIndex );
 							suffix = modules[ i ].slice( lastDotIndex + 1 );
-							bytesAdded = hasOwn.call( moduleMap, prefix ) ?
+							bytesAdded = moduleMap[ prefix ] ?
 								suffix.length + 3 : // '%2C'.length == 3
 								modules[ i ].length + 3; // '%7C'.length == 3
 
@@ -1488,12 +1577,12 @@
 								doRequest();
 								// .. and start again.
 								l = currReqBaseLength;
-								moduleMap = {};
+								moduleMap = Object.create( null );
 								currReqModules = [];
 
 								mw.track( 'resourceloader.splitRequest', { maxQueryLength: maxQueryLength } );
 							}
-							if ( !hasOwn.call( moduleMap, prefix ) ) {
+							if ( !moduleMap[ prefix ] ) {
 								moduleMap[ prefix ] = [];
 							}
 							l += bytesAdded;
@@ -1537,8 +1626,7 @@
 			 *  or null if the module does not exist
 			 */
 			function getModuleKey( module ) {
-				return hasOwn.call( registry, module ) ?
-					( module + '@' + registry[ module ].version ) : null;
+				return module in registry ? ( module + '@' + registry[ module ].version ) : null;
 			}
 
 			/**
@@ -1557,6 +1645,34 @@
 				return {
 					name: key.slice( 0, index ),
 					version: key.slice( index + 1 )
+				};
+			}
+
+			/**
+			 * @private
+			 * @param {string} module
+			 * @param {string|number} [version]
+			 * @param {string[]} [dependencies]
+			 * @param {string} [group]
+			 * @param {string} [source]
+			 * @param {string} [skip]
+			 */
+			function registerOne( module, version, dependencies, group, source, skip ) {
+				if ( module in registry ) {
+					throw new Error( 'module already registered: ' + module );
+				}
+				registry[ module ] = {
+					// Exposed to execute() for mw.loader.implement() closures.
+					// Import happens via require().
+					module: {
+						exports: {}
+					},
+					version: String( version || '' ),
+					dependencies: dependencies || [],
+					group: typeof group === 'string' ? group : null,
+					source: typeof source === 'string' ? source : 'local',
+					state: 'registered',
+					skip: typeof skip === 'string' ? skip : null
 				};
 			}
 
@@ -1585,7 +1701,7 @@
 				/**
 				 * Start loading of all queued module dependencies.
 				 *
-				 * @protected
+				 * @private
 				 */
 				work: function () {
 					var q, batch, implementations, sourceModules;
@@ -1595,7 +1711,7 @@
 					// Appends a list of modules from the queue to the batch
 					for ( q = 0; q < queue.length; q++ ) {
 						// Only load modules which are registered
-						if ( hasOwn.call( registry, queue[ q ] ) && registry[ queue[ q ] ].state === 'registered' ) {
+						if ( queue[ q ] in registry && registry[ queue[ q ] ].state === 'registered' ) {
 							// Prevent duplicate entries
 							if ( batch.indexOf( queue[ q ] ) === -1 ) {
 								batch.push( queue[ q ] );
@@ -1663,88 +1779,58 @@
 				 *
 				 * The #work() method will use this information to split up requests by source.
 				 *
-				 *     mw.loader.addSource( 'mediawikiwiki', '//www.mediawiki.org/w/load.php' );
+				 *     mw.loader.addSource( { mediawikiwiki: 'https://www.mediawiki.org/w/load.php' } );
 				 *
-				 * @param {string|Object} id Source ID, or object mapping ids to load urls
-				 * @param {string} loadUrl Url to a load.php end point
+				 * @private
+				 * @param {Object} ids An object mapping ids to load.php end point urls
 				 * @throws {Error} If source id is already registered
 				 */
-				addSource: function ( id, loadUrl ) {
-					var source;
-					// Allow multiple additions
-					if ( typeof id === 'object' ) {
-						for ( source in id ) {
-							mw.loader.addSource( source, id[ source ] );
+				addSource: function ( ids ) {
+					var id;
+					for ( id in ids ) {
+						if ( id in sources ) {
+							throw new Error( 'source already registered: ' + id );
 						}
-						return;
+						sources[ id ] = ids[ id ];
 					}
-
-					if ( hasOwn.call( sources, id ) ) {
-						throw new Error( 'source already registered: ' + id );
-					}
-
-					sources[ id ] = loadUrl;
 				},
 
 				/**
 				 * Register a module, letting the system know about it and its properties.
 				 *
-				 * The startup modules contain calls to this method.
+				 * The startup module calls this method.
 				 *
 				 * When using multiple module registration by passing an array, dependencies that
 				 * are specified as references to modules within the array will be resolved before
 				 * the modules are registered.
 				 *
-				 * @param {string|Array} module Module name or array of arrays, each containing
+				 * @param {string|Array} modules Module name or array of arrays, each containing
 				 *  a list of arguments compatible with this method
-				 * @param {string|number} version Module version hash (falls backs to empty string)
+				 * @param {string|number} [version] Module version hash (falls backs to empty string)
 				 *  Can also be a number (timestamp) for compatibility with MediaWiki 1.25 and earlier.
-				 * @param {string|Array} dependencies One string or array of strings of module
-				 *  names on which this module depends.
+				 * @param {string[]} [dependencies] Array of module names on which this module depends.
 				 * @param {string} [group=null] Group which the module is in
 				 * @param {string} [source='local'] Name of the source
 				 * @param {string} [skip=null] Script body of the skip function
 				 */
-				register: function ( module, version, dependencies, group, source, skip ) {
-					var i, deps;
-					// Allow multiple registration
-					if ( typeof module === 'object' ) {
-						resolveIndexedDependencies( module );
-						for ( i = 0; i < module.length; i++ ) {
-							// module is an array of module names
-							if ( typeof module[ i ] === 'string' ) {
-								mw.loader.register( module[ i ] );
-							// module is an array of arrays
-							} else if ( typeof module[ i ] === 'object' ) {
-								mw.loader.register.apply( mw.loader, module[ i ] );
-							}
+				register: function ( modules ) {
+					var i;
+					if ( typeof modules === 'object' ) {
+						resolveIndexedDependencies( modules );
+						// Optimisation: Up to 55% faster.
+						// Typically called only once, and with a batch.
+						// See <https://gist.github.com/Krinkle/f06fdb3de62824c6c16f02a0e6ce0e66>
+						// Benchmarks taught us that the code for adding an object to `registry`
+						// should actually be inline, or in a simple function that does no
+						// arguments manipulation, and isn't also the caller itself.
+						// JS semantics make it hard to optimise recursion to a different
+						// signature of itself.
+						for ( i = 0; i < modules.length; i++ ) {
+							registerOne.apply( null, modules[ i ] );
 						}
-						return;
+					} else {
+						registerOne.apply( null, arguments );
 					}
-					if ( hasOwn.call( registry, module ) ) {
-						throw new Error( 'module already registered: ' + module );
-					}
-					if ( typeof dependencies === 'string' ) {
-						// A single module name
-						deps = [ dependencies ];
-					} else if ( typeof dependencies === 'object' ) {
-						// Array of module names
-						deps = dependencies;
-					}
-					// List the module as registered
-					registry[ module ] = {
-						// Exposed to execute() for mw.loader.implement() closures.
-						// Import happens via require().
-						module: {
-							exports: {}
-						},
-						version: version !== undefined ? String( version ) : '',
-						dependencies: deps || [],
-						group: typeof group === 'string' ? group : null,
-						source: typeof source === 'string' ? source : 'local',
-						state: 'registered',
-						skip: typeof skip === 'string' ? skip : null
-					};
 				},
 
 				/**
@@ -1772,7 +1858,7 @@
 				 * The reason css strings are not concatenated anymore is T33676. We now check
 				 * whether it's safe to extend the stylesheet.
 				 *
-				 * @protected
+				 * @private
 				 * @param {Object} [messages] List of key/value pairs to be added to mw#messages.
 				 * @param {Object} [templates] List of key/value pairs to be added to mw#templates.
 				 */
@@ -1781,11 +1867,11 @@
 						name = split.name,
 						version = split.version;
 					// Automatically register module
-					if ( !hasOwn.call( registry, name ) ) {
+					if ( !( name in registry ) ) {
 						mw.loader.register( name );
 					}
 					// Check for duplicate implementation
-					if ( hasOwn.call( registry, name ) && registry[ name ].script !== undefined ) {
+					if ( registry[ name ].script !== undefined ) {
 						throw new Error( 'module already implemented: ' + name );
 					}
 					if ( version ) {
@@ -1802,10 +1888,7 @@
 					registry[ name ].templates = templates || null;
 					// The module may already have been marked as erroneous
 					if ( registry[ name ].state !== 'error' && registry[ name ].state !== 'missing' ) {
-						registry[ name ].state = 'loaded';
-						if ( allReady( registry[ name ].dependencies ) ) {
-							execute( name );
-						}
+						setAndPropagate( name, 'loaded' );
 					}
 				},
 
@@ -1867,26 +1950,16 @@
 				/**
 				 * Change the state of one or more modules.
 				 *
-				 * @param {string|Object} module Module name or object of module name/state pairs
-				 * @param {string} state State name
+				 * @param {Object} states Object of module name/state pairs
 				 */
-				state: function ( module, state ) {
-					var m;
-
-					if ( typeof module === 'object' ) {
-						for ( m in module ) {
-							mw.loader.state( m, module[ m ] );
+				state: function ( states ) {
+					var module, state;
+					for ( module in states ) {
+						state = states[ module ];
+						if ( !( module in registry ) ) {
+							mw.loader.register( module );
 						}
-						return;
-					}
-					if ( !hasOwn.call( registry, module ) ) {
-						mw.loader.register( module );
-					}
-					registry[ module ].state = state;
-					if ( state === 'ready' || state === 'error' || state === 'missing' ) {
-						// Make sure pending modules depending on this one get executed if their
-						// dependencies are now fulfilled!
-						handlePending( module );
+						setAndPropagate( module, state );
 					}
 				},
 
@@ -1898,7 +1971,7 @@
 				 *  in the registry.
 				 */
 				getVersion: function ( module ) {
-					return hasOwn.call( registry, module ) ? registry[ module ].version : null;
+					return module in registry ? registry[ module ].version : null;
 				},
 
 				/**
@@ -1909,7 +1982,7 @@
 				 *  in the registry.
 				 */
 				getState: function ( module ) {
-					return hasOwn.call( registry, module ) ? registry[ module ].state : null;
+					return module in registry ? registry[ module ].state : null;
 				},
 
 				/**
@@ -1955,6 +2028,7 @@
 				 * modules and cache each of them separately, using each module's versioning scheme
 				 * to determine when the cache should be invalidated.
 				 *
+				 * @private
 				 * @singleton
 				 * @class mw.loader.store
 				 */
@@ -1969,6 +2043,10 @@
 					// The contents of the store, mapping '[name]@[version]' keys
 					// to module implementations.
 					items: {},
+
+					// Names of modules to be stored during the next update.
+					// See add() and update().
+					queue: [],
 
 					// Cache hit stats
 					stats: { hits: 0, misses: 0, expired: 0, failed: 0 },
@@ -1998,11 +2076,9 @@
 					 * @return {string} String of concatenated vary conditions.
 					 */
 					getVary: function () {
-						return [
-							mw.config.get( 'skin' ),
-							mw.config.get( 'wgResourceLoaderStorageVersion' ),
-							mw.config.get( 'wgUserLanguage' )
-						].join( ':' );
+						return mw.config.get( 'skin' ) + ':' +
+							mw.config.get( 'wgResourceLoaderStorageVersion' ) + ':' +
+							mw.config.get( 'wgUserLanguage' );
 					},
 
 					/**
@@ -2019,7 +2095,7 @@
 					init: function () {
 						var raw, data;
 
-						if ( mw.loader.store.enabled !== null ) {
+						if ( this.enabled !== null ) {
 							// Init already ran
 							return;
 						}
@@ -2028,29 +2104,31 @@
 							// Disabled because localStorage quotas are tight and (in Firefox's case)
 							// shared by multiple origins.
 							// See T66721, and <https://bugzilla.mozilla.org/show_bug.cgi?id=1064466>.
-							/Firefox|Opera/.test( navigator.userAgent ) ||
+							/Firefox/.test( navigator.userAgent ) ||
 
 							// Disabled by configuration.
 							!mw.config.get( 'wgResourceLoaderStorageEnabled' )
 						) {
 							// Clear any previous store to free up space. (T66721)
-							mw.loader.store.clear();
-							mw.loader.store.enabled = false;
+							this.clear();
+							this.enabled = false;
 							return;
 						}
 						if ( mw.config.get( 'debug' ) ) {
 							// Disable module store in debug mode
-							mw.loader.store.enabled = false;
+							this.enabled = false;
 							return;
 						}
 
 						try {
-							raw = localStorage.getItem( mw.loader.store.getStoreKey() );
+							// This a string we stored, or `null` if the key does not (yet) exist.
+							raw = localStorage.getItem( this.getStoreKey() );
 							// If we get here, localStorage is available; mark enabled
-							mw.loader.store.enabled = true;
+							this.enabled = true;
+							// If null, JSON.parse() will cast to string and re-parse, still null.
 							data = JSON.parse( raw );
-							if ( data && typeof data.items === 'object' && data.vary === mw.loader.store.getVary() ) {
-								mw.loader.store.items = data.items;
+							if ( data && typeof data.items === 'object' && data.vary === this.getVary() ) {
+								this.items = data.items;
 								return;
 							}
 						} catch ( e ) {
@@ -2060,11 +2138,26 @@
 							} );
 						}
 
+						// If we get here, one of four things happened:
+						//
+						// 1. localStorage did not contain our store key.
+						//    This means `raw` is `null`, and we're on a fresh page view (cold cache).
+						//    The store was enabled, and `items` starts fresh.
+						//
+						// 2. localStorage contained parseable data under our store key,
+						//    but it's not applicable to our current context (see getVary).
+						//    The store was enabled, and `items` starts fresh.
+						//
+						// 3. JSON.parse threw (localStorage contained corrupt data).
+						//    This means `raw` contains a string.
+						//    The store was enabled, and `items` starts fresh.
+						//
+						// 4. localStorage threw (disabled or otherwise unavailable).
+						//    This means `raw` was never assigned.
+						//    We will disable the store below.
 						if ( raw === undefined ) {
 							// localStorage failed; disable store
-							mw.loader.store.enabled = false;
-						} else {
-							mw.loader.store.update();
+							this.enabled = false;
 						}
 					},
 
@@ -2077,39 +2170,56 @@
 					get: function ( module ) {
 						var key;
 
-						if ( !mw.loader.store.enabled ) {
+						if ( !this.enabled ) {
 							return false;
 						}
 
 						key = getModuleKey( module );
-						if ( key in mw.loader.store.items ) {
-							mw.loader.store.stats.hits++;
-							return mw.loader.store.items[ key ];
+						if ( key in this.items ) {
+							this.stats.hits++;
+							return this.items[ key ];
 						}
-						mw.loader.store.stats.misses++;
+						this.stats.misses++;
 						return false;
 					},
 
 					/**
-					 * Stringify a module and queue it for storage.
+					 * Queue the name of a module that the next update should consider storing.
 					 *
+					 * @since 1.32
 					 * @param {string} module Module name
-					 * @param {Object} descriptor The module's descriptor as set in the registry
-					 * @return {boolean} Module was set
 					 */
-					set: function ( module, descriptor ) {
-						var args, key, src;
-
-						if ( !mw.loader.store.enabled ) {
-							return false;
+					add: function ( module ) {
+						if ( !this.enabled ) {
+							return;
 						}
+						this.queue.push( module );
+						this.requestUpdate();
+					},
+
+					/**
+					 * Add the contents of the named module to the in-memory store.
+					 *
+					 * This method does not guarantee that the module will be stored.
+					 * Inspection of the module's meta data and size will ultimately decide that.
+					 *
+					 * This method is considered internal to mw.loader.store and must only
+					 * be called if the store is enabled.
+					 *
+					 * @private
+					 * @param {string} module Module name
+					 */
+					set: function ( module ) {
+						var key, args, src,
+							descriptor = mw.loader.moduleRegistry[ module ];
 
 						key = getModuleKey( module );
 
 						if (
 							// Already stored a copy of this exact version
-							key in mw.loader.store.items ||
+							key in this.items ||
 							// Module failed to load
+							!descriptor ||
 							descriptor.state !== 'ready' ||
 							// Unversioned, private, or site-/user-specific
 							!descriptor.version ||
@@ -2121,7 +2231,7 @@
 								descriptor.templates ].indexOf( undefined ) !== -1
 						) {
 							// Decline to store
-							return false;
+							return;
 						}
 
 						try {
@@ -2134,89 +2244,95 @@
 								JSON.stringify( descriptor.messages ),
 								JSON.stringify( descriptor.templates )
 							];
-							// Attempted workaround for a possible Opera bug (bug T59567).
-							// This regex should never match under sane conditions.
-							if ( /^\s*\(/.test( args[ 1 ] ) ) {
-								args[ 1 ] = 'function' + args[ 1 ];
-								mw.trackError( 'resourceloader.assert', { source: 'bug-T59567' } );
-							}
 						} catch ( e ) {
 							mw.trackError( 'resourceloader.exception', {
 								exception: e,
 								source: 'store-localstorage-json'
 							} );
-							return false;
+							return;
 						}
 
 						src = 'mw.loader.implement(' + args.join( ',' ) + ');';
-						if ( src.length > mw.loader.store.MODULE_SIZE_MAX ) {
-							return false;
+						if ( src.length > this.MODULE_SIZE_MAX ) {
+							return;
 						}
-						mw.loader.store.items[ key ] = src;
-						mw.loader.store.update();
-						return true;
+						this.items[ key ] = src;
 					},
 
 					/**
 					 * Iterate through the module store, removing any item that does not correspond
 					 * (in name and version) to an item in the module registry.
-					 *
-					 * @return {boolean} Store was pruned
 					 */
 					prune: function () {
 						var key, module;
 
-						if ( !mw.loader.store.enabled ) {
-							return false;
-						}
-
-						for ( key in mw.loader.store.items ) {
+						for ( key in this.items ) {
 							module = key.slice( 0, key.indexOf( '@' ) );
 							if ( getModuleKey( module ) !== key ) {
-								mw.loader.store.stats.expired++;
-								delete mw.loader.store.items[ key ];
-							} else if ( mw.loader.store.items[ key ].length > mw.loader.store.MODULE_SIZE_MAX ) {
+								this.stats.expired++;
+								delete this.items[ key ];
+							} else if ( this.items[ key ].length > this.MODULE_SIZE_MAX ) {
 								// This value predates the enforcement of a size limit on cached modules.
-								delete mw.loader.store.items[ key ];
+								delete this.items[ key ];
 							}
 						}
-						return true;
 					},
 
 					/**
 					 * Clear the entire module store right now.
 					 */
 					clear: function () {
-						mw.loader.store.items = {};
+						this.items = {};
 						try {
-							localStorage.removeItem( mw.loader.store.getStoreKey() );
-						} catch ( ignored ) {}
+							localStorage.removeItem( this.getStoreKey() );
+						} catch ( e ) {}
 					},
 
 					/**
-					 * Sync in-memory store back to localStorage.
+					 * Request a sync of the in-memory store back to persisted localStorage.
 					 *
-					 * This function debounces updates. When called with a flush already pending,
-					 * the call is coalesced into the pending update. The call to
-					 * localStorage.setItem will be naturally deferred until the page is quiescent.
+					 * This function debounces updates. The debouncing logic should account
+					 * for the following factors:
 					 *
-					 * Because localStorage is shared by all pages from the same origin, if multiple
-					 * pages are loaded with different module sets, the possibility exists that
-					 * modules saved by one page will be clobbered by another. But the impact would
-					 * be minor and the problem would be corrected by subsequent page views.
+					 * - Writing to localStorage is an expensive operation that must not happen
+					 *   during the critical path of initialising and executing module code.
+					 *   Instead, it should happen at a later time after modules have been given
+					 *   time and priority to do their thing first.
 					 *
+					 * - This method is called from mw.loader.store.add(), which will be called
+					 *   hundreds of times on a typical page, including within the same call-stack
+					 *   and eventloop-tick. This is because responses from load.php happen in
+					 *   batches. As such, we want to allow all modules from the same load.php
+					 *   response to be written to disk with a single flush, not many.
+					 *
+					 * - Repeatedly deleting and creating timers is non-trivial.
+					 *
+					 * - localStorage is shared by all pages from the same origin, if multiple
+					 *   pages are loaded with different module sets, the possibility exists that
+					 *   modules saved by one page will be clobbered by another. The impact of
+					 *   this is minor, it merely causes a less efficient cache use, and the
+					 *   problem would be corrected by subsequent page views.
+					 *
+					 * This method is considered internal to mw.loader.store and must only
+					 * be called if the store is enabled.
+					 *
+					 * @private
 					 * @method
 					 */
-					update: ( function () {
-						var hasPendingWrite = false;
+					requestUpdate: ( function () {
+						var hasPendingWrites = false;
 
 						function flushWrites() {
 							var data, key;
-							if ( !hasPendingWrite || !mw.loader.store.enabled ) {
-								return;
+
+							// Remove anything from the in-memory store that came from previous page
+							// loads that no longer corresponds with current module names and versions.
+							mw.loader.store.prune();
+							// Process queued module names, serialise their contents to the in-memory store.
+							while ( mw.loader.store.queue.length ) {
+								mw.loader.store.set( mw.loader.store.queue.shift() );
 							}
 
-							mw.loader.store.prune();
 							key = mw.loader.store.getStoreKey();
 							try {
 								// Replacing the content of the module store might fail if the new
@@ -2233,13 +2349,24 @@
 								} );
 							}
 
-							hasPendingWrite = false;
+							// Let the next call to requestUpdate() create a new timer.
+							hasPendingWrites = false;
+						}
+
+						function onTimeout() {
+							// Defer the actual write via requestIdleCallback
+							mw.requestIdleCallback( flushWrites );
 						}
 
 						return function () {
-							if ( !hasPendingWrite ) {
-								hasPendingWrite = true;
-								mw.requestIdleCallback( flushWrites );
+							// On the first call to requestUpdate(), create a timer that
+							// waits at least two seconds, then calls onTimeout.
+							// The main purpose is to allow the current batch of load.php
+							// responses to complete before we do anything. This batch can
+							// trigger many hundreds of calls to requestUpdate().
+							if ( !hasPendingWrites ) {
+								hasPendingWrites = true;
+								setTimeout( onTimeout, 2000 );
 							}
 						};
 					}() )

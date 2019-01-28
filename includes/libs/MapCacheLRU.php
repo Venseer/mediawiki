@@ -64,7 +64,7 @@ class MapCacheLRU implements IExpiringStore, Serializable {
 		Assert::parameter( $maxKeys > 0, '$maxKeys', 'must be above zero' );
 
 		$this->maxCacheKeys = $maxKeys;
-		// Use the current time as the default "as of" timesamp of entries
+		// Use the current time as the default "as of" timestamp of entries
 		$this->epoch = $this->getCurrentTime();
 	}
 
@@ -135,13 +135,13 @@ class MapCacheLRU implements IExpiringStore, Serializable {
 	 * Check if a key exists
 	 *
 	 * @param string $key
-	 * @param float $maxAge Ignore items older than this many seconds (since 1.32)
+	 * @param float $maxAge Ignore items older than this many seconds [optional] (since 1.32)
 	 * @return bool
 	 */
 	public function has( $key, $maxAge = 0.0 ) {
 		if ( !is_int( $key ) && !is_string( $key ) ) {
 			throw new UnexpectedValueException(
-				__METHOD__ . ' called with invalid key. Must be string or integer.' );
+				__METHOD__ . ': invalid key; must be string or integer.' );
 		}
 
 		if ( !array_key_exists( $key, $this->cache ) ) {
@@ -157,10 +157,11 @@ class MapCacheLRU implements IExpiringStore, Serializable {
 	 * If the item is already set, it will be pushed to the top of the cache.
 	 *
 	 * @param string $key
-	 * @return mixed Returns null if the key was not found
+	 * @param float $maxAge Ignore items older than this many seconds [optional] (since 1.32)
+	 * @return mixed Returns null if the key was not found or is older than $maxAge
 	 */
-	public function get( $key ) {
-		if ( !$this->has( $key ) ) {
+	public function get( $key, $maxAge = 0.0 ) {
+		if ( !$this->has( $key, $maxAge ) ) {
 			return null;
 		}
 
@@ -182,8 +183,15 @@ class MapCacheLRU implements IExpiringStore, Serializable {
 			$this->set( $key, [], $initRank );
 		}
 
+		if ( !is_int( $field ) && !is_string( $field ) ) {
+			throw new UnexpectedValueException(
+				__METHOD__ . ": invalid field for '$key'; must be string or integer." );
+		}
+
 		if ( !is_array( $this->cache[$key] ) ) {
-			throw new UnexpectedValueException( "The value of '$key' is not an array." );
+			$type = gettype( $this->cache[$key] );
+
+			throw new UnexpectedValueException( "The value of '$key' ($type) is not an array." );
 		}
 
 		$this->cache[$key][$field] = $value;
@@ -193,11 +201,17 @@ class MapCacheLRU implements IExpiringStore, Serializable {
 	/**
 	 * @param string|int $key
 	 * @param string|int $field
-	 * @param float $maxAge
+	 * @param float $maxAge Ignore items older than this many seconds [optional] (since 1.32)
 	 * @return bool
 	 */
 	public function hasField( $key, $field, $maxAge = 0.0 ) {
 		$value = $this->get( $key );
+
+		if ( !is_int( $field ) && !is_string( $field ) ) {
+			throw new UnexpectedValueException(
+				__METHOD__ . ": invalid field for '$key'; must be string or integer." );
+		}
+
 		if ( !is_array( $value ) || !array_key_exists( $field, $value ) ) {
 			return false;
 		}
@@ -205,8 +219,18 @@ class MapCacheLRU implements IExpiringStore, Serializable {
 		return ( $maxAge <= 0 || $this->getAge( $key, $field ) <= $maxAge );
 	}
 
-	public function getField( $key, $field ) {
-		return $this->get( $key )[$field] ?? null;
+	/**
+	 * @param string|int $key
+	 * @param string|int $field
+	 * @param float $maxAge Ignore items older than this many seconds [optional] (since 1.32)
+	 * @return mixed Returns null if the key was not found or is older than $maxAge
+	 */
+	public function getField( $key, $field, $maxAge = 0.0 ) {
+		if ( !$this->hasField( $key, $field, $maxAge ) ) {
+			return null;
+		}
+
+		return $this->cache[$key][$field];
 	}
 
 	/**

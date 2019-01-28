@@ -19,6 +19,8 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * @defgroup Actions Action done on pages
  */
@@ -28,7 +30,7 @@
  * are distinct from Special Pages because an action must apply to exactly one page.
  *
  * To add an action in an extension, create a subclass of Action, and add the key to
- * $wgActions.  There is also the deprecated UnknownAction hook
+ * $wgActions.
  *
  * Actions generally fall into two groups: the show-a-form-then-do-something-with-the-input
  * format (protect, delete, move, etc), and the just-do-something format (watch, rollback,
@@ -130,7 +132,7 @@ abstract class Action implements MessageLocalizer {
 			$actionName = 'nosuchaction';
 		}
 
-		// Workaround for bug #20966: inability of IE to provide an action dependent
+		// Workaround for T22966: inability of IE to provide an action dependent
 		// on which submit button is clicked.
 		if ( $actionName === 'historysubmit' ) {
 			if ( $request->getBool( 'revisiondelete' ) ) {
@@ -312,9 +314,14 @@ abstract class Action implements MessageLocalizer {
 			}
 		}
 
-		if ( $this->requiresUnblock() && $user->isBlocked() ) {
+		// If the action requires an unblock, explicitly check the user's block.
+		if ( $this->requiresUnblock() && $user->isBlockedFrom( $this->getTitle() ) ) {
 			$block = $user->getBlock();
-			throw new UserBlockedError( $block );
+			if ( $block ) {
+				throw new UserBlockedError( $block );
+			}
+
+			throw new PermissionsError( $this->getName(), [ 'badaccess-group0' ] );
 		}
 
 		// This should be checked at the end so that the user won't think the
@@ -386,8 +393,7 @@ abstract class Action implements MessageLocalizer {
 	 * @since 1.25
 	 */
 	public function addHelpLink( $to, $overrideBaseUrl = false ) {
-		global $wgContLang;
-		$msg = wfMessage( $wgContLang->lc(
+		$msg = wfMessage( MediaWikiServices::getInstance()->getContentLanguage()->lc(
 			self::getActionName( $this->getContext() )
 			) . '-helppage' );
 

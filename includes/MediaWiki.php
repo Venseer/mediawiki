@@ -43,7 +43,7 @@ class MediaWiki {
 	private $config;
 
 	/**
-	 * @var String Cache what action this request is
+	 * @var string Cache what action this request is
 	 */
 	private $action;
 
@@ -66,8 +66,6 @@ class MediaWiki {
 	 * @return Title Title object to be $wgTitle
 	 */
 	private function parseTitle() {
-		global $wgContLang;
-
 		$request = $this->context->getRequest();
 		$curid = $request->getInt( 'curid' );
 		$title = $request->getVal( 'title' );
@@ -88,12 +86,13 @@ class MediaWiki {
 			if ( !is_null( $ret ) && $ret->getNamespace() == NS_MEDIA ) {
 				$ret = Title::makeTitle( NS_FILE, $ret->getDBkey() );
 			}
+			$contLang = MediaWikiServices::getInstance()->getContentLanguage();
 			// Check variant links so that interwiki links don't have to worry
 			// about the possible different language variants
-			if ( $wgContLang->hasVariants()
-				&& !is_null( $ret ) && $ret->getArticleID() == 0
+			if (
+				$contLang->hasVariants() && !is_null( $ret ) && $ret->getArticleID() == 0
 			) {
-				$wgContLang->findVariantLink( $title, $ret );
+				$contLang->findVariantLink( $title, $ret );
 			}
 		}
 
@@ -251,14 +250,15 @@ class MediaWiki {
 		// Redirect loops, titleless URL, $wgUsePathInfo URLs, and URLs with a variant
 		} elseif ( !$this->tryNormaliseRedirect( $title ) ) {
 			// Prevent information leak via Special:MyPage et al (T109724)
+			$spFactory = MediaWikiServices::getInstance()->getSpecialPageFactory();
 			if ( $title->isSpecialPage() ) {
-				$specialPage = SpecialPageFactory::getPage( $title->getDBkey() );
+				$specialPage = $spFactory->getPage( $title->getDBkey() );
 				if ( $specialPage instanceof RedirectSpecialPage ) {
 					$specialPage->setContext( $this->context );
 					if ( $this->config->get( 'HideIdentifiableRedirects' )
 						&& $specialPage->personallyIdentifiableTarget()
 					) {
-						list( , $subpage ) = SpecialPageFactory::resolveAlias( $title->getDBkey() );
+						list( , $subpage ) = $spFactory->resolveAlias( $title->getDBkey() );
 						$target = $specialPage->getRedirect( $subpage );
 						// target can also be true. We let that case fall through to normal processing.
 						if ( $target instanceof Title ) {
@@ -285,7 +285,7 @@ class MediaWiki {
 			// Special pages ($title may have changed since if statement above)
 			if ( $title->isSpecialPage() ) {
 				// Actions that need to be made when we have a special pages
-				SpecialPageFactory::executePath( $title, $this->context );
+				$spFactory->executePath( $title, $this->context );
 			} else {
 				// ...otherwise treat it as an article view. The article
 				// may still be a wikipage redirect to another article or URL.
@@ -339,7 +339,8 @@ class MediaWiki {
 		}
 
 		if ( $title->isSpecialPage() ) {
-			list( $name, $subpage ) = SpecialPageFactory::resolveAlias( $title->getDBkey() );
+			list( $name, $subpage ) = MediaWikiServices::getInstance()->getSpecialPageFactory()->
+				resolveAlias( $title->getDBkey() );
 			if ( $name ) {
 				$title = SpecialPage::getTitleFor( $name, $subpage );
 			}
@@ -500,18 +501,10 @@ class MediaWiki {
 			$action->show();
 			return;
 		}
-		// NOTE: deprecated hook. Add to $wgActions instead
-		if ( Hooks::run(
-			'UnknownAction',
-			[
-				$request->getVal( 'action', 'view' ),
-				$page
-			],
-			'1.19'
-		) ) {
-			$output->setStatusCode( 404 );
-			$output->showErrorPage( 'nosuchaction', 'nosuchactiontext' );
-		}
+
+		// If we've not found out which action it is by now, it's unknown
+		$output->setStatusCode( 404 );
+		$output->showErrorPage( 'nosuchaction', 'nosuchactiontext' );
 	}
 
 	/**
@@ -691,9 +684,10 @@ class MediaWiki {
 	 */
 	private static function getUrlDomainDistance( $url ) {
 		$clusterWiki = WikiMap::getWikiFromUrl( $url );
-		if ( $clusterWiki === wfWikiID() ) {
+		if ( WikiMap::isCurrentWikiId( $clusterWiki ) ) {
 			return 'local'; // the current wiki
-		} elseif ( $clusterWiki !== false ) {
+		}
+		if ( $clusterWiki !== false ) {
 			return 'remote'; // another wiki in this cluster/farm
 		}
 
@@ -711,11 +705,12 @@ class MediaWiki {
 	 * @since 1.26
 	 */
 	public function doPostOutputShutdown( $mode = 'normal' ) {
+		// Record backend request timing
+		$timing = $this->context->getTiming();
+		$timing->mark( 'requestShutdown' );
+
 		// Perform the last synchronous operations...
 		try {
-			// Record backend request timing
-			$timing = $this->context->getTiming();
-			$timing->mark( 'requestShutdown' );
 			// Show visible profiling data if enabled (which cannot be post-send)
 			Profiler::instance()->logDataPageOutputOnly();
 		} catch ( Exception $e ) {
@@ -867,7 +862,7 @@ class MediaWiki {
 		$this->performRequest();
 
 		// GUI-ify and stash the page output in MediaWiki::doPreOutputCommit() while
-		// ChronologyProtector synchronizes DB positions or replicas accross all datacenters.
+		// ChronologyProtector synchronizes DB positions or replicas across all datacenters.
 		$buffer = null;
 		$outputWork = function () use ( $output, &$buffer ) {
 			if ( $buffer === null ) {
@@ -898,16 +893,12 @@ class MediaWiki {
 
 		// Loosen DB query expectations since the HTTP client is unblocked
 		$trxProfiler = Profiler::instance()->getTransactionProfiler();
-		$trxProfiler->resetExpectations();
-		$trxProfiler->setExpectations(
+		$trxProfiler->redefineExpectations(
 			$this->context->getRequest()->hasSafeMethod()
 				? $this->config->get( 'TrxProfilerLimits' )['PostSend-GET']
 				: $this->config->get( 'TrxProfilerLimits' )['PostSend-POST'],
 			__METHOD__
 		);
-
-		// Important: this must be the last deferred update added (T100085, T154425)
-		DeferredUpdates::addCallableUpdate( [ JobQueueGroup::class, 'pushLazyJobs' ] );
 
 		// Do any deferred jobs; preferring to run them now if a client will not wait on them
 		DeferredUpdates::doUpdates( $blocksHttpClient ? 'enqueue' : 'run' );
@@ -1056,7 +1047,8 @@ class MediaWiki {
 
 		$invokedWithSuccess = true;
 		if ( $sock ) {
-			$special = SpecialPageFactory::getPage( 'RunJobs' );
+			$special = MediaWikiServices::getInstance()->getSpecialPageFactory()->
+				getPage( 'RunJobs' );
 			$url = $special->getPageTitle()->getCanonicalURL( $query );
 			$req = (
 				"POST $url HTTP/1.1\r\n" .

@@ -14,7 +14,7 @@
  * @class mw.plugin.page.watch.ajax
  * @singleton
  */
-( function ( mw, $ ) {
+( function () {
 	var watch,
 		// The name of the page to watch or unwatch
 		title = mw.config.get( 'wgRelevantPageName' );
@@ -116,7 +116,7 @@
 			$links = $links.filter( ':not( #bodyContent *, #content * )' );
 		}
 
-		$links.click( function ( e ) {
+		$links.on( 'click', function ( e ) {
 			var mwTitle, action, api, $link;
 
 			mwTitle = mw.Title.newFromText( title );
@@ -146,7 +146,7 @@
 				.done( function ( watchResponse ) {
 					var message, otherAction = action === 'watch' ? 'unwatch' : 'watch';
 
-					if ( mwTitle.getNamespaceId() > 0 && mwTitle.getNamespaceId() % 2 === 1 ) {
+					if ( mwTitle.isTalkPage() ) {
 						message = action === 'watch' ? 'addedwatchtext-talk' : 'removedwatchtext-talk';
 					} else {
 						message = action === 'watch' ? 'addedwatchtext' : 'removedwatchtext';
@@ -187,4 +187,4 @@
 		} );
 	} );
 
-}( mediaWiki, jQuery ) );
+}() );

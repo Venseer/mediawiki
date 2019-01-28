@@ -19,7 +19,7 @@
  *     $textbox.textSelection( 'encapsulateSelection', { pre: '<b>', post: '</b>' } );
  *     // Result: Textbox contains 'This is <b>bold</b>!', with cursor before the '!'
  */
-( function ( $ ) {
+( function () {
 	/**
 	 * Do things to the selection in a `<textarea>`, or a textarea-like editable element.
 	 *
@@ -202,7 +202,7 @@
 					}
 
 					isSample = false;
-					$( this ).focus();
+					$( this ).trigger( 'focus' );
 					if ( options.selectionStart !== undefined ) {
 						$( this ).textSelection( 'setSelection', { start: options.selectionStart, end: options.selectionEnd } );
 					}
@@ -443,4 +443,4 @@
 	 * @inheritdoc jQuery.plugin.textSelection#textSelection
 	 */
 
-}( jQuery ) );
+}() );

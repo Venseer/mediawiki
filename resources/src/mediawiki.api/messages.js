@@ -6,7 +6,7 @@
  * @class mw.Api.plugin.messages
  * @since 1.27
  */
-( function ( mw, $ ) {
+( function () {
 	'use strict';
 
 	$.extend( mw.Api.prototype, {
@@ -46,7 +46,7 @@
 		 * @return {jQuery.Promise}
 		 */
 		loadMessages: function ( messages, options ) {
-			return this.getMessages( messages, options ).then( $.proxy( mw.messages, 'set' ) );
+			return this.getMessages( messages, options ).then( mw.messages.set.bind( mw.messages ) );
 		},
 
 		/**
@@ -66,7 +66,7 @@
 				return $.Deferred().resolve();
 			}
 
-			return this.getMessages( missing, options ).then( $.proxy( mw.messages, 'set' ) );
+			return this.loadMessages( missing, options );
 		}
 	} );
 
@@ -75,4 +75,4 @@
 	 * @mixins mw.Api.plugin.messages
 	 */
 
-}( mediaWiki, jQuery ) );
+}() );

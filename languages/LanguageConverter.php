@@ -85,7 +85,7 @@ class LanguageConverter {
 	 * @param array $flags Defining the custom strings that maps to the flags
 	 * @param array $manualLevel Limit for supported variants
 	 */
-	public function __construct( $langobj, $maincode, $variants = [],
+	public function __construct( Language $langobj, $maincode, $variants = [],
 								$variantfallbacks = [], $flags = [],
 								$manualLevel = [] ) {
 		global $wgDisabledVariants;
@@ -140,10 +140,7 @@ class LanguageConverter {
 	 *   main code if there is no fallback
 	 */
 	public function getVariantFallbacks( $variant ) {
-		if ( isset( $this->mVariantFallbacks[$variant] ) ) {
-			return $this->mVariantFallbacks[$variant];
-		}
-		return $this->mMainLanguageCode;
+		return $this->mVariantFallbacks[$variant] ?? $this->mMainLanguageCode;
 	}
 
 	/**
@@ -212,9 +209,13 @@ class LanguageConverter {
 	}
 
 	/**
-	 * Validate the variant
+	 * Validate the variant and return an appropriate strict internal
+	 * variant code if one exists.  Compare to Language::hasVariant()
+	 * which does a strict test.
+	 *
 	 * @param string|null $variant The variant to validate
-	 * @return mixed Returns the variant if it is valid, null otherwise
+	 * @return mixed Returns an equivalent valid variant code if possible,
+	 *   null otherwise
 	 */
 	public function validateVariant( $variant = null ) {
 		if ( $variant === null ) {
@@ -268,7 +269,7 @@ class LanguageConverter {
 	 * @return mixed Variant if one found, null otherwise
 	 */
 	protected function getUserVariant() {
-		global $wgUser, $wgContLang;
+		global $wgUser;
 
 		// memoizing this function wreaks havoc on parserTest.php
 		/*
@@ -284,7 +285,10 @@ class LanguageConverter {
 			return false;
 		}
 		if ( $wgUser->isLoggedIn() ) {
-			if ( $this->mMainLanguageCode == $wgContLang->getCode() ) {
+			if (
+				$this->mMainLanguageCode ==
+				MediaWikiServices::getInstance()->getContentLanguage()->getCode()
+			) {
 				$ret = $wgUser->getOption( 'variant' );
 			} else {
 				$ret = $wgUser->getOption( 'variant-' . $this->mMainLanguageCode );
@@ -658,8 +662,12 @@ class LanguageConverter {
 	 * -{flags|code1:text1;code2:text2;...}-  or
 	 * -{text}- in which case no conversion should take place for text
 	 *
-	 * @param string $text Text to be converted
-	 * @return string Converted text
+	 * @warning Glossary state is maintained between calls. Never feed this
+	 *   method input that hasn't properly been escaped as it may result in
+	 *   an XSS in subsequent calls, even if those subsequent calls properly
+	 *   escape things.
+	 * @param string $text Text to be converted, already html escaped.
+	 * @return string Converted text (html)
 	 */
 	public function convert( $text ) {
 		$variant = $this->getPreferredVariant();
@@ -669,9 +677,11 @@ class LanguageConverter {
 	/**
 	 * Same as convert() except a extra parameter to custom variant.
 	 *
-	 * @param string $text Text to be converted
+	 * @param string $text Text to be converted, already html escaped
+	 * @param-taint $text exec_html
 	 * @param string $variant The target variant code
 	 * @return string Converted text
+	 * @return-taint escaped
 	 */
 	public function convertTo( $text, $variant ) {
 		global $wgDisableLangConversion;
@@ -789,7 +799,7 @@ class LanguageConverter {
 							$warningDone = true;
 						}
 						$startPos += 2;
-						continue;
+						break;
 					}
 					// Recursively parse another rule
 					$inner .= $this->recursiveConvertRule( $text, $variant, $startPos, $depth + 1 );
@@ -1166,8 +1176,21 @@ class LanguageConverter {
 			//    [1] => 'zh-hant:<span style="font-size:120%;">yyy</span>'
 			//    [2] => ''
 			//  ]
-			$pat = '/;\s*(?=';
+			$expandedVariants = [];
 			foreach ( $this->mVariants as $variant ) {
+				$expandedVariants[ $variant ] = 1;
+				// Accept standard BCP 47 names for variants as well.
+				$expandedVariants[ LanguageCode::bcp47( $variant ) ] = 1;
+			}
+			// Accept old deprecated names for variants
+			foreach ( LanguageCode::getDeprecatedCodeMapping() as $old => $new ) {
+				if ( isset( $expandedVariants[ $new ] ) ) {
+					$expandedVariants[ $old ] = 1;
+				}
+			}
+
+			$pat = '/;\s*(?=';
+			foreach ( $expandedVariants as $variant => $ignore ) {
 				// zh-hans:xxx;zh-hant:yyy
 				$pat .= $variant . '\s*:|';
 				// xxx=>zh-hans:yyy; xxx=>zh-hant:zzz

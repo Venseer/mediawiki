@@ -4,6 +4,7 @@ const assert = require( 'assert' ),
 	RestorePage = require( '../pageobjects/restore.page' ),
 	EditPage = require( '../pageobjects/edit.page' ),
 	HistoryPage = require( '../pageobjects/history.page' ),
+	UndoPage = require( '../pageobjects/undo.page' ),
 	UserLoginPage = require( '../pageobjects/userlogin.page' ),
 	Util = require( 'wdio-mediawiki/Util' );
 
@@ -21,6 +22,20 @@ describe( 'Page', function () {
 		browser.deleteCookie();
 		content = Util.getTestString( 'beforeEach-content-' );
 		name = Util.getTestString( 'BeforeEach-name-' );
+	} );
+
+	it( 'should be previewable', function () {
+		EditPage.preview( name, content );
+
+		assert.strictEqual( EditPage.heading.getText(), 'Creating ' + name );
+		assert.strictEqual( EditPage.displayedContent.getText(), content );
+		assert( EditPage.content.isVisible(), 'editor is still present' );
+		assert( !EditPage.conflictingContent.isVisible(), 'no edit conflict happened' );
+		// provoke and dismiss reload warning due to unsaved content
+		browser.url( 'data:text/html,Done' );
+		try {
+			browser.alertAccept();
+		} catch ( e ) {}
 	} );
 
 	it( 'should be creatable', function () {
@@ -53,7 +68,7 @@ describe( 'Page', function () {
 		assert.strictEqual( EditPage.displayedContent.getText(), content );
 	} );
 
-	it( 'should be editable', function () {
+	it( 'should be editable @daily', function () {
 		// create
 		browser.call( function () {
 			return Api.edit( name, content );
@@ -68,7 +83,7 @@ describe( 'Page', function () {
 		assert.strictEqual( EditPage.displayedContent.getText(), editContent );
 	} );
 
-	it( 'should have history', function () {
+	it( 'should have history @daily', function () {
 		// create
 		browser.call( function () {
 			return Api.edit( name, content );
@@ -118,4 +133,26 @@ describe( 'Page', function () {
 		// check
 		assert.strictEqual( RestorePage.displayedContent.getText(), name + ' has been restored\nConsult the deletion log for a record of recent deletions and restorations.' );
 	} );
+
+	it( 'should be undoable', function () {
+		// create
+		browser.call( function () {
+			return Api.edit( name, content );
+		} );
+
+		// edit
+		let previousRev, undoRev;
+		browser.call( function () {
+			return Api.edit( name, Util.getTestString( 'editContent-' ) )
+				.then( ( response ) => {
+					previousRev = response.edit.oldrevid;
+					undoRev = response.edit.newrevid;
+				} );
+		} );
+
+		UndoPage.undo( name, previousRev, undoRev );
+
+		assert.strictEqual( EditPage.displayedContent.getText(), content );
+	} );
+
 } );

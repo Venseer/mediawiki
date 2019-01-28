@@ -1,5 +1,7 @@
 <?php
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * @group ContentHandler
  *
@@ -128,7 +130,7 @@ just a test"
 
 		$sectionContent = $content->getSection( $sectionId );
 		if ( is_object( $sectionContent ) ) {
-			$sectionText = $sectionContent->getNativeData();
+			$sectionText = $sectionContent->getText();
 		} else {
 			$sectionText = $sectionContent;
 		}
@@ -182,7 +184,7 @@ just a test"
 		$content = $this->newContent( $text );
 		$c = $content->replaceSection( $section, $this->newContent( $with ), $sectionTitle );
 
-		$this->assertEquals( $expected, is_null( $c ) ? null : $c->getNativeData() );
+		$this->assertEquals( $expected, is_null( $c ) ? null : $c->getText() );
 	}
 
 	/**
@@ -192,7 +194,7 @@ just a test"
 		$content = $this->newContent( 'hello world' );
 		$content = $content->addSectionHeader( 'test' );
 
-		$this->assertEquals( "== test ==\n\nhello world", $content->getNativeData() );
+		$this->assertEquals( "== test ==\n\nhello world", $content->getText() );
 	}
 
 	public static function dataPreSaveTransform() {
@@ -303,7 +305,7 @@ just a test"
 	 * @covers WikitextContent::matchMagicWord
 	 */
 	public function testMatchMagicWord() {
-		$mw = MagicWord::get( "staticredirect" );
+		$mw = MediaWikiServices::getInstance()->getMagicWordFactory()->get( "staticredirect" );
 
 		$content = $this->newContent( "#REDIRECT [[FOO]]\n__STATICREDIRECT__" );
 		$this->assertTrue( $content->matchMagicWord( $mw ), "should have matched magic word" );
@@ -429,15 +431,30 @@ just a test"
 
 	public static function dataGetDeletionUpdates() {
 		return [
-			[ "WikitextContentTest_testGetSecondaryDataUpdates_1",
+			[
 				CONTENT_MODEL_WIKITEXT, "hello ''world''\n",
 				[ LinksDeletionUpdate::class => [] ]
 			],
-			[ "WikitextContentTest_testGetSecondaryDataUpdates_2",
+			[
 				CONTENT_MODEL_WIKITEXT, "hello [[world test 21344]]\n",
 				[ LinksDeletionUpdate::class => [] ]
 			],
 			// @todo more...?
 		];
+	}
+
+	/**
+	 * @covers WikitextContent::preSaveTransform
+	 * @covers WikitextContent::fillParserOutput
+	 */
+	public function testHadSignature() {
+		$titleObj = Title::newFromText( __CLASS__ );
+
+		$content = new WikitextContent( '~~~~' );
+		$pstContent = $content->preSaveTransform(
+			$titleObj, $this->getTestUser()->getUser(), new ParserOptions()
+		);
+
+		$this->assertTrue( $pstContent->getParserOutput( $titleObj )->getFlag( 'user-signature' ) );
 	}
 }

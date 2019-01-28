@@ -1,7 +1,8 @@
 /*!
  * Add search suggestions to the search form.
  */
-( function ( mw, $ ) {
+( function () {
+	// eslint-disable-next-line jquery/no-map-util
 	var searchNS = $.map( mw.config.get( 'wgFormattedNamespaces' ), function ( nsName, nsID ) {
 		if ( nsID >= 0 && mw.user.options.get( 'searchNs' + nsID ) ) {
 			// Cast string key to number
@@ -21,6 +22,7 @@
 			} ).done( function ( data, jqXHR ) {
 				response( data[ 1 ], {
 					type: jqXHR.getResponseHeader( 'X-OpenSearch-Type' ),
+					searchId: jqXHR.getResponseHeader( 'X-Search-ID' ),
 					query: query
 				} );
 			} );
@@ -112,6 +114,7 @@
 				action: 'impression-results',
 				numberOfResults: context.config.suggestions.length,
 				resultSetType: metadata.type || 'unknown',
+				searchId: metadata.searchId || null,
 				query: metadata.query,
 				inputLocation: getInputLocation( context )
 			} );
@@ -137,7 +140,7 @@
 			this.text( text );
 
 			// wrap only as link, if the config doesn't disallow it
-			if ( textboxConfig.wrapAsLink !== false	) {
+			if ( textboxConfig.wrapAsLink !== false ) {
 				this.wrap(
 					$( '<a>' )
 						.attr( 'href', formData.baseHref + $.param( formData.linkParams ) )
@@ -293,7 +296,14 @@
 						} );
 					} else {
 						$input.closest( 'form' )
-							.append( $( '<input type="hidden" name="fulltext" value="1"/>' ) );
+							.append(
+								$( '<input>' )
+									.prop( {
+										type: 'hidden',
+										value: 1
+									} )
+									.attr( 'name', 'fulltext' )
+							);
 					}
 					return true; // allow the form to be submitted
 				}
@@ -319,4 +329,4 @@
 			.find( '.mw-fallbackSearchButton' ).remove();
 	} );
 
-}( mediaWiki, jQuery ) );
+}() );

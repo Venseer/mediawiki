@@ -57,10 +57,11 @@ class ParserOptions {
 
 	/**
 	 * Lazy-loaded options
-	 * @var callback[]
+	 * @var callable[]
 	 */
 	private static $lazyOptions = [
 		'dateformat' => [ __CLASS__, 'initDateFormat' ],
+		'speculativeRevId' => [ __CLASS__, 'initSpeculativeRevId' ],
 	];
 
 	/**
@@ -649,8 +650,10 @@ class ParserOptions {
 
 	/**
 	 * Lazy initializer for dateFormat
+	 * @param ParserOptions $popt
+	 * @return string
 	 */
-	private static function initDateFormat( $popt ) {
+	private static function initDateFormat( ParserOptions $popt ) {
 		return $popt->mUser->getDatePreference();
 	}
 
@@ -666,7 +669,7 @@ class ParserOptions {
 	/**
 	 * Get the user language used by the parser for this page and split the parser cache.
 	 *
-	 * @warning: Calling this causes the parser cache to be fragmented by user language!
+	 * @warning Calling this causes the parser cache to be fragmented by user language!
 	 * To avoid cache fragmentation, output should not depend on the user language.
 	 * Use Parser::getFunctionLang() or Parser::getTargetLanguage() instead!
 	 *
@@ -687,7 +690,7 @@ class ParserOptions {
 	/**
 	 * Same as getUserLangObj() but returns a string instead.
 	 *
-	 * @warning: Calling this causes the parser cache to be fragmented by user language!
+	 * @warning Calling this causes the parser cache to be fragmented by user language!
 	 * To avoid cache fragmentation, output should not depend on the user language.
 	 * Use Parser::getFunctionLang() or Parser::getTargetLanguage() instead!
 	 *
@@ -730,6 +733,7 @@ class ParserOptions {
 	public function getMagicPMIDLinks() {
 		return $this->getOption( 'magicPMIDLinks' );
 	}
+
 	/**
 	 * Are magic RFC links enabled?
 	 * @since 1.28
@@ -832,8 +836,37 @@ class ParserOptions {
 	}
 
 	/**
+	 * A guess for {{REVISIONID}}, calculated using the callback provided via
+	 * setSpeculativeRevIdCallback(). For consistency, the value will be calculated upon the
+	 * first call of this method, and re-used for subsequent calls.
+	 *
+	 * If no callback was defined via setSpeculativeRevIdCallback(), this method will return false.
+	 *
+	 * @since 1.32
+	 * @return int|false
+	 */
+	public function getSpeculativeRevId() {
+		return $this->getOption( 'speculativeRevId' );
+	}
+
+	/**
+	 * Callback registered with ParserOptions::$lazyOptions, triggered by getSpeculativeRevId().
+	 *
+	 * @param ParserOptions $popt
+	 * @return bool|false
+	 */
+	private static function initSpeculativeRevId( ParserOptions $popt ) {
+		$cb = $popt->getOption( 'speculativeRevIdCallback' );
+		$id = $cb ? $cb() : null;
+
+		// returning null would result in this being re-called every access
+		return $id ?? false;
+	}
+
+	/**
 	 * Callback to generate a guess for {{REVISIONID}}
 	 * @since 1.28
+	 * @deprecated since 1.32, use getSpeculativeRevId() instead!
 	 * @return callable|null
 	 */
 	public function getSpeculativeRevIdCallback() {
@@ -847,6 +880,7 @@ class ParserOptions {
 	 * @return callable|null Old value
 	 */
 	public function setSpeculativeRevIdCallback( $x ) {
+		$this->setOption( 'speculativeRevId', null ); // reset
 		return $this->setOptionLegacy( 'speculativeRevIdCallback', $x );
 	}
 
@@ -968,8 +1002,8 @@ class ParserOptions {
 	 * @return ParserOptions
 	 */
 	public static function newFromAnon() {
-		global $wgContLang;
-		return new ParserOptions( new User, $wgContLang );
+		return new ParserOptions( new User,
+			MediaWikiServices::getInstance()->getContentLanguage() );
 	}
 
 	/**
@@ -1021,7 +1055,7 @@ class ParserOptions {
 	 * @param IContextSource|string|User|null $context
 	 *  - If an IContextSource, the options are initialized based on the source's User and Language.
 	 *  - If the string 'canonical', the options are initialized with an anonymous user and
-	 *    $wgContLang.
+	 *    the content language.
 	 *  - If a User or null, the options are initialized for that User (or $wgUser if null).
 	 *    'userlang' is taken from the $userLang parameter, defaulting to $wgLang if that is null.
 	 * @param Language|StubObject|null $userLang (see above)
@@ -1061,13 +1095,13 @@ class ParserOptions {
 			$wgMaxArticleSize, $wgMaxPPNodeCount, $wgMaxTemplateDepth, $wgMaxPPExpandDepth,
 			$wgCleanSignatures, $wgExternalLinkTarget, $wgExpensiveParserFunctionLimit,
 			$wgMaxGeneratedPPNodeCount, $wgDisableLangConversion, $wgDisableTitleConversion,
-			$wgEnableMagicLinks, $wgContLang;
+			$wgEnableMagicLinks;
 
 		if ( self::$defaults === null ) {
 			// *UPDATE* ParserOptions::matches() if any of this changes as needed
 			self::$defaults = [
 				'dateformat' => null,
-				'tidy' => false,
+				'tidy' => true,
 				'interfaceMessage' => false,
 				'targetLanguage' => null,
 				'removeComments' => true,
@@ -1081,6 +1115,7 @@ class ParserOptions {
 				'currentRevisionCallback' => [ Parser::class, 'statelessFetchRevision' ],
 				'templateCallback' => [ Parser::class, 'statelessFetchTemplate' ],
 				'speculativeRevIdCallback' => null,
+				'speculativeRevId' => null,
 			];
 
 			Hooks::run( 'ParserOptionsRegister', [
@@ -1115,7 +1150,7 @@ class ParserOptions {
 			'numberheadings' => User::getDefaultOption( 'numberheadings' ),
 			'thumbsize' => User::getDefaultOption( 'thumbsize' ),
 			'stubthreshold' => 0,
-			'userlang' => $wgContLang,
+			'userlang' => MediaWikiServices::getInstance()->getContentLanguage(),
 		];
 	}
 
@@ -1132,7 +1167,6 @@ class ParserOptions {
 		global $wgEnableParserLimitReporting;
 
 		return [
-			'tidy' => true,
 			'enableLimitReport' => $wgEnableParserLimitReporting,
 		];
 	}
@@ -1329,8 +1363,8 @@ class ParserOptions {
 		if ( !is_null( $title ) ) {
 			$confstr .= $title->getPageLanguage()->getExtraHashOptions();
 		} else {
-			global $wgContLang;
-			$confstr .= $wgContLang->getExtraHashOptions();
+			$confstr .=
+				MediaWikiServices::getInstance()->getContentLanguage()->getExtraHashOptions();
 		}
 
 		$confstr .= $wgRenderHashAppend;

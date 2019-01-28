@@ -21,6 +21,9 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Storage\NameTableAccessException;
 use Wikimedia\Rdbms\IResultWrapper;
 
 /**
@@ -345,7 +348,13 @@ class SpecialUndelete extends SpecialPage {
 				);
 			}
 			$revs = $this->msg( 'undeleterevisions' )->numParams( $row->count )->parse();
-			$out->addHTML( "<li class='undeleteResult'>{$item} ({$revs})</li>\n" );
+			$out->addHTML(
+				Html::rawElement(
+					'li',
+					[ 'class' => 'undeleteResult' ],
+					"{$item} ({$revs})"
+				)
+			);
 		}
 		$result->free();
 		$out->addHTML( "</ul>\n" );
@@ -421,8 +430,9 @@ class SpecialUndelete extends SpecialPage {
 		$t = $lang->userTime( $timestamp, $user );
 		$userLink = Linker::revUserTools( $rev );
 
-		$content = $rev->getContent( Revision::FOR_THIS_USER, $user );
+		$content = $rev->getContent( RevisionRecord::FOR_THIS_USER, $user );
 
+		// TODO: MCR: this will have to become something like $hasTextSlots and $hasNonTextSlots
 		$isText = ( $content instanceof TextContent );
 
 		if ( $this->mPreview || $isText ) {
@@ -440,19 +450,34 @@ class SpecialUndelete extends SpecialPage {
 			}
 		}
 
-		$out->addHTML( $this->msg( 'undelete-revision' )->rawParams( $link )->params(
-			$time )->rawParams( $userLink )->params( $d, $t )->parse() . '</div>' );
+		$out->addWikiMsg(
+			'undelete-revision',
+			Message::rawParam( $link ), $time,
+			Message::rawParam( $userLink ), $d, $t
+		);
+		$out->addHtml( '</div>' );
 
 		if ( !Hooks::run( 'UndeleteShowRevision', [ $this->mTargetObj, $rev ] ) ) {
 			return;
 		}
 
-		if ( ( $this->mPreview || !$isText ) && $content ) {
+		if ( $this->mPreview || !$isText ) {
 			// NOTE: non-text content has no source view, so always use rendered preview
 
 			$popts = $out->parserOptions();
+			$renderer = MediaWikiServices::getInstance()->getRevisionRenderer();
 
-			$pout = $content->getParserOutput( $this->mTargetObj, $rev->getId(), $popts, true );
+			$rendered = $renderer->getRenderedRevision(
+				$rev->getRevisionRecord(),
+				$popts,
+				$user,
+				[ 'audience' => RevisionRecord::FOR_THIS_USER ]
+			);
+
+			// Fail hard if the audience check fails, since we already checked
+			// at the beginning of this method.
+			$pout = $rendered->getRevisionParserOutput();
+
 			$out->addParserOutput( $pout, [
 				'enableSectionEditLinks' => false,
 			] );
@@ -462,6 +487,7 @@ class SpecialUndelete extends SpecialPage {
 		$buttonFields = [];
 
 		if ( $isText ) {
+			// TODO: MCR: make this work for multiple slots
 			// source view for textual content
 			$sourceView = Xml::element( 'textarea', [
 				'readonly' => 'readonly',
@@ -530,15 +556,9 @@ class SpecialUndelete extends SpecialPage {
 		$diffContext->setWikiPage( WikiPage::factory( $currentRev->getTitle() ) );
 
 		$diffEngine = $currentRev->getContentHandler()->createDifferenceEngine( $diffContext );
+		$diffEngine->setRevisions( $previousRev->getRevisionRecord(), $currentRev->getRevisionRecord() );
 		$diffEngine->showDiffStyle();
-
-		$formattedDiff = $diffEngine->generateContentDiffBody(
-			$previousRev->getContent( Revision::FOR_THIS_USER, $this->getUser() ),
-			$currentRev->getContent( Revision::FOR_THIS_USER, $this->getUser() )
-		);
-
-		$formattedDiff = $diffEngine->addHeader(
-			$formattedDiff,
+		$formattedDiff = $diffEngine->getDiff(
 			$this->diffHeader( $previousRev, 'o' ),
 			$this->diffHeader( $currentRev, 'n' )
 		);
@@ -577,12 +597,22 @@ class SpecialUndelete extends SpecialPage {
 
 		$minor = $rev->isMinor() ? ChangesList::flag( 'minor' ) : '';
 
-		$tags = wfGetDB( DB_REPLICA )->selectField(
-			'tag_summary',
-			'ts_tags',
-			[ 'ts_rev_id' => $rev->getId() ],
+		$tagIds = wfGetDB( DB_REPLICA )->selectFieldValues(
+			'change_tag',
+			'ct_tag_id',
+			[ 'ct_rev_id' => $rev->getId() ],
 			__METHOD__
 		);
+		$tags = [];
+		$changeTagDefStore = MediaWikiServices::getInstance()->getChangeTagDefStore();
+		foreach ( $tagIds as $tagId ) {
+			try {
+				$tags[] = $changeTagDefStore->getName( (int)$tagId );
+			} catch ( NameTableAccessException $exception ) {
+				continue;
+			}
+		}
+		$tags = implode( ',', $tags );
 		$tagSummary = ChangeTags::formatSummaryRow( $tags, 'deleteddiff', $this->getContext() );
 
 		// FIXME This is reimplementing DifferenceEngine#getRevisionHeader
@@ -1154,7 +1184,7 @@ class SpecialUndelete extends SpecialPage {
 			}
 
 			$link = $this->getLinkRenderer()->makeKnownLink( $this->mTargetObj );
-			$out->addHTML( $this->msg( 'undeletedpage' )->rawParams( $link )->parse() );
+			$out->addWikiMsg( 'undeletedpage', Message::rawParam( $link ) );
 		} else {
 			$out->setPageTitle( $this->msg( 'undelete-error' ) );
 		}
@@ -1162,7 +1192,9 @@ class SpecialUndelete extends SpecialPage {
 		// Show revision undeletion warnings and errors
 		$status = $archive->getRevisionStatus();
 		if ( $status && !$status->isGood() ) {
-			$out->addWikiText( '<div class="error" id="mw-error-cannotundelete">' .
+			$out->wrapWikiTextAsInterface(
+				'error',
+				'<div id="mw-error-cannotundelete">' .
 				$status->getWikiText(
 					'cannotundelete',
 					'cannotundelete'
@@ -1173,11 +1205,12 @@ class SpecialUndelete extends SpecialPage {
 		// Show file undeletion warnings and errors
 		$status = $archive->getFileStatus();
 		if ( $status && !$status->isGood() ) {
-			$out->addWikiText( '<div class="error">' .
+			$out->wrapWikiTextAsInterface(
+				'error',
 				$status->getWikiText(
 					'undelete-error-short',
 					'undelete-error-long'
-				) . '</div>'
+				)
 			);
 		}
 	}

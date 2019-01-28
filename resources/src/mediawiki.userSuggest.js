@@ -1,7 +1,7 @@
 /*!
  * Add autocomplete suggestions for names of registered users.
  */
-( function ( mw, $ ) {
+( function () {
 	var api, config;
 
 	config = {
@@ -19,7 +19,7 @@
 				auprefix: userInput[ 0 ].toUpperCase() + userInput.slice( 1 ),
 				aulimit: maxRows
 			} ).done( function ( data ) {
-				var users = $.map( data.query.allusers, function ( userObj ) {
+				var users = data.query.allusers.map( function ( userObj ) {
 					return userObj.name;
 				} );
 				response( users );
@@ -39,4 +39,4 @@
 	$( function () {
 		$( '.mw-autocomplete-user' ).suggestions( config );
 	} );
-}( mediaWiki, jQuery ) );
+}() );

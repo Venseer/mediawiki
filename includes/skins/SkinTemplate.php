@@ -268,7 +268,7 @@ class SkinTemplate extends Skin {
 	 * @return QuickTemplate The template to be executed by outputPage
 	 */
 	protected function prepareQuickTemplate() {
-		global $wgContLang, $wgScript, $wgStylePath, $wgMimeType, $wgJsMimeType,
+		global $wgScript, $wgStylePath, $wgMimeType, $wgJsMimeType,
 			$wgSitename, $wgLogo, $wgMaxCredits,
 			$wgShowCreditsIfMax, $wgArticlePath,
 			$wgScriptPath, $wgServer;
@@ -363,7 +363,11 @@ class SkinTemplate extends Skin {
 		// heading for the page title. Defaults to empty string.
 		$tpl->set( 'prebodyhtml', '' );
 
-		if ( $userLangCode !== $wgContLang->getHtmlCode() || $userLangDir !== $wgContLang->getDir() ) {
+		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
+		if (
+			$userLangCode !== $contLang->getHtmlCode() ||
+			$userLangDir !== $contLang->getDir()
+		) {
 			$escUserlang = htmlspecialchars( $userLangCode );
 			$escUserdir = htmlspecialchars( $userLangDir );
 			// Attributes must be in double quotes because htmlspecialchars() doesn't
@@ -381,16 +385,20 @@ class SkinTemplate extends Skin {
 		$tpl->set( 'lastmod', false );
 		$tpl->set( 'credits', false );
 		$tpl->set( 'numberofwatchingusers', false );
-		if ( $out->isArticle() && $title->exists() ) {
-			if ( $this->isRevisionCurrent() ) {
-				if ( $wgMaxCredits != 0 ) {
-					$tpl->set( 'credits', Action::factory( 'credits', $this->getWikiPage(),
-						$this->getContext() )->getCredits( $wgMaxCredits, $wgShowCreditsIfMax ) );
-				} else {
-					$tpl->set( 'lastmod', $this->lastModified() );
+		if ( $title->exists() ) {
+			if ( $out->isArticle() ) {
+				if ( $this->isRevisionCurrent() ) {
+					if ( $wgMaxCredits != 0 ) {
+						$tpl->set( 'credits', Action::factory( 'credits', $this->getWikiPage(),
+							$this->getContext() )->getCredits( $wgMaxCredits, $wgShowCreditsIfMax ) );
+					} else {
+						$tpl->set( 'lastmod', $this->lastModified() );
+					}
 				}
 			}
-			$tpl->set( 'copyright', $this->getCopyright() );
+			if ( $out->showsCopyright() ) {
+				$tpl->set( 'copyright', $this->getCopyright() );
+			}
 		}
 
 		$tpl->set( 'copyrightico', $this->getCopyrightIcon() );
@@ -655,7 +663,9 @@ class SkinTemplate extends Skin {
 			# so it doesn't contain the original alias-with-subpage.
 			$origTitle = Title::newFromText( $request->getText( 'title' ) );
 			if ( $origTitle instanceof Title && $origTitle->isSpecialPage() ) {
-				list( $spName, $spPar ) = SpecialPageFactory::resolveAlias( $origTitle->getText() );
+				list( $spName, $spPar ) =
+					MediaWikiServices::getInstance()->getSpecialPageFactory()->
+						resolveAlias( $origTitle->getText() );
 				$active = $spName == 'Contributions'
 					&& ( ( $spPar && $spPar == $this->username )
 						|| $request->getText( 'target' ) == $this->username );
@@ -783,9 +793,8 @@ class SkinTemplate extends Skin {
 		if ( $msg->exists() ) {
 			$text = $msg->text();
 		} else {
-			global $wgContLang;
-			$text = $wgContLang->getConverter()->convertNamespace(
-				MWNamespace::getSubject( $title->getNamespace() ) );
+			$text = MediaWikiServices::getInstance()->getContentLanguage()->getConverter()->
+				convertNamespace( MWNamespace::getSubject( $title->getNamespace() ) );
 		}
 
 		// Avoid PHP 7.1 warning of passing $this by reference
@@ -1050,13 +1059,13 @@ class SkinTemplate extends Skin {
 					}
 				} else {
 					// article doesn't exist or is deleted
-					if ( $user->isAllowed( 'deletedhistory' ) ) {
+					if ( $title->quickUserCan( 'deletedhistory', $user ) ) {
 						$n = $title->isDeleted();
 						if ( $n ) {
 							$undelTitle = SpecialPage::getTitleFor( 'Undelete', $title->getPrefixedDBkey() );
 							// If the user can't undelete but can view deleted
 							// history show them a "View .. deleted" tab instead.
-							$msgKey = $user->isAllowed( 'undelete' ) ? 'undelete' : 'viewdeleted';
+							$msgKey = $title->quickUserCan( 'undelete', $user ) ? 'undelete' : 'viewdeleted';
 							$content_navigation['actions']['undelete'] = [
 								'class' => $this->getTitle()->isSpecial( 'Undelete' ) ? 'selected' : false,
 								'text' => wfMessageFallback( "$skname-action-$msgKey", "{$msgKey}_short" )

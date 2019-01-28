@@ -77,6 +77,7 @@ $specialPageAliases = [
 	'AllMyUploads'              => [ '모든내올린파일', '모든내파일' ],
 	'Allpages'                  => [ '모든문서' ],
 	'ApiHelp'                   => [ 'Api도움말' ],
+	'ApiSandbox'                => [ 'Api연습장' ],
 	'Ancientpages'              => [ '오래된문서' ],
 	'AutoblockList'             => [ '자동차단목록' ],
 	'Badtitle'                  => [ '잘못된제목', '인식불가제목', '잘못된이름', '인식불가이름' ],
@@ -112,14 +113,14 @@ $specialPageAliases = [
 	'JavaScriptTest'            => [ '자바스크립트시험', '자바스크립트테스트' ],
 	'BlockList'                 => [ '차단목록', 'IP차단목록', '차단된사용자' ],
 	'LinkSearch'                => [ '링크검색', '링크찾기' ],
-	'Listadmins'                => [ '관리자', '관리자목록' ],
-	'Listbots'                  => [ '봇', '봇목록' ],
+	'Listadmins'                => [ '관리자목록', '관리자' ],
+	'Listbots'                  => [ '봇목록', '봇' ],
 	'Listfiles'                 => [ '파일목록', '그림목록', '파일', '그림' ],
 	'Listgrouprights'           => [ '사용자권한목록', '사용자권한', '권한목록' ],
 	'Listgrants'                => [ '권한부여목록' ],
 	'Listredirects'             => [ '넘겨주기목록' ],
 	'ListDuplicatedFiles'       => [ '중복된파일목록' ],
-	'Listusers'                 => [ '사용자', '사용자목록' ],
+	'Listusers'                 => [ '사용자목록', '사용자' ],
 	'Lockdb'                    => [ 'DB잠금', 'DB잠그기' ],
 	'Log'                       => [ '기록', '로그' ],
 	'Lonelypages'               => [ '외톨이문서', '홀로된문서' ],
@@ -159,6 +160,7 @@ $specialPageAliases = [
 	'Recentchanges'             => [ '최근바뀜' ],
 	'Recentchangeslinked'       => [ '링크최근바뀜' ],
 	'Redirect'                  => [ '넘겨주기' ],
+	'RemoveCredentials'         => [ '자격증명삭제', '자격증명제거' ],
 	'ResetTokens'               => [ '토큰재설정' ],
 	'Revisiondelete'            => [ '특정판삭제' ],
 	'RunJobs'                   => [ '작업실행' ],
@@ -174,6 +176,7 @@ $specialPageAliases = [
 	'Uncategorizedpages'        => [ '분류안된문서' ],
 	'Uncategorizedtemplates'    => [ '분류안된틀' ],
 	'Undelete'                  => [ '삭제취소', '삭제된문서' ],
+	'UnlinkAccounts'            => [ '계정연결해제' ],
 	'Unlockdb'                  => [ 'DB잠금해제', 'DB잠금취소' ],
 	'Unusedcategories'          => [ '안쓰는분류', '쓰이지않는분류' ],
 	'Unusedimages'              => [ '안쓰는파일', '안쓰는그림', '쓰이지않는파일', '쓰이지않는그림' ],
@@ -362,7 +365,9 @@ $magicWords = [
 ];
 
 $bookstoreList = [
-	'Aladin.co.kr' => 'http://www.aladin.co.kr/catalog/book.asp?ISBN=$1',
+	'Aladin.co.kr' => 'https://www.aladin.co.kr/catalog/book.asp?ISBN=$1',
+	'National Library of Korea' => 'http://www.nl.go.kr/search/web_search/search/list.php?search_field1=all&tmode=1&value1=$1',
+	'Naver' => 'https://book.naver.com/search/search.nhn?query=$1',
 	'inherit' => true,
 ];
 

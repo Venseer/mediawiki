@@ -80,6 +80,7 @@ abstract class IndexPager extends ContextSource implements Pager {
 	public $mDefaultLimit = 50;
 	public $mOffset, $mLimit;
 	public $mQueryDone = false;
+	/** @var IDatabase */
 	public $mDb;
 	public $mPastTheEndRow;
 
@@ -472,7 +473,7 @@ abstract class IndexPager extends ContextSource implements Pager {
 		}
 
 		if ( in_array( $type, [ 'asc', 'desc' ] ) ) {
-			$attrs['title'] = wfMessage( $type == 'asc' ? 'sort-ascending' : 'sort-descending' )->text();
+			$attrs['title'] = $this->msg( $type == 'asc' ? 'sort-ascending' : 'sort-descending' )->text();
 		}
 
 		if ( $type ) {
@@ -693,7 +694,7 @@ abstract class IndexPager extends ContextSource implements Pager {
 	 * Needless to say, it's really not a good idea to use a non-unique index
 	 * for this!  That won't page right.
 	 *
-	 * @return string|array
+	 * @return string|string[]
 	 */
 	abstract function getIndexField();
 
@@ -711,7 +712,7 @@ abstract class IndexPager extends ContextSource implements Pager {
 	 * page_len,page_id avoids temp tables (given a page_len index). This would
 	 * also work if page_id was non-unique but we had a page_len,page_id index.
 	 *
-	 * @return array
+	 * @return string[]|array[]
 	 */
 	protected function getExtraSortFields() {
 		return [];

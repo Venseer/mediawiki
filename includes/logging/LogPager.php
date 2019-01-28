@@ -70,7 +70,7 @@ class LogPager extends ReverseChronologicalPager {
 	 */
 	public function __construct( $list, $types = [], $performer = '', $title = '',
 		$pattern = false, $conds = [], $year = false, $month = false, $day = false,
-		$tagFilter = '', $action = '', $logId = false
+		$tagFilter = '', $action = '', $logId = 0
 	) {
 		parent::__construct( $list->getContext() );
 		$this->mConds = $conds;
@@ -107,11 +107,16 @@ class LogPager extends ReverseChronologicalPager {
 			return $filters;
 		}
 
-		$request_filters = $this->getRequest()->getArray( "wpfilters" );
-		$request_filters = $request_filters === null ? [] : $request_filters;
+		$wpfilters = $this->getRequest()->getArray( "wpfilters" );
+		$request_filters = $wpfilters === null ? [] : $wpfilters;
 
 		foreach ( $wgFilterLogTypes as $type => $default ) {
 			$hide = !in_array( $type, $request_filters );
+
+			// Back-compat: Check old URL params if the new param wasn't passed
+			if ( $wpfilters === null ) {
+				$hide = $this->getRequest()->getBool( "hide_{$type}_log", $default );
+			}
 
 			$filters[$type] = $hide;
 			if ( $hide ) {
@@ -360,7 +365,7 @@ class LogPager extends ReverseChronologicalPager {
 		return 'log_timestamp';
 	}
 
-	public function getStartBody() {
+	protected function getStartBody() {
 		# Do a link batch query
 		if ( $this->getNumRows() > 0 ) {
 			$lb = new LinkBatch;

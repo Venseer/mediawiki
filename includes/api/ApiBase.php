@@ -21,6 +21,7 @@
  */
 
 use Wikimedia\Rdbms\IDatabase;
+use MediaWiki\MediaWikiServices;
 
 /**
  * This abstract class implements many basic API functions, and is the base of
@@ -267,11 +268,14 @@ abstract class ApiBase extends ContextSource {
 	/** @var array Maps extension paths to info arrays */
 	private static $extensionInfo = null;
 
+	/** @var int[][][] Cache for self::filterIDs() */
+	private static $filterIDsCache = [];
+
 	/** @var ApiMain */
 	private $mMainModule;
 	/** @var string */
 	private $mModuleName, $mModulePrefix;
-	private $mSlaveDB = null;
+	private $mReplicaDB = null;
 	private $mParamCache = [];
 	/** @var array|null|bool */
 	private $mModuleSource = false;
@@ -348,45 +352,7 @@ abstract class ApiBase extends ContextSource {
 	 * @return array
 	 */
 	protected function getExamplesMessages() {
-		// Fall back to old non-localised method
-		$ret = [];
-
-		$examples = $this->getExamples();
-		if ( $examples ) {
-			if ( !is_array( $examples ) ) {
-				$examples = [ $examples ];
-			} elseif ( $examples && ( count( $examples ) & 1 ) == 0 &&
-				array_keys( $examples ) === range( 0, count( $examples ) - 1 ) &&
-				!preg_match( '/^\s*api\.php\?/', $examples[0] )
-			) {
-				// Fix up the ugly "even numbered elements are description, odd
-				// numbered elemts are the link" format (see doc for self::getExamples)
-				$tmp = [];
-				$examplesCount = count( $examples );
-				for ( $i = 0; $i < $examplesCount; $i += 2 ) {
-					$tmp[$examples[$i + 1]] = $examples[$i];
-				}
-				$examples = $tmp;
-			}
-
-			foreach ( $examples as $k => $v ) {
-				if ( is_numeric( $k ) ) {
-					$qs = $v;
-					$msg = '';
-				} else {
-					$qs = $k;
-					$msg = self::escapeWikiText( $v );
-					if ( is_array( $msg ) ) {
-						$msg = implode( ' ', $msg );
-					}
-				}
-
-				$qs = preg_replace( '/^\s*api\.php\?/', '', $qs );
-				$ret[$qs] = $this->msg( 'api-help-fallback-example', [ $msg ] );
-			}
-		}
-
-		return $ret;
+		return [];
 	}
 
 	/**
@@ -685,11 +651,11 @@ abstract class ApiBase extends ContextSource {
 	 * @return IDatabase
 	 */
 	protected function getDB() {
-		if ( !isset( $this->mSlaveDB ) ) {
-			$this->mSlaveDB = wfGetDB( DB_REPLICA, 'api' );
+		if ( !isset( $this->mReplicaDB ) ) {
+			$this->mReplicaDB = wfGetDB( DB_REPLICA, 'api' );
 		}
 
-		return $this->mSlaveDB;
+		return $this->mReplicaDB;
 	}
 
 	/**
@@ -1246,8 +1212,8 @@ abstract class ApiBase extends ContextSource {
 			// Preserve U+001F for self::parseMultiValue(), or error out if that won't be called
 			if ( isset( $value ) && substr( $rawValue, 0, 1 ) === "\x1f" ) {
 				if ( $multi ) {
-					// This loses the potential $wgContLang->checkTitleEncoding() transformation
-					// done by WebRequest for $_GET. Let's call that a feature.
+					// This loses the potential checkTitleEncoding() transformation done by
+					// WebRequest for $_GET. Let's call that a feature.
 					$value = implode( "\x1f", $request->normalizeUnicode( explode( "\x1f", $rawValue ) ) );
 				} else {
 					$this->dieWithError( 'apierror-badvalue-notmultivalue', 'badvalue_notmultivalue' );
@@ -1289,7 +1255,7 @@ abstract class ApiBase extends ContextSource {
 					case 'text':
 					case 'password':
 						if ( $required && $value === '' ) {
-							$this->dieWithError( [ 'apierror-missingparam', $paramName ] );
+							$this->dieWithError( [ 'apierror-missingparam', $encParamName ] );
 						}
 						break;
 					case 'integer': // Force everything using intval() and optionally validate limits
@@ -1443,7 +1409,7 @@ abstract class ApiBase extends ContextSource {
 				}
 			}
 		} elseif ( $required ) {
-			$this->dieWithError( [ 'apierror-missingparam', $paramName ] );
+			$this->dieWithError( [ 'apierror-missingparam', $encParamName ] );
 		}
 
 		return $value;
@@ -1785,25 +1751,6 @@ abstract class ApiBase extends ContextSource {
 	}
 
 	/**
-	 * A subset of wfEscapeWikiText for BC texts
-	 *
-	 * @since 1.25
-	 * @param string|array $v
-	 * @return string|array
-	 */
-	private static function escapeWikiText( $v ) {
-		if ( is_array( $v ) ) {
-			return array_map( 'self::escapeWikiText', $v );
-		} else {
-			return strtr( $v, [
-				'__' => '_&#95;', '{' => '&#123;', '}' => '&#125;',
-				'[[Category:' => '[[:Category:',
-				'[[File:' => '[[:File:', '[[Image:' => '[[:Image:',
-			] );
-		}
-	}
-
-	/**
 	 * Create a Message from a string or array
 	 *
 	 * A string is used as a message key. An array has the message key as the
@@ -1853,6 +1800,12 @@ abstract class ApiBase extends ContextSource {
 					'blocked',
 					[ 'blockinfo' => ApiQueryUserInfo::getBlockInfo( $user->getBlock() ) ]
 				) );
+			} elseif ( is_array( $error ) && $error[0] === 'blockedtext-partial' && $user->getBlock() ) {
+				$status->fatal( ApiMessage::create(
+					'apierror-blocked-partial',
+					'blocked',
+					[ 'blockinfo' => ApiQueryUserInfo::getBlockInfo( $user->getBlock() ) ]
+				) );
 			} elseif ( is_array( $error ) && $error[0] === 'autoblockedtext' && $user->getBlock() ) {
 				$status->fatal( ApiMessage::create(
 					'apierror-autoblocked',
@@ -1870,6 +1823,51 @@ abstract class ApiBase extends ContextSource {
 			}
 		}
 		return $status;
+	}
+
+	/**
+	 * Call wfTransactionalTimeLimit() if this request was POSTed
+	 * @since 1.26
+	 */
+	protected function useTransactionalTimeLimit() {
+		if ( $this->getRequest()->wasPosted() ) {
+			wfTransactionalTimeLimit();
+		}
+	}
+
+	/**
+	 * Filter out-of-range values from a list of positive integer IDs
+	 * @since 1.33
+	 * @param array $fields Array of pairs of table and field to check
+	 * @param (string|int)[] $ids IDs to filter. Strings in the array are
+	 *  expected to be stringified ints.
+	 * @return (string|int)[] Filtered IDs.
+	 */
+	protected function filterIDs( $fields, array $ids ) {
+		$min = INF;
+		$max = 0;
+		foreach ( $fields as list( $table, $field ) ) {
+			if ( isset( self::$filterIDsCache[$table][$field] ) ) {
+				$row = self::$filterIDsCache[$table][$field];
+			} else {
+				$row = $this->getDB()->selectRow(
+					$table,
+					[
+						'min_id' => "MIN($field)",
+						'max_id' => "MAX($field)",
+					],
+					'',
+					__METHOD__
+				);
+				self::$filterIDsCache[$table][$field] = $row;
+			}
+			$min = min( $min, $row->min_id );
+			$max = max( $max, $row->max_id );
+		}
+		return array_filter( $ids, function ( $id ) use ( $min, $max ) {
+			return ( is_int( $id ) && $id >= 0 || ctype_digit( $id ) )
+				&& $id >= $min && $id <= $max;
+		} );
 	}
 
 	/**@}*/
@@ -1951,9 +1949,14 @@ abstract class ApiBase extends ContextSource {
 	 * @since 1.29
 	 * @param StatusValue $status
 	 * @param string[] $types 'warning' and/or 'error'
+	 * @param string[] $filter Message keys to filter out (since 1.33)
 	 */
-	public function addMessagesFromStatus( StatusValue $status, $types = [ 'warning', 'error' ] ) {
-		$this->getErrorFormatter()->addMessagesFromStatus( $this->getModulePath(), $status, $types );
+	public function addMessagesFromStatus(
+		StatusValue $status, $types = [ 'warning', 'error' ], array $filter = []
+	) {
+		$this->getErrorFormatter()->addMessagesFromStatus(
+			$this->getModulePath(), $status, $types, $filter
+		);
 	}
 
 	/**
@@ -2015,6 +2018,12 @@ abstract class ApiBase extends ContextSource {
 			$this->dieWithError(
 				'apierror-autoblocked',
 				'autoblocked',
+				[ 'blockinfo' => ApiQueryUserInfo::getBlockInfo( $block ) ]
+			);
+		} elseif ( !$block->isSitewide() ) {
+			$this->dieWithError(
+				'apierror-blocked-partial',
+				'blocked',
 				[ 'blockinfo' => ApiQueryUserInfo::getBlockInfo( $block ) ]
 			);
 		} else {
@@ -2104,8 +2113,38 @@ abstract class ApiBase extends ContextSource {
 		foreach ( (array)$actions as $action ) {
 			$errors = array_merge( $errors, $title->getUserPermissionsErrors( $action, $user ) );
 		}
+
 		if ( $errors ) {
+			// track block notices
+			if ( $this->getConfig()->get( 'EnableBlockNoticeStats' ) ) {
+				$this->trackBlockNotices( $errors );
+			}
+
 			$this->dieStatus( $this->errorArrayToStatus( $errors, $user ) );
+		}
+	}
+
+	/**
+	 * Keep track of errors messages resulting from a block
+	 *
+	 * @param array $errors
+	 */
+	private function trackBlockNotices( array $errors ) {
+		$errorMessageKeys = [
+			'blockedtext',
+			'blockedtext-partial',
+			'autoblockedtext',
+			'systemblockedtext',
+		];
+
+		$statsd = MediaWikiServices::getInstance()->getStatsdDataFactory();
+
+		foreach ( $errors as $error ) {
+			if ( in_array( $error[0], $errorMessageKeys ) ) {
+				$wiki = $this->getConfig()->get( 'DBname' );
+				$statsd->increment( 'BlockNotices.' . $wiki . '.MediaWikiApi.returned' );
+				break;
+			}
 		}
 	}
 
@@ -2208,10 +2247,6 @@ abstract class ApiBase extends ContextSource {
 	/**
 	 * Get final module summary
 	 *
-	 * Ideally this will just be the getSummaryMessage(). However, for
-	 * backwards compatibility, if that message does not exist then the first
-	 * line of wikitext from the description message will be used instead.
-	 *
 	 * @since 1.30
 	 * @return Message
 	 */
@@ -2221,17 +2256,6 @@ abstract class ApiBase extends ContextSource {
 			$this->getModuleName(),
 			$this->getModulePath(),
 		] );
-		if ( !$msg->exists() ) {
-			wfDeprecated( 'API help "description" messages', '1.30' );
-			$msg = self::makeMessage( $this->getDescriptionMessage(), $this->getContext(), [
-				$this->getModulePrefix(),
-				$this->getModuleName(),
-				$this->getModulePath(),
-			] );
-			$msg = self::makeMessage( 'rawmessage', $this->getContext(), [
-				preg_replace( '/\n.*/s', '', $msg->text() )
-			] );
-		}
 		return $msg;
 	}
 
@@ -2243,18 +2267,6 @@ abstract class ApiBase extends ContextSource {
 	 * @return Message[]
 	 */
 	public function getFinalDescription() {
-		$desc = $this->getDescription();
-
-		// Avoid PHP 7.1 warning of passing $this by reference
-		$apiModule = $this;
-		Hooks::run( 'APIGetDescription', [ &$apiModule, &$desc ] );
-		$desc = self::escapeWikiText( $desc );
-		if ( is_array( $desc ) ) {
-			$desc = implode( "\n", $desc );
-		} else {
-			$desc = (string)$desc;
-		}
-
 		$summary = self::makeMessage( $this->getSummaryMessage(), $this->getContext(), [
 			$this->getModulePrefix(),
 			$this->getModuleName(),
@@ -2268,20 +2280,7 @@ abstract class ApiBase extends ContextSource {
 			]
 		);
 
-		if ( $summary->exists() ) {
-			$msgs = [ $summary, $extendedDescription ];
-		} else {
-			wfDeprecated( 'API help "description" messages', '1.30' );
-			$description = self::makeMessage( $this->getDescriptionMessage(), $this->getContext(), [
-				$this->getModulePrefix(),
-				$this->getModuleName(),
-				$this->getModulePath(),
-			] );
-			if ( !$description->exists() ) {
-				$description = $this->msg( 'api-help-fallback-description', $desc );
-			}
-			$msgs = [ $description ];
-		}
+		$msgs = [ $summary, $extendedDescription ];
 
 		Hooks::run( 'APIGetDescriptionMessages', [ $this, &$msgs ] );
 
@@ -2333,17 +2332,6 @@ abstract class ApiBase extends ContextSource {
 		$name = $this->getModuleName();
 		$path = $this->getModulePath();
 
-		$desc = $this->getParamDescription();
-
-		// Avoid PHP 7.1 warning of passing $this by reference
-		$apiModule = $this;
-		Hooks::run( 'APIGetParamDescription', [ &$apiModule, &$desc ] );
-
-		if ( !$desc ) {
-			$desc = [];
-		}
-		$desc = self::escapeWikiText( $desc );
-
 		$params = $this->getFinalParams( self::GET_VALUES_FOR_HELP );
 		$msgs = [];
 		foreach ( $params as $param => $settings ) {
@@ -2351,25 +2339,10 @@ abstract class ApiBase extends ContextSource {
 				$settings = [];
 			}
 
-			$d = $desc[$param] ?? '';
-			if ( is_array( $d ) ) {
-				// Special handling for prop parameters
-				$d = array_map( function ( $line ) {
-					if ( preg_match( '/^\s+(\S+)\s+-\s+(.+)$/', $line, $m ) ) {
-						$line = "\n;{$m[1]}:{$m[2]}";
-					}
-					return $line;
-				}, $d );
-				$d = implode( ' ', $d );
-			}
-
 			if ( isset( $settings[self::PARAM_HELP_MSG] ) ) {
 				$msg = $settings[self::PARAM_HELP_MSG];
 			} else {
 				$msg = $this->msg( "apihelp-{$path}-param-{$param}" );
-				if ( !$msg->exists() ) {
-					$msg = $this->msg( 'api-help-fallback-parameter', $d );
-				}
 			}
 			$msg = self::makeMessage( $msg, $this->getContext(),
 				[ $prefix, $param, $name, $path ] );
@@ -2632,6 +2605,7 @@ abstract class ApiBase extends ContextSource {
 	 * @return Message|string|array|false
 	 */
 	protected function getDescription() {
+		wfDeprecated( __METHOD__, '1.25' );
 		return false;
 	}
 
@@ -2648,6 +2622,7 @@ abstract class ApiBase extends ContextSource {
 	 * @return array|bool False on no parameter descriptions
 	 */
 	protected function getParamDescription() {
+		wfDeprecated( __METHOD__, '1.25' );
 		return [];
 	}
 
@@ -2668,353 +2643,8 @@ abstract class ApiBase extends ContextSource {
 	 * @return bool|string|array
 	 */
 	protected function getExamples() {
+		wfDeprecated( __METHOD__, '1.25' );
 		return false;
-	}
-
-	/**
-	 * @deprecated since 1.25
-	 */
-	public function profileIn() {
-		wfDeprecated( __METHOD__, '1.25' );
-	}
-
-	/**
-	 * @deprecated since 1.25
-	 */
-	public function profileOut() {
-		wfDeprecated( __METHOD__, '1.25' );
-	}
-
-	/**
-	 * @deprecated since 1.25
-	 */
-	public function safeProfileOut() {
-		wfDeprecated( __METHOD__, '1.25' );
-	}
-
-	/**
-	 * @deprecated since 1.25
-	 */
-	public function profileDBIn() {
-		wfDeprecated( __METHOD__, '1.25' );
-	}
-
-	/**
-	 * @deprecated since 1.25
-	 */
-	public function profileDBOut() {
-		wfDeprecated( __METHOD__, '1.25' );
-	}
-
-	/**
-	 * Call wfTransactionalTimeLimit() if this request was POSTed
-	 * @since 1.26
-	 */
-	protected function useTransactionalTimeLimit() {
-		if ( $this->getRequest()->wasPosted() ) {
-			wfTransactionalTimeLimit();
-		}
-	}
-
-	/**
-	 * @deprecated since 1.29, use ApiBase::addWarning() instead
-	 * @param string $warning Warning message
-	 */
-	public function setWarning( $warning ) {
-		wfDeprecated( __METHOD__, '1.29' );
-		$msg = new ApiRawMessage( $warning, 'warning' );
-		$this->getErrorFormatter()->addWarning( $this->getModulePath(), $msg );
-	}
-
-	/**
-	 * Throw an ApiUsageException, which will (if uncaught) call the main module's
-	 * error handler and die with an error message.
-	 *
-	 * @deprecated since 1.29, use self::dieWithError() instead
-	 * @param string $description One-line human-readable description of the
-	 *   error condition, e.g., "The API requires a valid action parameter"
-	 * @param string $errorCode Brief, arbitrary, stable string to allow easy
-	 *   automated identification of the error, e.g., 'unknown_action'
-	 * @param int $httpRespCode HTTP response code
-	 * @param array|null $extradata Data to add to the "<error>" element; array in ApiResult format
-	 * @throws ApiUsageException always
-	 */
-	public function dieUsage( $description, $errorCode, $httpRespCode = 0, $extradata = null ) {
-		wfDeprecated( __METHOD__, '1.29' );
-		$this->dieWithError(
-			new RawMessage( '$1', [ $description ] ),
-			$errorCode,
-			$extradata,
-			$httpRespCode
-		);
-	}
-
-	/**
-	 * Get error (as code, string) from a Status object.
-	 *
-	 * @since 1.23
-	 * @deprecated since 1.29, use ApiErrorFormatter::arrayFromStatus instead
-	 * @param Status $status
-	 * @param array|null &$extraData Set if extra data from IApiMessage is available (since 1.27)
-	 * @return array Array of code and error string
-	 * @throws MWException
-	 */
-	public function getErrorFromStatus( $status, &$extraData = null ) {
-		wfDeprecated( __METHOD__, '1.29' );
-		if ( $status->isGood() ) {
-			throw new MWException( 'Successful status passed to ApiBase::dieStatus' );
-		}
-
-		$errors = $status->getErrorsByType( 'error' );
-		if ( !$errors ) {
-			// No errors? Assume the warnings should be treated as errors
-			$errors = $status->getErrorsByType( 'warning' );
-		}
-		if ( !$errors ) {
-			// Still no errors? Punt
-			$errors = [ [ 'message' => 'unknownerror-nocode', 'params' => [] ] ];
-		}
-
-		if ( $errors[0]['message'] instanceof MessageSpecifier ) {
-			$msg = $errors[0]['message'];
-		} else {
-			$msg = new Message( $errors[0]['message'], $errors[0]['params'] );
-		}
-		if ( !$msg instanceof IApiMessage ) {
-			$key = $msg->getKey();
-			$params = $msg->getParams();
-			array_unshift( $params, self::$messageMap[$key] ?? $key );
-			$msg = ApiMessage::create( $params );
-		}
-
-		return [
-			$msg->getApiCode(),
-			ApiErrorFormatter::stripMarkup( $msg->inLanguage( 'en' )->useDatabase( false )->text() )
-		];
-	}
-
-	/**
-	 * @deprecated since 1.29. Prior to 1.29, this was a public mapping from
-	 *  arbitrary strings (often message keys used elsewhere in MediaWiki) to
-	 *  API codes and message texts, and a few interfaces required poking
-	 *  something in here. Now we're repurposing it to map those same strings
-	 *  to i18n messages, and declaring that any interface that requires poking
-	 *  at this is broken and needs replacing ASAP.
-	 */
-	private static $messageMap = [
-		'unknownerror' => 'apierror-unknownerror',
-		'unknownerror-nocode' => 'apierror-unknownerror-nocode',
-		'ns-specialprotected' => 'ns-specialprotected',
-		'protectedinterface' => 'protectedinterface',
-		'namespaceprotected' => 'namespaceprotected',
-		'customcssprotected' => 'customcssprotected',
-		'customjsprotected' => 'customjsprotected',
-		'cascadeprotected' => 'cascadeprotected',
-		'protectedpagetext' => 'protectedpagetext',
-		'protect-cantedit' => 'protect-cantedit',
-		'deleteprotected' => 'deleteprotected',
-		'badaccess-group0' => 'badaccess-group0',
-		'badaccess-groups' => 'badaccess-groups',
-		'titleprotected' => 'titleprotected',
-		'nocreate-loggedin' => 'nocreate-loggedin',
-		'nocreatetext' => 'nocreatetext',
-		'movenologintext' => 'movenologintext',
-		'movenotallowed' => 'movenotallowed',
-		'confirmedittext' => 'confirmedittext',
-		'blockedtext' => 'apierror-blocked',
-		'autoblockedtext' => 'apierror-autoblocked',
-		'systemblockedtext' => 'apierror-systemblocked',
-		'actionthrottledtext' => 'apierror-ratelimited',
-		'alreadyrolled' => 'alreadyrolled',
-		'cantrollback' => 'cantrollback',
-		'readonlytext' => 'readonlytext',
-		'sessionfailure' => 'sessionfailure',
-		'cannotdelete' => 'cannotdelete',
-		'notanarticle' => 'apierror-missingtitle',
-		'selfmove' => 'selfmove',
-		'immobile_namespace' => 'apierror-immobilenamespace',
-		'articleexists' => 'articleexists',
-		'hookaborted' => 'hookaborted',
-		'cantmove-titleprotected' => 'cantmove-titleprotected',
-		'imagenocrossnamespace' => 'imagenocrossnamespace',
-		'imagetypemismatch' => 'imagetypemismatch',
-		'ip_range_invalid' => 'ip_range_invalid',
-		'range_block_disabled' => 'range_block_disabled',
-		'nosuchusershort' => 'nosuchusershort',
-		'badipaddress' => 'badipaddress',
-		'ipb_expiry_invalid' => 'ipb_expiry_invalid',
-		'ipb_already_blocked' => 'ipb_already_blocked',
-		'ipb_blocked_as_range' => 'ipb_blocked_as_range',
-		'ipb_cant_unblock' => 'ipb_cant_unblock',
-		'mailnologin' => 'apierror-cantsend',
-		'ipbblocked' => 'ipbblocked',
-		'ipbnounblockself' => 'ipbnounblockself',
-		'usermaildisabled' => 'usermaildisabled',
-		'blockedemailuser' => 'apierror-blockedfrommail',
-		'notarget' => 'apierror-notarget',
-		'noemail' => 'noemail',
-		'rcpatroldisabled' => 'rcpatroldisabled',
-		'markedaspatrollederror-noautopatrol' => 'markedaspatrollederror-noautopatrol',
-		'delete-toobig' => 'delete-toobig',
-		'movenotallowedfile' => 'movenotallowedfile',
-		'userrights-no-interwiki' => 'userrights-no-interwiki',
-		'userrights-nodatabase' => 'userrights-nodatabase',
-		'nouserspecified' => 'nouserspecified',
-		'noname' => 'noname',
-		'summaryrequired' => 'apierror-summaryrequired',
-		'import-rootpage-invalid' => 'import-rootpage-invalid',
-		'import-rootpage-nosubpage' => 'import-rootpage-nosubpage',
-		'readrequired' => 'apierror-readapidenied',
-		'writedisabled' => 'apierror-noapiwrite',
-		'writerequired' => 'apierror-writeapidenied',
-		'missingparam' => 'apierror-missingparam',
-		'invalidtitle' => 'apierror-invalidtitle',
-		'nosuchpageid' => 'apierror-nosuchpageid',
-		'nosuchrevid' => 'apierror-nosuchrevid',
-		'nosuchuser' => 'nosuchusershort',
-		'invaliduser' => 'apierror-invaliduser',
-		'invalidexpiry' => 'apierror-invalidexpiry',
-		'pastexpiry' => 'apierror-pastexpiry',
-		'create-titleexists' => 'apierror-create-titleexists',
-		'missingtitle-createonly' => 'apierror-missingtitle-createonly',
-		'cantblock' => 'apierror-cantblock',
-		'canthide' => 'apierror-canthide',
-		'cantblock-email' => 'apierror-cantblock-email',
-		'cantunblock' => 'apierror-permissiondenied-generic',
-		'cannotundelete' => 'cannotundelete',
-		'permdenied-undelete' => 'apierror-permissiondenied-generic',
-		'createonly-exists' => 'apierror-articleexists',
-		'nocreate-missing' => 'apierror-missingtitle',
-		'cantchangecontentmodel' => 'apierror-cantchangecontentmodel',
-		'nosuchrcid' => 'apierror-nosuchrcid',
-		'nosuchlogid' => 'apierror-nosuchlogid',
-		'protect-invalidaction' => 'apierror-protect-invalidaction',
-		'protect-invalidlevel' => 'apierror-protect-invalidlevel',
-		'toofewexpiries' => 'apierror-toofewexpiries',
-		'cantimport' => 'apierror-cantimport',
-		'cantimport-upload' => 'apierror-cantimport-upload',
-		'importnofile' => 'importnofile',
-		'importuploaderrorsize' => 'importuploaderrorsize',
-		'importuploaderrorpartial' => 'importuploaderrorpartial',
-		'importuploaderrortemp' => 'importuploaderrortemp',
-		'importcantopen' => 'importcantopen',
-		'import-noarticle' => 'import-noarticle',
-		'importbadinterwiki' => 'importbadinterwiki',
-		'import-unknownerror' => 'apierror-import-unknownerror',
-		'cantoverwrite-sharedfile' => 'apierror-cantoverwrite-sharedfile',
-		'sharedfile-exists' => 'apierror-fileexists-sharedrepo-perm',
-		'mustbeposted' => 'apierror-mustbeposted',
-		'show' => 'apierror-show',
-		'specialpage-cantexecute' => 'apierror-specialpage-cantexecute',
-		'invalidoldimage' => 'apierror-invalidoldimage',
-		'nodeleteablefile' => 'apierror-nodeleteablefile',
-		'fileexists-forbidden' => 'fileexists-forbidden',
-		'fileexists-shared-forbidden' => 'fileexists-shared-forbidden',
-		'filerevert-badversion' => 'filerevert-badversion',
-		'noimageredirect-anon' => 'apierror-noimageredirect-anon',
-		'noimageredirect-logged' => 'apierror-noimageredirect',
-		'spamdetected' => 'apierror-spamdetected',
-		'contenttoobig' => 'apierror-contenttoobig',
-		'noedit-anon' => 'apierror-noedit-anon',
-		'noedit' => 'apierror-noedit',
-		'wasdeleted' => 'apierror-pagedeleted',
-		'blankpage' => 'apierror-emptypage',
-		'editconflict' => 'editconflict',
-		'hashcheckfailed' => 'apierror-badmd5',
-		'missingtext' => 'apierror-notext',
-		'emptynewsection' => 'apierror-emptynewsection',
-		'revwrongpage' => 'apierror-revwrongpage',
-		'undo-failure' => 'undo-failure',
-		'content-not-allowed-here' => 'content-not-allowed-here',
-		'edit-hook-aborted' => 'edit-hook-aborted',
-		'edit-gone-missing' => 'edit-gone-missing',
-		'edit-conflict' => 'edit-conflict',
-		'edit-already-exists' => 'edit-already-exists',
-		'invalid-file-key' => 'apierror-invalid-file-key',
-		'nouploadmodule' => 'apierror-nouploadmodule',
-		'uploaddisabled' => 'uploaddisabled',
-		'copyuploaddisabled' => 'copyuploaddisabled',
-		'copyuploadbaddomain' => 'apierror-copyuploadbaddomain',
-		'copyuploadbadurl' => 'apierror-copyuploadbadurl',
-		'filename-tooshort' => 'filename-tooshort',
-		'filename-toolong' => 'filename-toolong',
-		'illegal-filename' => 'illegal-filename',
-		'filetype-missing' => 'filetype-missing',
-		'mustbeloggedin' => 'apierror-mustbeloggedin',
-	];
-
-	/**
-	 * @deprecated do not use
-	 * @param array|string|MessageSpecifier $error Element of a getUserPermissionsErrors()-style array
-	 * @return ApiMessage
-	 */
-	private function parseMsgInternal( $error ) {
-		$msg = Message::newFromSpecifier( $error );
-		if ( !$msg instanceof IApiMessage ) {
-			$key = $msg->getKey();
-			if ( isset( self::$messageMap[$key] ) ) {
-				$params = $msg->getParams();
-				array_unshift( $params, self::$messageMap[$key] );
-			} else {
-				$params = [ 'apierror-unknownerror', wfEscapeWikiText( $key ) ];
-			}
-			$msg = ApiMessage::create( $params );
-		}
-		return $msg;
-	}
-
-	/**
-	 * Return the error message related to a certain array
-	 * @deprecated since 1.29
-	 * @param array|string|MessageSpecifier $error Element of a getUserPermissionsErrors()-style array
-	 * @return array [ 'code' => code, 'info' => info ]
-	 */
-	public function parseMsg( $error ) {
-		wfDeprecated( __METHOD__, '1.29' );
-		// Check whether someone passed the whole array, instead of one element as
-		// documented. This breaks if it's actually an array of fallback keys, but
-		// that's long-standing misbehavior introduced in r87627 to incorrectly
-		// fix T30797.
-		if ( is_array( $error ) ) {
-			$first = reset( $error );
-			if ( is_array( $first ) ) {
-				wfDebug( __METHOD__ . ' was passed an array of arrays. ' . wfGetAllCallers( 5 ) );
-				$error = $first;
-			}
-		}
-
-		$msg = $this->parseMsgInternal( $error );
-		return [
-			'code' => $msg->getApiCode(),
-			'info' => ApiErrorFormatter::stripMarkup(
-				$msg->inLanguage( 'en' )->useDatabase( false )->text()
-			),
-			'data' => $msg->getApiData()
-		];
-	}
-
-	/**
-	 * Output the error message related to a certain array
-	 * @deprecated since 1.29, use ApiBase::dieWithError() instead
-	 * @param array|string|MessageSpecifier $error Element of a getUserPermissionsErrors()-style array
-	 * @throws ApiUsageException always
-	 */
-	public function dieUsageMsg( $error ) {
-		wfDeprecated( __METHOD__, '1.29' );
-		$this->dieWithError( $this->parseMsgInternal( $error ) );
-	}
-
-	/**
-	 * Will only set a warning instead of failing if the global $wgDebugAPI
-	 * is set to true. Otherwise behaves exactly as dieUsageMsg().
-	 * @deprecated since 1.29, use ApiBase::dieWithErrorOrDebug() instead
-	 * @param array|string|MessageSpecifier $error Element of a getUserPermissionsErrors()-style array
-	 * @throws ApiUsageException
-	 * @since 1.21
-	 */
-	public function dieUsageMsgOrDebug( $error ) {
-		wfDeprecated( __METHOD__, '1.29' );
-		$this->dieWithErrorOrDebug( $this->parseMsgInternal( $error ) );
 	}
 
 	/**
@@ -3026,6 +2656,7 @@ abstract class ApiBase extends ContextSource {
 	 * @return string|array|Message
 	 */
 	protected function getDescriptionMessage() {
+		wfDeprecated( __METHOD__, '1.30' );
 		return [ [
 			"apihelp-{$this->getModulePath()}-description",
 			"apihelp-{$this->getModulePath()}-summary",

@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 	var ProtectionForm,
 		reasonCodePointLimit = mw.config.get( 'wgCommentCodePointLimit' ),
 		reasonByteLimit = mw.config.get( 'wgCommentByteLimit' );
@@ -19,16 +19,16 @@
 			}
 
 			if ( mw.config.get( 'wgCascadeableLevels' ) !== undefined ) {
-				$( 'form#mw-Protect-Form' ).submit( this.toggleUnchainedInputs.bind( ProtectionForm, true ) );
+				$( 'form#mw-Protect-Form' ).on( 'submit', this.toggleUnchainedInputs.bind( ProtectionForm, true ) );
 			}
 			this.getExpirySelectors().each( function () {
-				$( this ).change( ProtectionForm.updateExpiryList.bind( ProtectionForm, this ) );
+				$( this ).on( 'change', ProtectionForm.updateExpiryList.bind( ProtectionForm, this ) );
 			} );
 			this.getExpiryInputs().each( function () {
 				$( this ).on( 'keyup change', ProtectionForm.updateExpiry.bind( ProtectionForm, this ) );
 			} );
 			this.getLevelSelectors().each( function () {
-				$( this ).change( ProtectionForm.updateLevels.bind( ProtectionForm, this ) );
+				$( this ).on( 'change', ProtectionForm.updateLevels.bind( ProtectionForm, this ) );
 			} );
 
 			$( '#mwProtectSet > tbody > tr:first' ).after( $row );
@@ -38,7 +38,7 @@
 				$cell.append(
 					$( '<input>' )
 						.attr( { id: 'mwProtectUnchained', type: 'checkbox' } )
-						.click( this.onChainClick.bind( this ) )
+						.on( 'click', this.onChainClick.bind( this ) )
 						.prop( 'checked', !this.areAllTypesMatching() ),
 					document.createTextNode( ' ' ),
 					$( '<label>' )
@@ -81,7 +81,13 @@
 		 * @return {boolean}
 		 */
 		isCascadeableLevel: function ( level ) {
-			return $.inArray( level, mw.config.get( 'wgCascadeableLevels' ) ) !== -1;
+			var cascadeableLevels = mw.config.get( 'wgCascadeableLevels' );
+
+			if ( !Array.isArray( cascadeableLevels ) ) {
+				return false;
+			}
+
+			return cascadeableLevels.indexOf( level ) !== -1;
 		},
 
 		/**
@@ -156,6 +162,7 @@
 		 * @return {boolean}
 		 */
 		matchAttribute: function ( objects, attrName ) {
+			// eslint-disable-next-line jquery/no-map-util
 			return $.map( objects, function ( object ) {
 				return object[ attrName ];
 			} ).filter( function ( item, index, a ) {
@@ -241,7 +248,9 @@
 		 * @param {boolean} val Enable?
 		 */
 		toggleUnchainedInputs: function ( val ) {
-			var setDisabled = function () { this.disabled = !val; };
+			var setDisabled = function () {
+				this.disabled = !val;
+			};
 			this.getLevelSelectors().slice( 1 ).each( setDisabled );
 			this.getExpiryInputs().slice( 1 ).each( setDisabled );
 			this.getExpirySelectors().slice( 1 ).each( setDisabled );
@@ -250,4 +259,4 @@
 
 	$( ProtectionForm.init.bind( ProtectionForm ) );
 
-}( mediaWiki, jQuery ) );
+}() );

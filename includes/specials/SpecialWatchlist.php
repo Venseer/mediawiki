@@ -111,15 +111,7 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 	}
 
 	public static function checkStructuredFilterUiEnabled( Config $config, User $user ) {
-		if ( !$config->get( 'StructuredChangeFiltersOnWatchlist' ) ) {
-			return false;
-		}
-
-		if ( $config->get( 'StructuredChangeFiltersShowWatchlistPreference' ) ) {
-			return !$user->getOption( 'wlenhancedfilters-disable' );
-		} else {
-			return $user->getOption( 'rcenhancedfilters' );
-		}
+		return !$user->getOption( 'wlenhancedfilters-disable' );
 	}
 
 	/**
@@ -163,7 +155,7 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 					'activeValue' => false,
 					'default' => $this->getUser()->getBoolOption( 'extendwatchlist' ),
 					'queryCallable' => function ( $specialClassName, $ctx, $dbr, &$tables,
-												  &$fields, &$conds, &$query_options, &$join_conds ) {
+							&$fields, &$conds, &$query_options, &$join_conds ) {
 						$nonRevisionTypes = [ RC_LOG ];
 						Hooks::run( 'SpecialWatchlistGetNonRevisionTypes', [ &$nonRevisionTypes ] );
 						if ( $nonRevisionTypes ) {
@@ -219,7 +211,7 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 			],
 			'default' => ChangesListStringOptionsFilterGroup::NONE,
 			'queryCallable' => function ( $specialPageClassName, $context, $dbr,
-										  &$tables, &$fields, &$conds, &$query_options, &$join_conds, $selectedValues ) {
+					&$tables, &$fields, &$conds, &$query_options, &$join_conds, $selectedValues ) {
 				if ( $selectedValues === [ 'seen' ] ) {
 					$conds[] = $dbr->makeList( [
 						'wl_notificationtimestamp IS NULL',
@@ -287,20 +279,6 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 			// Conditional on feature being available
 			$hideCategorization->setDefault( $user->getBoolOption( 'watchlisthidecategorization' ) );
 		}
-	}
-
-	/**
-	 * Get all custom filters
-	 *
-	 * @return array Map of filter URL param names to properties (msg/default)
-	 */
-	protected function getCustomFilters() {
-		if ( $this->customFilters === null ) {
-			$this->customFilters = parent::getCustomFilters();
-			Hooks::run( 'SpecialWatchlistFilters', [ $this, &$this->customFilters ], '1.23' );
-		}
-
-		return $this->customFilters;
 	}
 
 	/**
@@ -447,17 +425,6 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 		);
 	}
 
-	protected function runMainQueryHook( &$tables, &$fields, &$conds, &$query_options,
-		&$join_conds, $opts
-	) {
-		return parent::runMainQueryHook( $tables, $fields, $conds, $query_options, $join_conds, $opts )
-			&& Hooks::run(
-				'SpecialWatchlistQuery',
-				[ &$conds, &$tables, &$join_conds, &$fields, $opts ],
-				'1.23'
-			);
-	}
-
 	/**
 	 * Return a IDatabase object for reading
 	 *
@@ -493,9 +460,10 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 		$dbr = $this->getDB();
 		$user = $this->getUser();
 		$output = $this->getOutput();
+		$services = MediaWikiServices::getInstance();
 
 		# Show a message about replica DB lag, if applicable
-		$lag = MediaWikiServices::getInstance()->getDBLoadBalancer()->safeGetLag( $dbr );
+		$lag = $services->getDBLoadBalancer()->safeGetLag( $dbr );
 		if ( $lag > 0 ) {
 			$output->showLagWarning( $lag );
 		}
@@ -535,7 +503,7 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 		if ( $this->getConfig()->get( 'RCShowWatchingUsers' )
 			&& $user->getOption( 'shownumberswatching' )
 		) {
-			$watchedItemStore = MediaWikiServices::getInstance()->getWatchedItemStore();
+			$watchedItemStore = $services->getWatchedItemStore();
 		}
 
 		$s = $list->beginRecentChangesList();
@@ -684,7 +652,8 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 			[
 				'selected' => $opts['namespace'],
 				'all' => '',
-				'label' => $this->msg( 'namespace' )->text()
+				'label' => $this->msg( 'namespace' )->text(),
+				'in-user-lang' => true,
 			], [
 				'name' => 'namespace',
 				'id' => 'namespace',
@@ -777,7 +746,7 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 		] ) );
 		asort( $hours );
 
-		$select = new XmlSelect( 'days', 'days', $selectedHours / 24 );
+		$select = new XmlSelect( 'days', 'days', (float)( $selectedHours / 24 ) );
 
 		foreach ( $hours as $value ) {
 			if ( $value < 24 ) {
@@ -785,7 +754,7 @@ class SpecialWatchlist extends ChangesListSpecialPage {
 			} else {
 				$name = $this->msg( 'days' )->numParams( $value / 24 )->text();
 			}
-			$select->addOption( $name, $value / 24 );
+			$select->addOption( $name, (float)( $value / 24 ) );
 		}
 
 		return $select->getHTML() . "\n<br />\n";

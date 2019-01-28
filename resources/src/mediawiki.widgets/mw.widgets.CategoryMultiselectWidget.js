@@ -4,7 +4,7 @@
  * @copyright 2011-2015 MediaWiki Widgets Team and others; see AUTHORS.txt
  * @license The MIT License (MIT); see LICENSE.txt
  */
-( function ( $, mw ) {
+( function () {
 	var hasOwn = Object.prototype.hasOwnProperty,
 		NS_CATEGORY = mw.config.get( 'wgNamespaceIds' ).category;
 
@@ -321,7 +321,7 @@
 				} ).done( function ( res ) {
 					var categories = [];
 
-					$.each( res.query.pages, function ( index, page ) {
+					res.query.pages.forEach( function ( page ) {
 						if ( !page.missing ) {
 							categories.push( page.title );
 						}
@@ -367,7 +367,7 @@
 				} ).done( function ( res ) {
 					var categories = [];
 
-					$.each( res.query.pages, function ( index, page ) {
+					res.query.pages.forEach( function ( page ) {
 						if ( !page.missing && Array.isArray( page.categories ) ) {
 							categories.push.apply( categories, page.categories.map( function ( category ) {
 								return category.title;
@@ -409,4 +409,4 @@
 		/** Search only parent categories */
 		ParentCategories: 4
 	};
-}( jQuery, mediaWiki ) );
+}() );

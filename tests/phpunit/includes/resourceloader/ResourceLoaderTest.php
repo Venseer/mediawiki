@@ -8,15 +8,6 @@ class ResourceLoaderTest extends ResourceLoaderTestCase {
 		parent::setUp();
 
 		$this->setMwGlobals( [
-			'wgResourceLoaderLESSVars' => [
-				'foo'  => '2px',
-				'Foo' => '#eeeeee',
-				'bar' => 5,
-			],
-			// Clear ResourceLoaderGetConfigVars hooks (called by StartupModule)
-			// to avoid notices during testMakeModuleResponse for missing
-			// wgResourceLoaderLESSVars keys in extension hooks.
-			'wgHooks' => [],
 			'wgShowExceptionDetails' => true,
 		] );
 	}
@@ -247,26 +238,11 @@ class ResourceLoaderTest extends ResourceLoaderTestCase {
 	}
 
 	/**
-	 * @covers ResourceLoaderFileModule::compileLessFile
-	 */
-	public function testLessFileCompilation() {
-		$context = $this->getResourceLoaderContext();
-		$basePath = __DIR__ . '/../../data/less/module';
-		$module = new ResourceLoaderFileModule( [
-			'localBasePath' => $basePath,
-			'styles' => [ 'styles.less' ],
-		] );
-		$module->setName( 'test.less' );
-		$styles = $module->getStyles( $context );
-		$this->assertStringEqualsFile( $basePath . '/styles.css', $styles['all'] );
-	}
-
-	/**
 	 * @covers ResourceLoader::getLessCompiler
 	 */
 	public function testLessImportDirs() {
 		$rl = new EmptyResourceLoader();
-		$lc = $rl->getLessCompiler( $rl->getLessVars() );
+		$lc = $rl->getLessCompiler( [ 'foo'  => '2px', 'Foo' => '#eeeeee' ] );
 		$basePath = dirname( dirname( __DIR__ ) ) . '/data/less';
 		$lc->SetImportDirs( [
 			 "$basePath/common" => '',
@@ -523,12 +499,42 @@ mw.example();
 		);
 
 		$this->assertEquals(
-			'mw.loader.register( "test.name", "1234567" );',
-			ResourceLoader::makeLoaderRegisterScript(
-				'test.name',
-				'1234567'
-			),
-			'Variadic parameters'
+			'mw.loader.register( [
+    [
+        "test.foo",
+        "100"
+    ],
+    [
+        "test.bar",
+        "200",
+        [
+            "test.unknown"
+        ]
+    ],
+    [
+        "test.baz",
+        "300",
+        [
+            3,
+            0
+        ]
+    ],
+    [
+        "test.quux",
+        "400",
+        [],
+        null,
+        null,
+        "return true;"
+    ]
+] );',
+			ResourceLoader::makeLoaderRegisterScript( [
+				[ 'test.foo', '100' , [], null, null ],
+				[ 'test.bar', '200', [ 'test.unknown' ], null ],
+				[ 'test.baz', '300', [ 'test.quux', 'test.foo' ], null ],
+				[ 'test.quux', '400', [], null, null, 'return true;' ],
+			] ),
+			'Compact dependency indexes'
 		);
 	}
 
@@ -537,7 +543,9 @@ mw.example();
 	 */
 	public function testMakeLoaderSourcesScript() {
 		$this->assertEquals(
-			'mw.loader.addSource( "local", "/w/load.php" );',
+			'mw.loader.addSource( {
+    "local": "/w/load.php"
+} );',
 			ResourceLoader::makeLoaderSourcesScript( 'local', '/w/load.php' )
 		);
 		$this->assertEquals(
@@ -829,6 +837,7 @@ mw.example();
 			$response
 		);
 	}
+
 	/**
 	 * Verify that when building the startup module response,
 	 * an exception from one module class will not break the entire
@@ -868,7 +877,7 @@ mw.example();
 		$this->assertRegExp( '/Ferry not found/', $errors[0] );
 		$this->assertCount( 1, $errors );
 		$this->assertRegExp(
-			'/isCompatible.*function startUp/s',
+			'/isCompatible.*window\.RLQ/s',
 			$response,
 			'startup response undisrupted (T152266)'
 		);

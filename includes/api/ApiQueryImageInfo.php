@@ -20,6 +20,8 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * A query action to get image information and upload history.
  *
@@ -57,7 +59,8 @@ class ApiQueryImageInfo extends ApiQueryBase {
 		if ( isset( $params['badfilecontexttitle'] ) ) {
 			$badFileContextTitle = Title::newFromText( $params['badfilecontexttitle'] );
 			if ( !$badFileContextTitle ) {
-				$this->dieUsage( 'Invalid title in badfilecontexttitle parameter', 'invalid-title' );
+				$p = $this->getModulePrefix();
+				$this->dieWithError( [ 'apierror-bad-badfilecontexttitle', $p ], 'invalid-title' );
 			}
 		} else {
 			$badFileContextTitle = false;
@@ -299,7 +302,7 @@ class ApiQueryImageInfo extends ApiQueryBase {
 
 		$paramList = $h->parseParamString( $otherParams );
 		if ( !$paramList ) {
-			// Just set a warning (instead of dieUsage), as in many cases
+			// Just set a warning (instead of dieWithError), as in many cases
 			// we could still render the image using width and height parameters,
 			// and this type of thing could happen between different versions of
 			// handlers.
@@ -369,14 +372,12 @@ class ApiQueryImageInfo extends ApiQueryBase {
 	 * @return array Result array
 	 */
 	public static function getInfo( $file, $prop, $result, $thumbParams = null, $opts = false ) {
-		global $wgContLang;
-
 		$anyHidden = false;
 
 		if ( !$opts || is_string( $opts ) ) {
 			$opts = [
 				'version' => $opts ?: 'latest',
-				'language' => $wgContLang,
+				'language' => MediaWikiServices::getInstance()->getContentLanguage(),
 				'multilang' => false,
 				'extmetadatafilter' => [],
 				'revdelUser' => null,
@@ -650,8 +651,6 @@ class ApiQueryImageInfo extends ApiQueryBase {
 	}
 
 	public function getAllowedParams() {
-		global $wgContLang;
-
 		return [
 			'prop' => [
 				ApiBase::PARAM_ISMULTI => true,
@@ -690,7 +689,8 @@ class ApiQueryImageInfo extends ApiQueryBase {
 			],
 			'extmetadatalanguage' => [
 				ApiBase::PARAM_TYPE => 'string',
-				ApiBase::PARAM_DFLT => $wgContLang->getCode(),
+				ApiBase::PARAM_DFLT =>
+					MediaWikiServices::getInstance()->getContentLanguage()->getCode(),
 			],
 			'extmetadatamultilang' => [
 				ApiBase::PARAM_TYPE => 'boolean',

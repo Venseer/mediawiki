@@ -3,8 +3,8 @@
  *
  * - Beware: This file MUST parse without errors on even the most ancient of browsers!
  */
-
-/* global mw, isCompatible, $VARS, $CODE */
+/* eslint-disable no-implicit-globals, vars-on-top, no-unmodified-loop-condition */
+/* global $VARS, $CODE */
 
 /**
  * See <https://www.mediawiki.org/wiki/Compatibility#Browsers>
@@ -47,7 +47,7 @@
  * @param {string} [str] User agent, defaults to navigator.userAgent
  * @return {boolean} User agent is compatible with MediaWiki JS
  */
-window.isCompatible = function ( str ) {
+function isCompatible( str ) {
 	var ua = str || navigator.userAgent;
 	return !!(
 		// https://caniuse.com/#feat=es5
@@ -55,7 +55,7 @@ window.isCompatible = function ( str ) {
 		// https://caniuse.com/#feat=json / https://phabricator.wikimedia.org/T141344#2784065
 		( function () {
 			'use strict';
-			return !this && !!Function.prototype.bind && !!window.JSON;
+			return !this && Function.prototype.bind && window.JSON;
 		}() ) &&
 
 		// https://caniuse.com/#feat=queryselector
@@ -72,70 +72,32 @@ window.isCompatible = function ( str ) {
 		// Hardcoded exceptions for browsers that pass the requirement but we don't want to
 		// support in the modern run-time.
 		// Note: Please extend the regex instead of adding new ones
-		!(
-			ua.match( /MSIE 10|webOS\/1\.[0-4]|SymbianOS|Series60|NetFront|Opera Mini|S40OviBrowser|MeeGo|Android.+Glass|^Mozilla\/5\.0 .+ Gecko\/$|googleweblight/ ) ||
-			ua.match( /PlayStation/i )
-		)
+		!ua.match( /MSIE 10|webOS\/1\.[0-4]|SymbianOS|Series60|NetFront|Opera Mini|S40OviBrowser|MeeGo|Android.+Glass|^Mozilla\/5\.0 .+ Gecko\/$|googleweblight|PLAYSTATION|PlayStation/ )
 	);
-};
+}
 
-// Conditional script injection
-( function () {
-	var NORLQ, script;
-	if ( !isCompatible() ) {
-		// Undo class swapping in case of an unsupported browser.
-		// See ResourceLoaderClientHtml::getDocumentAttributes().
-		document.documentElement.className = document.documentElement.className
-			.replace( /(^|\s)client-js(\s|$)/, '$1client-nojs$2' );
+if ( !isCompatible() ) {
+	// Handle Grade C
+	// Undo speculative Grade A <html> class. See ResourceLoaderClientHtml::getDocumentAttributes().
+	document.documentElement.className = document.documentElement.className
+		.replace( /(^|\s)client-js(\s|$)/, '$1client-nojs$2' );
 
-		NORLQ = window.NORLQ || [];
-		while ( NORLQ.length ) {
-			NORLQ.shift()();
-		}
-		window.NORLQ = {
-			push: function ( fn ) {
-				fn();
-			}
-		};
-
-		// Clear and disable the other queue
-		window.RLQ = {
-			// No-op
-			push: function () {}
-		};
-
-		return;
+	// Process any callbacks for Grade C
+	while ( window.NORLQ && window.NORLQ[ 0 ] ) {
+		window.NORLQ.shift()();
 	}
-
-	/**
-	 * The $CODE and $VARS placeholders are substituted in ResourceLoaderStartUpModule.php.
-	 */
-	function startUp() {
-		mw.config = new mw.Map( $VARS.wgLegacyJavaScriptGlobals );
-
-		$CODE.registrations();
-
-		mw.config.set( $VARS.configuration );
-
-		// Must be after mw.config.set because these callbacks may use mw.loader which
-		// needs to have values 'skin', 'debug' etc. from mw.config.
-		// eslint-disable-next-line vars-on-top
-		var RLQ = window.RLQ || [];
-		while ( RLQ.length ) {
-			RLQ.shift()();
+	window.NORLQ = {
+		push: function ( fn ) {
+			fn();
 		}
-		window.RLQ = {
-			push: function ( fn ) {
-				fn();
-			}
-		};
+	};
 
-		// Clear and disable the other queue
-		window.NORLQ = {
-			// No-op
-			push: function () {}
-		};
-	}
+	// Clear and disable the Grade A queue
+	window.RLQ = {
+		push: function () {}
+	};
+} else {
+	// Handle Grade A
 
 	if ( window.performance && performance.mark ) {
 		performance.mark( 'mwStartup' );
@@ -144,14 +106,40 @@ window.isCompatible = function ( str ) {
 	// This embeds mediawiki.js, which defines 'mw' and 'mw.loader'.
 	$CODE.defineLoader();
 
-	script = document.createElement( 'script' );
-	script.src = $VARS.baseModulesUri;
-	script.onload = function () {
-		// Clean up
-		script.onload = null;
-		script = null;
-		// Callback
-		startUp();
-	};
-	document.head.appendChild( script );
-}() );
+	/**
+	 * The $CODE and $VARS placeholders are substituted in ResourceLoaderStartUpModule.php.
+	 */
+	( function () {
+		/* global mw */
+		mw.config = new mw.Map( $VARS.wgLegacyJavaScriptGlobals );
+
+		$CODE.registrations();
+
+		mw.config.set( $VARS.configuration );
+
+		// Process callbacks for Grade A
+		var queue = window.RLQ;
+		// Replace RLQ placeholder from ResourceLoaderClientHtml with an implementation
+		// that executes simple callbacks, but continues to store callbacks that require
+		// modules.
+		window.RLQ = [];
+		/* global RLQ */
+		RLQ.push = function ( fn ) {
+			if ( typeof fn === 'function' ) {
+				fn();
+			} else {
+				// This callback requires a module, handled in mediawiki.base.
+				RLQ[ RLQ.length ] = fn;
+			}
+		};
+		while ( queue && queue[ 0 ] ) {
+			// Re-use our new push() method
+			RLQ.push( queue.shift() );
+		}
+
+		// Clear and disable the Grade C queue
+		window.NORLQ = {
+			push: function () {}
+		};
+	}() );
+}

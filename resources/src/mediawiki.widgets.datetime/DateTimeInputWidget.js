@@ -1,4 +1,4 @@
-( function ( $, mw ) {
+( function () {
 
 	/**
 	 * DateTimeInputWidgets can be used to input a date, a time, or a date and
@@ -64,7 +64,7 @@
 		this.type = config.type;
 
 		// Parent constructor
-		mw.widgets.datetime.DateTimeInputWidget[ 'super' ].call( this, config );
+		mw.widgets.datetime.DateTimeInputWidget.super.call( this, config );
 
 		// Mixin constructors
 		OO.ui.mixin.IconElement.call( this, config );
@@ -373,6 +373,7 @@
 				} else {
 					maxlength = spec.size;
 					if ( spec.intercalarySize ) {
+						// eslint-disable-next-line jquery/no-each-util
 						$.each( spec.intercalarySize, reduceFunc );
 					}
 					$field = $( '<input>' ).attr( 'type', 'text' )
@@ -422,7 +423,7 @@
 			this.clearButton = new OO.ui.ButtonWidget( {
 				classes: [ 'mw-widgets-datetime-dateTimeInputWidget-field', 'mw-widgets-datetime-dateTimeInputWidget-clearButton' ],
 				framed: false,
-				icon: 'trash',
+				icon: 'clear',
 				disabled: disabled
 			} ).connect( this, {
 				click: 'onClearClick'
@@ -627,7 +628,7 @@
 						);
 					}
 					if ( $field.is( ':input' ) ) {
-						$field.select();
+						$field.trigger( 'select' );
 					}
 					return false;
 			}
@@ -649,7 +650,7 @@
 				this.setValue( this.formatter.getDefaultDate() );
 			}
 			if ( $field.is( ':input' ) ) {
-				$field.select();
+				$field.trigger( 'select' );
 			}
 
 			if ( this.calendar ) {
@@ -794,7 +795,7 @@
 	 * @inheritdoc
 	 */
 	mw.widgets.datetime.DateTimeInputWidget.prototype.setDisabled = function ( disabled ) {
-		mw.widgets.datetime.DateTimeInputWidget[ 'super' ].prototype.setDisabled.call( this, disabled );
+		mw.widgets.datetime.DateTimeInputWidget.super.prototype.setDisabled.call( this, disabled );
 
 		// Flag all our fields as disabled
 		if ( this.$fields ) {
@@ -814,7 +815,7 @@
 	 */
 	mw.widgets.datetime.DateTimeInputWidget.prototype.focus = function () {
 		if ( !this.getFocusedField().length ) {
-			this.$fields.find( '.mw-widgets-datetime-dateTimeInputWidget-editField' ).first().focus();
+			this.$fields.find( '.mw-widgets-datetime-dateTimeInputWidget-editField' ).first().trigger( 'focus' );
 		}
 		return this;
 	};
@@ -834,4 +835,4 @@
 		this.focus();
 	};
 
-}( jQuery, mediaWiki ) );
+}() );

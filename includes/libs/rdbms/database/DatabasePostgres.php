@@ -86,7 +86,7 @@ class DatabasePostgres extends Database {
 		return false;
 	}
 
-	public function open( $server, $user, $password, $dbName ) {
+	protected function open( $server, $user, $password, $dbName, $schema, $tablePrefix ) {
 		# Test for Postgres support, to avoid suppressed fatal error
 		if ( !function_exists( 'pg_connect' ) ) {
 			throw new DBConnectionError(
@@ -100,7 +100,6 @@ class DatabasePostgres extends Database {
 		$this->server = $server;
 		$this->user = $user;
 		$this->password = $password;
-		$this->dbName = $dbName;
 
 		$connectVars = [
 			// pg_connect() user $user as the default database. Since a database is *required*,
@@ -157,30 +156,42 @@ class DatabasePostgres extends Database {
 		$this->query( "SET standard_conforming_strings = on", __METHOD__ );
 		$this->query( "SET bytea_output = 'escape'", __METHOD__ ); // PHP bug 53127
 
-		$this->determineCoreSchema( $this->schema );
-		// The schema to be used is now in the search path; no need for explicit qualification
-		$this->schema = '';
+		$this->determineCoreSchema( $schema );
+		$this->currentDomain = new DatabaseDomain( $dbName, $schema, $tablePrefix );
 
-		return $this->conn;
+		return (bool)$this->conn;
+	}
+
+	protected function relationSchemaQualifier() {
+		if ( $this->coreSchema === $this->currentDomain->getSchema() ) {
+			// The schema to be used is now in the search path; no need for explicit qualification
+			return '';
+		}
+
+		return parent::relationSchemaQualifier();
 	}
 
 	public function databasesAreIndependent() {
 		return true;
 	}
 
-	/**
-	 * Postgres doesn't support selectDB in the same way MySQL does. So if the
-	 * DB name doesn't match the open connection, open a new one
-	 * @param string $db
-	 * @return bool
-	 * @throws DBUnexpectedError
-	 */
-	public function selectDB( $db ) {
-		if ( $this->dbName !== $db ) {
-			return (bool)$this->open( $this->server, $this->user, $this->password, $db );
+	public function doSelectDomain( DatabaseDomain $domain ) {
+		if ( $this->getDBname() !== $domain->getDatabase() ) {
+			// Postgres doesn't support selectDB in the same way MySQL does.
+			// So if the DB name doesn't match the open connection, open a new one
+			$this->open(
+				$this->server,
+				$this->user,
+				$this->password,
+				$domain->getDatabase(),
+				$domain->getSchema(),
+				$domain->getTablePrefix()
+			);
 		} else {
-			return true;
+			$this->currentDomain = $domain;
 		}
+
+		return true;
 	}
 
 	/**
@@ -299,6 +310,10 @@ class DatabasePostgres extends Database {
 	}
 
 	public function numRows( $res ) {
+		if ( $res === false ) {
+			return 0;
+		}
+
 		if ( $res instanceof ResultWrapper ) {
 			$res = $res->result;
 		}
@@ -645,7 +660,7 @@ __INDEXATTR__;
 	 * be quoted with Database::addQuotes()
 	 * $conds may be "*" to copy the whole table
 	 * srcTable may be an array of tables.
-	 * @todo FIXME: Implement this a little better (seperate select/insert)?
+	 * @todo FIXME: Implement this a little better (separate select/insert)?
 	 *
 	 * @param string $destTable
 	 * @param array|string $srcTable
@@ -655,9 +670,8 @@ __INDEXATTR__;
 	 * @param array $insertOptions
 	 * @param array $selectOptions
 	 * @param array $selectJoinConds
-	 * @return bool
 	 */
-	public function nativeInsertSelect(
+	protected function nativeInsertSelect(
 		$destTable, $srcTable, $varMap, $conds, $fname = __METHOD__,
 		$insertOptions = [], $selectOptions = [], $selectJoinConds = []
 	) {
@@ -682,18 +696,18 @@ __INDEXATTR__;
 				$sql = "INSERT INTO $destTable (" . implode( ',', array_keys( $varMap ) ) . ') ' .
 					$selectSql . ' ON CONFLICT DO NOTHING';
 
-				return $this->query( $sql, $fname );
+				$this->query( $sql, $fname );
 			} else {
 				// IGNORE and we don't have ON CONFLICT DO NOTHING, so just use the non-native version
-				return $this->nonNativeInsertSelect(
+				$this->nonNativeInsertSelect(
 					$destTable, $srcTable, $varMap, $conds, $fname,
 					$insertOptions, $selectOptions, $selectJoinConds
 				);
 			}
+		} else {
+			parent::nativeInsertSelect( $destTable, $srcTable, $varMap, $conds, $fname,
+				$insertOptions, $selectOptions, $selectJoinConds );
 		}
-
-		return parent::nativeInsertSelect( $destTable, $srcTable, $varMap, $conds, $fname,
-			$insertOptions, $selectOptions, $selectJoinConds );
 	}
 
 	public function tableName( $name, $format = 'quoted' ) {
@@ -802,7 +816,7 @@ __INDEXATTR__;
 			. ' WHERE relkind = \'r\''
 			. ' AND nspname = ' . $this->addQuotes( $this->getCoreSchema() )
 			. ' AND relname = ' . $this->addQuotes( $oldName )
-			. ' AND adsrc LIKE \'nextval(%\'',
+			. ' AND pg_get_expr(adbin, adrelid) LIKE \'nextval(%\'',
 			$fname
 		);
 		$row = $this->fetchObject( $res );
@@ -837,10 +851,10 @@ __INDEXATTR__;
 			}
 
 			$oid = $this->fetchObject( $res )->oid;
-			$res = $this->query( 'SELECT adsrc FROM pg_attribute a'
+			$res = $this->query( 'SELECT pg_get_expr(adbin, adrelid) AS adsrc FROM pg_attribute a'
 				. ' JOIN pg_attrdef d ON (a.attrelid=d.adrelid and a.attnum=d.adnum)'
 				. " WHERE a.attrelid = $oid"
-				. ' AND adsrc LIKE \'nextval(%\'',
+				. ' AND pg_get_expr(adbin, adrelid) LIKE \'nextval(%\'',
 				$fname
 			);
 			$row = $this->fetchObject( $res );
@@ -857,6 +871,9 @@ __INDEXATTR__;
 		return false;
 	}
 
+	/**
+	 * @suppress SecurityCheck-SQLInjection array_map not recognized T204911
+	 */
 	public function listTables( $prefix = null, $fname = __METHOD__ ) {
 		$eschemas = implode( ',', array_map( [ $this, 'addQuotes' ], $this->getCoreSchemas() ) );
 		$result = $this->query(
@@ -899,22 +916,22 @@ __INDEXATTR__;
 	 * @return string[]
 	 */
 	private function pg_array_parse( $text, &$output, $limit = false, $offset = 1 ) {
-		if ( false === $limit ) {
+		if ( $limit === false ) {
 			$limit = strlen( $text ) - 1;
 			$output = [];
 		}
-		if ( '{}' == $text ) {
+		if ( $text == '{}' ) {
 			return $output;
 		}
 		do {
-			if ( '{' != $text[$offset] ) {
+			if ( $text[$offset] != '{' ) {
 				preg_match( "/(\\{?\"([^\"\\\\]|\\\\.)*\"|[^,{}]+)+([,}]+)/",
 					$text, $match, 0, $offset );
 				$offset += strlen( $match[0] );
-				$output[] = ( '"' != $match[1][0]
+				$output[] = ( $match[1][0] != '"'
 					? $match[1]
 					: stripcslashes( substr( $match[1], 1, -1 ) ) );
-				if ( '},' == $match[3] ) {
+				if ( $match[3] == '},' ) {
 					return $output;
 				}
 			} else {
@@ -1311,10 +1328,6 @@ SQL;
 		}
 
 		return [ $startOpts, $useIndex, $preLimitTail, $postLimitTail, $ignoreIndex ];
-	}
-
-	public function getDBname() {
-		return $this->dbName;
 	}
 
 	public function getServer() {

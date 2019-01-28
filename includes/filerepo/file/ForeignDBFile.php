@@ -126,14 +126,14 @@ class ForeignDBFile extends LocalFile {
 	 * @param Language|null $lang Optional language to fetch description in.
 	 * @return string|false
 	 */
-	function getDescriptionText( $lang = null ) {
+	function getDescriptionText( Language $lang = null ) {
 		global $wgLang;
 
 		if ( !$this->repo->fetchDescription ) {
 			return false;
 		}
 
-		$lang = $lang ?: $wgLang;
+		$lang = $lang ?? $wgLang;
 		$renderUrl = $this->repo->getDescriptionRenderUrl( $this->getName(), $lang->getCode() );
 		if ( !$renderUrl ) {
 			return false;
@@ -152,6 +152,7 @@ class ForeignDBFile extends LocalFile {
 		}
 
 		$cache = MediaWikiServices::getInstance()->getMainWANObjectCache();
+		$fname = __METHOD__;
 
 		return $cache->getWithSetCallback(
 			$this->repo->getLocalCacheKey(
@@ -161,9 +162,9 @@ class ForeignDBFile extends LocalFile {
 				$touched
 			),
 			$this->repo->descriptionCacheExpiry ?: $cache::TTL_UNCACHEABLE,
-			function ( $oldValue, &$ttl, array &$setOpts ) use ( $renderUrl ) {
+			function ( $oldValue, &$ttl, array &$setOpts ) use ( $renderUrl, $fname ) {
 				wfDebug( "Fetching shared description from $renderUrl\n" );
-				$res = Http::get( $renderUrl, [], __METHOD__ );
+				$res = Http::get( $renderUrl, [], $fname );
 				if ( !$res ) {
 					$ttl = WANObjectCache::TTL_UNCACHEABLE;
 				}

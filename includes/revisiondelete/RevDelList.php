@@ -207,7 +207,7 @@ abstract class RevDelList extends RevisionListBase {
 
 			if ( $ok ) {
 				$idsForLog[] = $item->getId();
-				// If any item field was suppressed or unsupressed
+				// If any item field was suppressed or unsuppressed
 				if ( ( $oldBits | $newBits ) & $this->getSuppressBit() ) {
 					$logType = 'suppress';
 				}
@@ -218,14 +218,14 @@ abstract class RevDelList extends RevisionListBase {
 				$virtualOldBits |= $removedBits;
 
 				$status->successCount++;
-				if ( $wgActorTableSchemaMigrationStage <= MIGRATION_WRITE_BOTH ) {
+				if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_WRITE_OLD ) {
 					if ( $item->getAuthorId() > 0 ) {
 						$authorIds[] = $item->getAuthorId();
 					} elseif ( IP::isIPAddress( $item->getAuthorName() ) ) {
 						$authorIPs[] = $item->getAuthorName();
 					}
 				}
-				if ( $wgActorTableSchemaMigrationStage >= MIGRATION_WRITE_BOTH ) {
+				if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_WRITE_NEW ) {
 					$authorActors[] = $item->getAuthorActor();
 				}
 
@@ -271,11 +271,11 @@ abstract class RevDelList extends RevisionListBase {
 
 		// Log it
 		$authorFields = [];
-		if ( $wgActorTableSchemaMigrationStage <= MIGRATION_WRITE_BOTH ) {
+		if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_WRITE_OLD ) {
 			$authorFields['authorIds'] = $authorIds;
 			$authorFields['authorIPs'] = $authorIPs;
 		}
-		if ( $wgActorTableSchemaMigrationStage >= MIGRATION_WRITE_BOTH ) {
+		if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_WRITE_NEW ) {
 			$authorFields['authorActors'] = $authorActors;
 		}
 		$this->updateLog(

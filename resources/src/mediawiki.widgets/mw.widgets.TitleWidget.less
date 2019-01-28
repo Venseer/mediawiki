@@ -37,10 +37,12 @@
 					width: 3.75em;
 					height: 3.75em;
 					left: 0;
+
 					&:not( .mw-widget-titleOptionWidget-hasImage ) {
 						background-color: #c8ccd1;
 						opacity: 0.4;
 					}
+
 					&.mw-widget-titleOptionWidget-hasImage {
 						border: 0;
 						background-size: cover;
@@ -73,7 +75,8 @@
 		}
 	}
 
-	&:not( &-withDescriptions ) {
+	/* TODO: Should be able to use :not( &-withDescriptions ) but LESS version is buggy (T204816) */
+	&:not( .mw-widget-titleWidget-menu-withDescriptions ) {
 		.mw-widget-titleOptionWidget-description {
 			display: none;
 		}

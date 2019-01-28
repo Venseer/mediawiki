@@ -57,7 +57,7 @@ class DatabaseTestHelper extends Database {
 			wfWarn( $msg );
 		};
 		$this->currentDomain = DatabaseDomain::newUnspecified();
-		$this->open( 'localhost', 'testuser', 'password', 'testdb' );
+		$this->open( 'localhost', 'testuser', 'password', 'testdb', null, '' );
 	}
 
 	/**
@@ -148,14 +148,14 @@ class DatabaseTestHelper extends Database {
 
 	// Redeclare parent method to make it public
 	public function nativeReplace( $table, $rows, $fname ) {
-		return parent::nativeReplace( $table, $rows, $fname );
+		parent::nativeReplace( $table, $rows, $fname );
 	}
 
 	function getType() {
 		return 'test';
 	}
 
-	function open( $server, $user, $password, $dbName ) {
+	function open( $server, $user, $password, $dbName, $schema, $tablePrefix ) {
 		$this->conn = (object)[ 'test' ];
 
 		return true;

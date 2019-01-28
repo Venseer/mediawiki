@@ -21,6 +21,7 @@
  * @ingroup Maintenance
  */
 
+use Wikimedia\Rdbms\DBQueryError;
 use Wikimedia\Rdbms\IDatabase;
 
 require_once __DIR__ . '/Maintenance.php';
@@ -49,6 +50,7 @@ class PopulateArchiveRevId extends LoggedUpdateMaintenance {
 	protected function doDBUpdates() {
 		$this->output( "Populating ar_rev_id...\n" );
 		$dbw = $this->getDB( DB_MASTER );
+		self::checkMysqlAutoIncrementBug( $dbw );
 
 		// Quick exit if there are no rows needing updates.
 		$any = $dbw->selectField(
@@ -83,6 +85,53 @@ class PopulateArchiveRevId extends LoggedUpdateMaintenance {
 			$min = min( $arIds );
 			$max = max( $arIds );
 			$this->output( " ... $min-$max\n" );
+		}
+	}
+
+	/**
+	 * Check for (and work around) a MySQL auto-increment bug
+	 *
+	 * (T202032) MySQL until 8.0 and MariaDB until some version after 10.1.34
+	 * don't save the auto-increment value to disk, so on server restart it
+	 * might reuse IDs from deleted revisions. We can fix that with an insert
+	 * with an explicit rev_id value, if necessary.
+	 *
+	 * @param IDatabase $dbw
+	 */
+	public static function checkMysqlAutoIncrementBug( IDatabase $dbw ) {
+		if ( $dbw->getType() !== 'mysql' ) {
+			return;
+		}
+
+		if ( !self::$dummyRev ) {
+			self::$dummyRev = self::makeDummyRevisionRow( $dbw );
+		}
+
+		$ok = false;
+		while ( !$ok ) {
+			try {
+				$dbw->doAtomicSection( __METHOD__, function ( $dbw, $fname ) {
+					$dbw->insert( 'revision', self::$dummyRev, $fname );
+					$id = $dbw->insertId();
+					$toDelete[] = $id;
+
+					$maxId = max(
+						(int)$dbw->selectField( 'archive', 'MAX(ar_rev_id)', [], $fname ),
+						(int)$dbw->selectField( 'slots', 'MAX(slot_revision_id)', [], $fname )
+					);
+					if ( $id <= $maxId ) {
+						$dbw->insert( 'revision', [ 'rev_id' => $maxId + 1 ] + self::$dummyRev, $fname );
+						$toDelete[] = $maxId + 1;
+					}
+
+					$dbw->delete( 'revision', [ 'rev_id' => $toDelete ], $fname );
+				} );
+				$ok = true;
+			} catch ( DBQueryError $e ) {
+				if ( $e->errno != 1062 ) { // 1062 is "duplicate entry", ignore it and retry
+					throw $e;
+				}
+			}
 		}
 	}
 
@@ -171,7 +220,43 @@ class PopulateArchiveRevId extends LoggedUpdateMaintenance {
 			);
 		}
 		if ( !$rev ) {
-			throw new UnexpectedValueException( 'No revisions are available to copy' );
+			// Since no revisions are available to copy, generate a dummy
+			// revision to a dummy page, then rollback the commit
+			wfDebug( __METHOD__ . ": No revisions are available to copy\n" );
+
+			$dbw->begin();
+
+			// Make a title and revision and insert them
+			$title = Title::newFromText( "PopulateArchiveRevId_4b05b46a81e29" );
+			$page = WikiPage::factory( $title );
+			$updater = $page->newPageUpdater(
+				User::newSystemUser( 'Maintenance script', [ 'steal' => true ] )
+			);
+			$updater->setContent(
+				'main',
+				ContentHandler::makeContent( "Content for dummy rev", $title )
+			);
+			$updater->saveRevision(
+				CommentStoreComment::newUnsavedComment( 'dummy rev summary' ),
+				EDIT_NEW | EDIT_SUPPRESS_RC
+			);
+
+			// get the revision row just inserted
+			$rev = $dbw->selectRow(
+				'revision',
+				'*',
+				[],
+				__METHOD__,
+				[ 'ORDER BY' => 'rev_timestamp ASC' ]
+			);
+
+			$dbw->rollback();
+		}
+		if ( !$rev ) {
+			// This should never happen.
+			throw new UnexpectedValueException(
+				'No revisions are available to copy, and one couldn\'t be created'
+			);
 		}
 
 		unset( $rev->rev_id );

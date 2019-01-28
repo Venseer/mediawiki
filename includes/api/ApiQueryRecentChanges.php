@@ -20,6 +20,10 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Storage\NameTableAccessException;
+
 /**
  * A query action to enumerate the recent changes that were done to the wiki.
  * Various filters are supported.
@@ -333,9 +337,7 @@ class ApiQueryRecentChanges extends ApiQueryGeneratorBase {
 			$resultPageSet && $params['generaterevisions'] );
 
 		if ( $this->fld_tags ) {
-			$this->addTables( 'tag_summary' );
-			$this->addJoinConds( [ 'tag_summary' => [ 'LEFT JOIN', [ 'rc_id=ts_rc_id' ] ] ] );
-			$this->addFields( 'ts_tags' );
+			$this->addFields( [ 'ts_tags' => ChangeTags::makeTagSummarySubquery( 'recentchanges' ) ] );
 		}
 
 		if ( $this->fld_sha1 ) {
@@ -359,15 +361,21 @@ class ApiQueryRecentChanges extends ApiQueryGeneratorBase {
 		if ( !is_null( $params['tag'] ) ) {
 			$this->addTables( 'change_tag' );
 			$this->addJoinConds( [ 'change_tag' => [ 'INNER JOIN', [ 'rc_id=ct_rc_id' ] ] ] );
-			$this->addWhereFld( 'ct_tag', $params['tag'] );
+			$changeTagDefStore = MediaWikiServices::getInstance()->getChangeTagDefStore();
+			try {
+				$this->addWhereFld( 'ct_tag_id', $changeTagDefStore->getId( $params['tag'] ) );
+			} catch ( NameTableAccessException $exception ) {
+				// Return nothing.
+				$this->addWhere( '1=0' );
+			}
 		}
 
 		// Paranoia: avoid brute force searches (T19342)
 		if ( !is_null( $params['user'] ) || !is_null( $params['excludeuser'] ) ) {
 			if ( !$user->isAllowed( 'deletedhistory' ) ) {
-				$bitmask = Revision::DELETED_USER;
+				$bitmask = RevisionRecord::DELETED_USER;
 			} elseif ( !$user->isAllowedAny( 'suppressrevision', 'viewsuppressed' ) ) {
-				$bitmask = Revision::DELETED_USER | Revision::DELETED_RESTRICTED;
+				$bitmask = RevisionRecord::DELETED_USER | RevisionRecord::DELETED_RESTRICTED;
 			} else {
 				$bitmask = 0;
 			}
@@ -507,11 +515,11 @@ class ApiQueryRecentChanges extends ApiQueryGeneratorBase {
 
 		/* Add user data and 'anon' flag, if user is anonymous. */
 		if ( $this->fld_user || $this->fld_userid ) {
-			if ( $row->rc_deleted & Revision::DELETED_USER ) {
+			if ( $row->rc_deleted & RevisionRecord::DELETED_USER ) {
 				$vals['userhidden'] = true;
 				$anyHidden = true;
 			}
-			if ( Revision::userCanBitfield( $row->rc_deleted, Revision::DELETED_USER, $user ) ) {
+			if ( RevisionRecord::userCanBitfield( $row->rc_deleted, RevisionRecord::DELETED_USER, $user ) ) {
 				if ( $this->fld_user ) {
 					$vals['user'] = $row->rc_user_text;
 				}
@@ -546,11 +554,13 @@ class ApiQueryRecentChanges extends ApiQueryGeneratorBase {
 
 		/* Add edit summary / log summary. */
 		if ( $this->fld_comment || $this->fld_parsedcomment ) {
-			if ( $row->rc_deleted & Revision::DELETED_COMMENT ) {
+			if ( $row->rc_deleted & RevisionRecord::DELETED_COMMENT ) {
 				$vals['commenthidden'] = true;
 				$anyHidden = true;
 			}
-			if ( Revision::userCanBitfield( $row->rc_deleted, Revision::DELETED_COMMENT, $user ) ) {
+			if ( RevisionRecord::userCanBitfield(
+				$row->rc_deleted, RevisionRecord::DELETED_COMMENT, $user
+			) ) {
 				$comment = $this->commentStore->getComment( 'rc_comment', $row )->text;
 				if ( $this->fld_comment ) {
 					$vals['comment'] = $comment;
@@ -597,11 +607,13 @@ class ApiQueryRecentChanges extends ApiQueryGeneratorBase {
 		}
 
 		if ( $this->fld_sha1 && $row->rev_sha1 !== null ) {
-			if ( $row->rev_deleted & Revision::DELETED_TEXT ) {
+			if ( $row->rev_deleted & RevisionRecord::DELETED_TEXT ) {
 				$vals['sha1hidden'] = true;
 				$anyHidden = true;
 			}
-			if ( Revision::userCanBitfield( $row->rev_deleted, Revision::DELETED_TEXT, $user ) ) {
+			if ( RevisionRecord::userCanBitfield(
+				$row->rev_deleted, RevisionRecord::DELETED_TEXT, $user
+			) ) {
 				if ( $row->rev_sha1 !== '' ) {
 					$vals['sha1'] = Wikimedia\base_convert( $row->rev_sha1, 36, 16, 40 );
 				} else {
@@ -623,7 +635,7 @@ class ApiQueryRecentChanges extends ApiQueryGeneratorBase {
 			}
 		}
 
-		if ( $anyHidden && ( $row->rc_deleted & Revision::DELETED_RESTRICTED ) ) {
+		if ( $anyHidden && ( $row->rc_deleted & RevisionRecord::DELETED_RESTRICTED ) ) {
 			$vals['suppressed'] = true;
 		}
 

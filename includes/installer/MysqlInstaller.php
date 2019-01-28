@@ -192,11 +192,7 @@ class MysqlInstaller extends DatabaseInstaller {
 					$existingSchema = false;
 					$this->parent->showMessage( 'config-unknown-collation' );
 				}
-				if ( isset( $row->Engine ) ) {
-					$existingEngine = $row->Engine;
-				} else {
-					$existingEngine = $row->Type;
-				}
+				$existingEngine = $row->Engine ?? $row->Type;
 			}
 		} else {
 			$existingSchema = false;
@@ -485,16 +481,30 @@ class MysqlInstaller extends DatabaseInstaller {
 		/** @var Database $conn */
 		$conn = $status->value;
 		$dbName = $this->getVar( 'wgDBname' );
-		if ( !$conn->selectDB( $dbName ) ) {
+		if ( !$this->databaseExists( $dbName ) ) {
 			$conn->query(
 				"CREATE DATABASE " . $conn->addIdentifierQuotes( $dbName ) . "CHARACTER SET utf8",
 				__METHOD__
 			);
-			$conn->selectDB( $dbName );
 		}
+		$conn->selectDB( $dbName );
 		$this->setupSchemaVars();
 
 		return $status;
+	}
+
+	/**
+	 * Try to see if a given database exists
+	 * @param string $dbName Database name to check
+	 * @return bool
+	 */
+	private function databaseExists( $dbName ) {
+		$encDatabase = $this->db->addQuotes( $dbName );
+
+		return $this->db->query(
+			"SELECT 1 FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = $encDatabase",
+			__METHOD__
+		)->numRows() > 0;
 	}
 
 	/**

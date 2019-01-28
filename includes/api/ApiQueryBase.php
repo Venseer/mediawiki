@@ -264,6 +264,30 @@ abstract class ApiQueryBase extends ApiBase {
 	}
 
 	/**
+	 * Like addWhereFld for an integer list of IDs
+	 * @since 1.33
+	 * @param string $table Table name
+	 * @param string $field Field name
+	 * @param int[] $ids IDs
+	 * @return int Count of IDs actually included
+	 */
+	protected function addWhereIDsFld( $table, $field, $ids ) {
+		// Use count() to its full documented capabilities to simultaneously
+		// test for null, empty array or empty countable object
+		if ( count( $ids ) ) {
+			$ids = $this->filterIDs( [ [ $table, $field ] ], $ids );
+
+			if ( $ids === [] ) {
+				// Return nothing, no IDs are valid
+				$this->where[] = '0 = 1';
+			} else {
+				$this->where[$field] = $ids;
+			}
+		}
+		return count( $ids );
+	}
+
+	/**
 	 * Add a WHERE clause corresponding to a range, and an ORDER BY
 	 * clause to sort in the right direction
 	 * @param string $field Field name
@@ -402,13 +426,15 @@ abstract class ApiQueryBase extends ApiBase {
 	}
 
 	/**
+	 * @deprecated since 1.33, use LinkFilter::getQueryConditions() instead
 	 * @param string|null $query
 	 * @param string|null $protocol
 	 * @return null|string
 	 */
 	public function prepareUrlQuerySearchString( $query = null, $protocol = null ) {
+		wfDeprecated( __METHOD__, '1.33' );
 		$db = $this->getDB();
-		if ( !is_null( $query ) || $query != '' ) {
+		if ( $query !== null && $query !== '' ) {
 			if ( is_null( $protocol ) ) {
 				$protocol = 'http://';
 			}
@@ -436,28 +462,32 @@ abstract class ApiQueryBase extends ApiBase {
 	 * @return void
 	 */
 	public function showHiddenUsersAddBlockInfo( $showBlockInfo ) {
-		$this->addTables( 'ipblocks' );
-		$this->addJoinConds( [
-			'ipblocks' => [ 'LEFT JOIN', 'ipb_user=user_id' ],
-		] );
+		$db = $this->getDB();
 
-		$this->addFields( 'ipb_deleted' );
+		$tables = [ 'ipblocks' ];
+		$fields = [ 'ipb_deleted' ];
+		$joinConds = [
+			'blk' => [ 'LEFT JOIN', [
+				'ipb_user=user_id',
+				'ipb_expiry > ' . $db->addQuotes( $db->timestamp() ),
+			] ],
+		];
 
 		if ( $showBlockInfo ) {
-			$this->addFields( [
+			$actorQuery = ActorMigration::newMigration()->getJoin( 'ipb_by' );
+			$commentQuery = CommentStore::getStore()->getJoin( 'ipb_reason' );
+			$tables += $actorQuery['tables'] + $commentQuery['tables'];
+			$joinConds += $actorQuery['joins'] + $commentQuery['joins'];
+			$fields = array_merge( $fields, [
 				'ipb_id',
 				'ipb_expiry',
 				'ipb_timestamp'
-			] );
-			$actorQuery = ActorMigration::newMigration()->getJoin( 'ipb_by' );
-			$this->addTables( $actorQuery['tables'] );
-			$this->addFields( $actorQuery['fields'] );
-			$this->addJoinConds( $actorQuery['joins'] );
-			$commentQuery = CommentStore::getStore()->getJoin( 'ipb_reason' );
-			$this->addTables( $commentQuery['tables'] );
-			$this->addFields( $commentQuery['fields'] );
-			$this->addJoinConds( $commentQuery['joins'] );
+			], $actorQuery['fields'], $commentQuery['fields'] );
 		}
+
+		$this->addTables( [ 'blk' => $tables ] );
+		$this->addFields( $fields );
+		$this->addJoinConds( $joinConds );
 
 		// Don't show hidden names
 		if ( !$this->getUser()->isAllowed( 'hideuser' ) ) {

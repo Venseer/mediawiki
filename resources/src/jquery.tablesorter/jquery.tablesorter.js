@@ -43,7 +43,7 @@
  *
  * @author Christian Bach/christian.bach@polyester.se
  */
-( function ( $, mw ) {
+( function () {
 	var ts,
 		parsers = [];
 
@@ -324,6 +324,7 @@
 
 			// Loop through all the dom cells of the thead
 			$tableRows.each( function ( rowIndex, row ) {
+				// eslint-disable-next-line jquery/no-each-util
 				$.each( row.cells, function ( columnIndex, cell ) {
 					var matrixRowIndex,
 						matrixColumnIndex;
@@ -459,7 +460,7 @@
 	function setHeadersCss( table, $headers, list, css, msg, columnToHeader ) {
 		var i, len;
 		// Remove all header information and reset titles to default message
-		$headers.removeClass( css[ 0 ] ).removeClass( css[ 1 ] ).attr( 'title', msg[ 1 ] );
+		$headers.removeClass( css ).attr( 'title', msg[ 1 ] );
 
 		for ( i = 0, len = list.length; i < len; i++ ) {
 			$headers
@@ -770,6 +771,7 @@
 	function convertSortList( sortObjects ) {
 		var sortList = [];
 		sortObjects.forEach( function ( sortObject ) {
+			// eslint-disable-next-line jquery/no-each-util
 			$.each( sortObject, function ( columnIndex, order ) {
 				var orderIndex = ( order === 'desc' ) ? 1 : 0;
 				sortList.push( [ parseInt( columnIndex, 10 ), orderIndex ] );
@@ -840,7 +842,7 @@
 
 				// Get the CSS class names, could be done elsewhere
 				sortCSS = [ config.cssAsc, config.cssDesc ];
-				// Messages tell the the user what the *next* state will be
+				// Messages tell the user what the *next* state will be
 				// so are in reverse order to the CSS classes.
 				sortMsg = [ mw.msg( 'sort-descending' ), mw.msg( 'sort-ascending' ) ];
 
@@ -910,7 +912,7 @@
 
 					// Build the cache for the tbody cells
 					// to share between calculations for this sort action.
-					// Re-calculated each time a sort action is performed due to possiblity
+					// Re-calculated each time a sort action is performed due to possibility
 					// that sort values change. Shouldn't be too expensive, but if it becomes
 					// too slow an event based system should be implemented somehow where
 					// cells get event .change() and bubbles up to the <table> here
@@ -975,7 +977,7 @@
 					}
 
 				// Cancel selection
-				} ).mousedown( function () {
+				} ).on( 'mousedown', function () {
 					if ( config.cancelSelection ) {
 						this.onselectstart = function () {
 							return false;
@@ -1279,4 +1281,4 @@
 		type: 'numeric'
 	} );
 
-}( jQuery, mediaWiki ) );
+}() );

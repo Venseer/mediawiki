@@ -1,5 +1,8 @@
 <?php
 
+use MediaWiki\Block\Restriction\PageRestriction;
+use MediaWiki\Block\Restriction\NamespaceRestriction;
+
 /**
  * @group API
  * @group Database
@@ -12,16 +15,12 @@ class ApiBlockTest extends ApiTestCase {
 
 	protected function setUp() {
 		parent::setUp();
+		$this->tablesUsed = array_merge(
+			$this->tablesUsed,
+			[ 'ipblocks', 'change_tag', 'change_tag_def', 'logging' ]
+		);
 
 		$this->mUser = $this->getMutableTestUser()->getUser();
-	}
-
-	protected function tearDown() {
-		$block = Block::newFromTarget( $this->mUser->getName() );
-		if ( !is_null( $block ) ) {
-			$block->delete();
-		}
-		parent::tearDown();
 	}
 
 	protected function getTokens() {
@@ -125,13 +124,16 @@ class ApiBlockTest extends ApiTestCase {
 		$this->doBlock( [ 'tags' => 'custom tag' ] );
 
 		$dbw = wfGetDB( DB_MASTER );
-		$this->assertSame( 'custom tag', $dbw->selectField(
-			[ 'change_tag', 'logging' ],
-			'ct_tag',
-			[ 'log_type' => 'block' ],
+		$this->assertSame( 1, (int)$dbw->selectField(
+			[ 'change_tag', 'logging', 'change_tag_def' ],
+			'COUNT(*)',
+			[ 'log_type' => 'block', 'ctd_name' => 'custom tag' ],
 			__METHOD__,
 			[],
-			[ 'change_tag' => [ 'INNER JOIN', 'ct_log_id = log_id' ] ]
+			[
+				'change_tag' => [ 'INNER JOIN', 'ct_log_id = log_id' ],
+				'change_tag_def' => [ 'INNER JOIN', 'ctd_id = ct_tag_id' ],
+			]
 		) );
 	}
 
@@ -216,6 +218,44 @@ class ApiBlockTest extends ApiTestCase {
 		$this->doBlock( [ 'expiry' => '' ] );
 	}
 
+	public function testBlockWithoutRestrictions() {
+		$this->setMwGlobals( [
+			'wgEnablePartialBlocks' => true,
+		] );
+
+		$this->doBlock();
+
+		$block = Block::newFromTarget( $this->mUser->getName() );
+
+		$this->assertTrue( $block->isSitewide() );
+		$this->assertCount( 0, $block->getRestrictions() );
+	}
+
+	public function testBlockWithRestrictions() {
+		$this->setMwGlobals( [
+			'wgEnablePartialBlocks' => true,
+		] );
+
+		$title = 'Foo';
+		$page = $this->getExistingTestPage( $title );
+		$namespace = NS_TALK;
+
+		$this->doBlock( [
+			'partial' => true,
+			'pagerestrictions' => $title,
+			'namespacerestrictions' => $namespace,
+		] );
+
+		$block = Block::newFromTarget( $this->mUser->getName() );
+
+		$this->assertFalse( $block->isSitewide() );
+		$this->assertCount( 2, $block->getRestrictions() );
+		$this->assertInstanceOf( PageRestriction::class, $block->getRestrictions()[0] );
+		$this->assertEquals( $title, $block->getRestrictions()[0]->getTitle()->getText() );
+		$this->assertInstanceOf( NamespaceRestriction::class, $block->getRestrictions()[1] );
+		$this->assertEquals( $namespace, $block->getRestrictions()[1]->getValue() );
+	}
+
 	/**
 	 * @expectedException ApiUsageException
 	 * @expectedExceptionMessage The "token" parameter must be set
@@ -226,6 +266,53 @@ class ApiBlockTest extends ApiTestCase {
 				'action' => 'block',
 				'user' => $this->mUser->getName(),
 				'reason' => 'Some reason',
+			],
+			null,
+			false,
+			self::$users['sysop']->getUser()
+		);
+	}
+
+	/**
+	 * @expectedException ApiUsageException
+	 * @expectedExceptionMessage Invalid value "127.0.0.1/64" for user parameter "user".
+	 */
+	public function testBlockWithLargeRange() {
+		$tokens = $this->getTokens();
+
+		$this->doApiRequest(
+			[
+				'action' => 'block',
+				'user' => '127.0.0.1/64',
+				'reason' => 'Some reason',
+				'token' => $tokens['blocktoken'],
+			],
+			null,
+			false,
+			self::$users['sysop']->getUser()
+		);
+	}
+
+	/**
+	 * @expectedException ApiUsageException
+	 * @expectedExceptionMessage Too many values supplied for parameter "pagerestrictions". The
+	 * limit is 10.
+	 */
+	public function testBlockingToManyPageRestrictions() {
+		$this->setMwGlobals( [
+			'wgEnablePartialBlocks' => true,
+		] );
+
+		$tokens = $this->getTokens();
+
+		$this->doApiRequest(
+			[
+				'action' => 'block',
+				'user' => $this->mUser->getName(),
+				'reason' => 'Some reason',
+				'partial' => true,
+				'pagerestrictions' => 'One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven',
+				'token' => $tokens['blocktoken'],
 			],
 			null,
 			false,

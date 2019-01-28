@@ -217,7 +217,7 @@ abstract class MediaTransformOutput {
 	 * @return bool Success
 	 */
 	public function streamFile( $headers = [] ) {
-		$this->streamFileWithStatus( $headers )->isOK();
+		return $this->streamFileWithStatus( $headers )->isOK();
 	}
 
 	/**
@@ -367,6 +367,7 @@ class ThumbnailImage extends MediaTransformOutput {
 		$attribs = [
 			'alt' => $alt,
 			'src' => $this->url,
+			'decoding' => 'async',
 		];
 
 		if ( !empty( $options['custom-url-link'] ) ) {

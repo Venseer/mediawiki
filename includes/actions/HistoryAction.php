@@ -62,12 +62,25 @@ class HistoryAction extends FormlessAction {
 
 	protected function getDescription() {
 		// Creation of a subtitle link pointing to [[Special:Log]]
-		return MediaWikiServices::getInstance()->getLinkRenderer()->makeKnownLink(
+		$linkRenderer = MediaWikiServices::getInstance()->getLinkRenderer();
+		$subtitle = $linkRenderer->makeKnownLink(
 			SpecialPage::getTitleFor( 'Log' ),
 			$this->msg( 'viewpagelogs' )->text(),
 			[],
 			[ 'page' => $this->getTitle()->getPrefixedText() ]
 		);
+
+		$links = [];
+		// Allow extensions to add more links
+		Hooks::run( 'HistoryPageToolLinks', [ $this->getContext(), $linkRenderer, &$links ] );
+		if ( $links ) {
+			$subtitle .= ''
+				. $this->msg( 'word-separator' )->escaped()
+				. $this->msg( 'parentheses' )
+					->rawParams( $this->getLanguage()->pipeList( $links ) )
+					->escaped();
+		}
+		return $subtitle;
 	}
 
 	/**
@@ -345,12 +358,13 @@ class HistoryAction extends FormlessAction {
 			$rev->getComment()
 		);
 		if ( $rev->getComment() == '' ) {
-			global $wgContLang;
+			$contLang = MediaWikiServices::getInstance()->getContentLanguage();
 			$title = $this->msg( 'history-feed-item-nocomment',
 				$rev->getUserText(),
-				$wgContLang->timeanddate( $rev->getTimestamp() ),
-				$wgContLang->date( $rev->getTimestamp() ),
-				$wgContLang->time( $rev->getTimestamp() ) )->inContentLanguage()->text();
+				$contLang->timeanddate( $rev->getTimestamp() ),
+				$contLang->date( $rev->getTimestamp() ),
+				$contLang->time( $rev->getTimestamp() )
+			)->inContentLanguage()->text();
 		} else {
 			$title = $rev->getUserText() .
 				$this->msg( 'colon-separator' )->inContentLanguage()->text() .
@@ -401,7 +415,13 @@ class HistoryPager extends ReverseChronologicalPager {
 	 * @param string $tagFilter
 	 * @param array $conds
 	 */
-	function __construct( $historyPage, $year = '', $month = '', $tagFilter = '', $conds = [] ) {
+	public function __construct(
+		HistoryAction $historyPage,
+		$year = '',
+		$month = '',
+		$tagFilter = '',
+		array $conds = []
+	) {
 		parent::__construct( $historyPage->getContext() );
 		$this->historyPage = $historyPage;
 		$this->tagFilter = $tagFilter;
@@ -478,7 +498,7 @@ class HistoryPager extends ReverseChronologicalPager {
 		return $s;
 	}
 
-	function doBatchLookups() {
+	protected function doBatchLookups() {
 		if ( !Hooks::run( 'PageHistoryPager::doBatchLookups', [ $this, $this->mResult ] ) ) {
 			return;
 		}
@@ -491,7 +511,7 @@ class HistoryPager extends ReverseChronologicalPager {
 			if ( $row->rev_parent_id ) {
 				$revIds[] = $row->rev_parent_id;
 			}
-			if ( !is_null( $row->user_name ) ) {
+			if ( $row->user_name !== null ) {
 				$batch->add( NS_USER, $row->user_name );
 				$batch->add( NS_USER_TALK, $row->user_name );
 			} else { # for anons or usernames of imported revisions
@@ -509,7 +529,7 @@ class HistoryPager extends ReverseChronologicalPager {
 	 *
 	 * @return string HTML output
 	 */
-	function getStartBody() {
+	protected function getStartBody() {
 		$this->lastRow = false;
 		$this->counter = 1;
 		$this->oldIdChecked = 0;
@@ -557,7 +577,7 @@ class HistoryPager extends ReverseChronologicalPager {
 
 	private function getRevisionButton( $name, $msg ) {
 		$this->preventClickjacking();
-		# Note bug #20966, <button> is non-standard in IE<8
+		# Note T22966, <button> is non-standard in IE<8
 		$element = Html::element(
 			'button',
 			[
@@ -571,7 +591,7 @@ class HistoryPager extends ReverseChronologicalPager {
 		return $element;
 	}
 
-	function getEndBody() {
+	protected function getEndBody() {
 		if ( $this->lastRow ) {
 			$latest = $this->counter == 1 && $this->mIsFirst;
 			$firstInList = $this->counter == 1;
@@ -788,7 +808,10 @@ class HistoryPager extends ReverseChronologicalPager {
 		$attribs = [ 'data-mw-revid' => $rev->getId() ];
 
 		Hooks::run( 'PageHistoryLineEnding', [ $this, &$row, &$s, &$classes, &$attribs ] );
-		$attribs = wfArrayFilterByKey( $attribs, [ Sanitizer::class, 'isReservedDataAttribute' ] );
+		$attribs = array_filter( $attribs,
+			[ Sanitizer::class, 'isReservedDataAttribute' ],
+			ARRAY_FILTER_USE_KEY
+		);
 
 		if ( $classes ) {
 			$attribs['class'] = implode( ' ', $classes );

@@ -590,14 +590,14 @@ abstract class File implements IDBAccessObject {
 	 */
 	public function getMatchedLanguage( $userPreferredLanguage ) {
 		$handler = $this->getHandler();
-		if ( $handler && method_exists( $handler, 'getMatchedLanguage' ) ) {
+		if ( $handler ) {
 			return $handler->getMatchedLanguage(
 				$userPreferredLanguage,
 				$handler->getAvailableLanguages( $this )
 			);
-		} else {
-			return null;
 		}
+
+		return null;
 	}
 
 	/**
@@ -1543,7 +1543,7 @@ abstract class File implements IDBAccessObject {
 	function getArchiveRel( $suffix = false ) {
 		$path = 'archive/' . $this->getHashPath();
 		if ( $suffix === false ) {
-			$path = substr( $path, 0, -1 );
+			$path = rtrim( $path, '/' );
 		} else {
 			$path .= $suffix;
 		}
@@ -1586,11 +1586,9 @@ abstract class File implements IDBAccessObject {
 	 * @return string
 	 */
 	function getArchiveThumbRel( $archiveName, $suffix = false ) {
-		$path = 'archive/' . $this->getHashPath() . $archiveName . "/";
-		if ( $suffix === false ) {
-			$path = substr( $path, 0, -1 );
-		} else {
-			$path .= $suffix;
+		$path = $this->getArchiveRel( $archiveName );
+		if ( $suffix !== false ) {
+			$path .= '/' . $suffix;
 		}
 
 		return $path;
@@ -1657,7 +1655,7 @@ abstract class File implements IDBAccessObject {
 		$ext = $this->getExtension();
 		$path = $this->repo->getZoneUrl( 'public', $ext ) . '/archive/' . $this->getHashPath();
 		if ( $suffix === false ) {
-			$path = substr( $path, 0, -1 );
+			$path = rtrim( $path, '/' );
 		} else {
 			$path .= rawurlencode( $suffix );
 		}
@@ -1676,11 +1674,9 @@ abstract class File implements IDBAccessObject {
 		$this->assertRepoDefined();
 		$ext = $this->getExtension();
 		$path = $this->repo->getZoneUrl( 'thumb', $ext ) . '/archive/' .
-			$this->getHashPath() . rawurlencode( $archiveName ) . "/";
-		if ( $suffix === false ) {
-			$path = substr( $path, 0, -1 );
-		} else {
-			$path .= rawurlencode( $suffix );
+			$this->getHashPath() . rawurlencode( $archiveName );
+		if ( $suffix !== false ) {
+			$path .= '/' . rawurlencode( $suffix );
 		}
 
 		return $path;
@@ -1750,7 +1746,7 @@ abstract class File implements IDBAccessObject {
 		$this->assertRepoDefined();
 		$path = $this->repo->getVirtualUrl() . '/public/archive/' . $this->getHashPath();
 		if ( $suffix === false ) {
-			$path = substr( $path, 0, -1 );
+			$path = rtrim( $path, '/' );
 		} else {
 			$path .= rawurlencode( $suffix );
 		}
@@ -2023,7 +2019,7 @@ abstract class File implements IDBAccessObject {
 	 * @note Use getWidth()/getHeight() instead of this method unless you have a
 	 *  a good reason. This method skips all caches.
 	 *
-	 * @param string $filePath The path to the file (e.g. From getLocalPathRef() )
+	 * @param string $filePath The path to the file (e.g. From getLocalRefPath() )
 	 * @return array|false The width, followed by height, with optionally more things after
 	 */
 	function getImageSize( $filePath ) {
@@ -2051,17 +2047,17 @@ abstract class File implements IDBAccessObject {
 	/**
 	 * Get the HTML text of the description page, if available
 	 *
-	 * @param bool|Language $lang Optional language to fetch description in
+	 * @param Language|null $lang Optional language to fetch description in
 	 * @return string|false
 	 */
-	function getDescriptionText( $lang = false ) {
+	function getDescriptionText( Language $lang = null ) {
 		global $wgLang;
 
 		if ( !$this->repo || !$this->repo->fetchDescription ) {
 			return false;
 		}
 
-		$lang = $lang ?: $wgLang;
+		$lang = $lang ?? $wgLang;
 
 		$renderUrl = $this->repo->getDescriptionRenderUrl( $this->getName(), $lang->getCode() );
 		if ( $renderUrl ) {
@@ -2071,13 +2067,14 @@ abstract class File implements IDBAccessObject {
 				$lang->getCode(),
 				md5( $this->getName() )
 			);
+			$fname = __METHOD__;
 
 			return $cache->getWithSetCallback(
 				$key,
 				$this->repo->descriptionCacheExpiry ?: $cache::TTL_UNCACHEABLE,
-				function ( $oldValue, &$ttl, array &$setOpts ) use ( $renderUrl ) {
+				function ( $oldValue, &$ttl, array &$setOpts ) use ( $renderUrl, $fname ) {
 					wfDebug( "Fetching shared description from $renderUrl\n" );
-					$res = Http::get( $renderUrl, [], __METHOD__ );
+					$res = Http::get( $renderUrl, [], $fname );
 					if ( !$res ) {
 						$ttl = WANObjectCache::TTL_UNCACHEABLE;
 					}
@@ -2165,14 +2162,6 @@ abstract class File implements IDBAccessObject {
 	 */
 	function userCan( $field, User $user = null ) {
 		return true;
-	}
-
-	/**
-	 * @deprecated since 1.30, use File::getContentHeaders instead
-	 */
-	function getStreamHeaders() {
-		wfDeprecated( __METHOD__, '1.30' );
-		return $this->getContentHeaders();
 	}
 
 	/**

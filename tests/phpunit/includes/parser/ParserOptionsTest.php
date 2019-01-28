@@ -13,6 +13,7 @@ class ParserOptionsTest extends MediaWikiTestCase {
 		$wrap->defaults = null;
 		$wrap->lazyOptions = [
 			'dateformat' => [ ParserOptions::class, 'initDateFormat' ],
+			'speculativeRevId' => [ ParserOptions::class, 'initSpeculativeRevId' ],
 		];
 		$wrap->inCacheKey = [
 			'dateformat' => true,
@@ -45,12 +46,12 @@ class ParserOptionsTest extends MediaWikiTestCase {
 	public function testNewCanonical() {
 		$wgUser = $this->getMutableTestUser()->getUser();
 		$wgLang = Language::factory( 'fr' );
-		$wgContLang = Language::factory( 'qqx' );
+		$contLang = Language::factory( 'qqx' );
 
+		$this->setContentLang( $contLang );
 		$this->setMwGlobals( [
 			'wgUser' => $wgUser,
 			'wgLang' => $wgLang,
-			'wgContLang' => $wgContLang,
 		] );
 
 		$user = $this->getMutableTestUser()->getUser();
@@ -80,13 +81,12 @@ class ParserOptionsTest extends MediaWikiTestCase {
 		$this->assertSame( $user, $popt->getUser() );
 		$this->assertSame( $lang, $popt->getUserLangObj() );
 
-		// Passing 'canonical' uses an anon and $wgContLang, and ignores
-		// any passed $userLang
+		// Passing 'canonical' uses an anon and $contLang, and ignores any passed $userLang
 		$popt = ParserOptions::newCanonical( 'canonical' );
 		$this->assertTrue( $popt->getUser()->isAnon() );
-		$this->assertSame( $wgContLang, $popt->getUserLangObj() );
+		$this->assertSame( $contLang, $popt->getUserLangObj() );
 		$popt = ParserOptions::newCanonical( 'canonical', $lang2 );
-		$this->assertSame( $wgContLang, $popt->getUserLangObj() );
+		$this->assertSame( $contLang, $popt->getUserLangObj() );
 
 		// Passing an IContextSource uses the user and lang from it, and ignores
 		// any passed $userLang
@@ -308,6 +308,21 @@ class ParserOptionsTest extends MediaWikiTestCase {
 			'dateformat', 'foo', 'numberheadings', 'printable', 'stubthreshold',
 			'thumbsize', 'userlang'
 		], ParserOptions::allCacheVaryingOptions() );
+	}
+
+	public function testGetSpeculativeRevid() {
+		$options = new ParserOptions();
+
+		$this->assertFalse( $options->getSpeculativeRevId() );
+
+		$counter = 0;
+		$options->setSpeculativeRevIdCallback( function () use( &$counter ) {
+			return ++$counter;
+		} );
+
+		// make sure the same value is re-used once it is determined
+		$this->assertSame( 1, $options->getSpeculativeRevId() );
+		$this->assertSame( 1, $options->getSpeculativeRevId() );
 	}
 
 }

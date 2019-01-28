@@ -132,13 +132,18 @@ class InfoAction extends FormlessAction {
 				"mw-pageinfo-${header}"
 			) . "\n";
 			$table = "\n";
+			$below = "";
 			foreach ( $infoTable as $infoRow ) {
+				if ( $infoRow[0] == "below" ) {
+					$below = $infoRow[1] . "\n";
+					continue;
+				}
 				$name = ( $infoRow[0] instanceof Message ) ? $infoRow[0]->escaped() : $infoRow[0];
 				$value = ( $infoRow[1] instanceof Message ) ? $infoRow[1]->escaped() : $infoRow[1];
 				$id = ( $infoRow[0] instanceof Message ) ? $infoRow[0]->getKey() : null;
 				$table = $this->addRow( $table, $name, $value, $id ) . "\n";
 			}
-			$content = $this->addTable( $content, $table ) . "\n";
+			$content = $this->addTable( $content, $table ) . "\n" . $below;
 		}
 
 		// Page footer
@@ -169,7 +174,7 @@ class InfoAction extends FormlessAction {
 	 * @param string $table The table that will be added to the content
 	 * @param string $name The name of the row
 	 * @param string $value The value of the row
-	 * @param string $id The ID to use for the 'tr' element
+	 * @param string|null $id The ID to use for the 'tr' element
 	 * @return string The table with the row added
 	 */
 	protected function addRow( $table, $name, $value, $id ) {
@@ -207,14 +212,14 @@ class InfoAction extends FormlessAction {
 	 * @return array
 	 */
 	protected function pageInfo() {
-		global $wgContLang;
+		$services = MediaWikiServices::getInstance();
 
 		$user = $this->getUser();
 		$lang = $this->getLanguage();
 		$title = $this->getTitle();
 		$id = $title->getArticleID();
 		$config = $this->context->getConfig();
-		$linkRenderer = MediaWikiServices::getInstance()->getLinkRenderer();
+		$linkRenderer = $services->getLinkRenderer();
 
 		$pageCounts = $this->pageCounts( $this->page );
 
@@ -233,13 +238,14 @@ class InfoAction extends FormlessAction {
 		];
 
 		// Is it a redirect? If so, where to?
-		if ( $title->isRedirect() ) {
+		$redirectTarget = $this->page->getRedirectTarget();
+		if ( $redirectTarget !== null ) {
 			$pageInfo['header-basic'][] = [
 				$this->msg( 'pageinfo-redirectsto' ),
-				$linkRenderer->makeLink( $this->page->getRedirectTarget() ) .
+				$linkRenderer->makeLink( $redirectTarget ) .
 				$this->msg( 'word-separator' )->escaped() .
 				$this->msg( 'parentheses' )->rawParams( $linkRenderer->makeLink(
-					$this->page->getRedirectTarget(),
+					$redirectTarget,
 					$this->msg( 'pageinfo-redirectsto-info' )->text(),
 					[],
 					[ 'action' => 'info' ]
@@ -257,6 +263,12 @@ class InfoAction extends FormlessAction {
 		$pageInfo['header-basic'][] = [
 			$this->msg( 'pageinfo-length' ), $lang->formatNum( $title->getLength() )
 		];
+
+		// Page namespace
+		$pageNamespace = $title->getNsText();
+		if ( $pageNamespace ) {
+			$pageInfo['header-basic'][] = [ $this->msg( 'pageinfo-namespace' ), $pageNamespace ];
+		}
 
 		// Page ID (number not localised, as it's a database ID)
 		$pageInfo['header-basic'][] = [ $this->msg( 'pageinfo-article-id' ), $id ];
@@ -503,6 +515,16 @@ class InfoAction extends FormlessAction {
 				$this->msg( "restriction-$restrictionType" ), $message
 			];
 		}
+		$protectLog = SpecialPage::getTitleFor( 'Log' );
+		$pageInfo['header-restrictions'][] = [
+			'below',
+			$linkRenderer->makeKnownLink(
+				$protectLog,
+				$this->msg( 'pageinfo-view-protect-log' )->text(),
+				[],
+				[ 'type' => 'protect', 'page' => $title->getPrefixedText() ]
+			),
+		];
 
 		if ( !$this->page->exists() ) {
 			return $pageInfo;
@@ -599,13 +621,13 @@ class InfoAction extends FormlessAction {
 		];
 
 		// Array of MagicWord objects
-		$magicWords = MagicWord::getDoubleUnderscoreArray();
+		$magicWords = $services->getMagicWordFactory()->getDoubleUnderscoreArray();
 
 		// Array of magic word IDs
 		$wordIDs = $magicWords->names;
 
 		// Array of IDs => localized magic words
-		$localizedWords = $wgContLang->getMagicWords();
+		$localizedWords = $services->getContentLanguage()->getMagicWords();
 
 		$listItems = [];
 		foreach ( $pageProperties as $property => $value ) {
@@ -723,27 +745,18 @@ class InfoAction extends FormlessAction {
 				$dbrWatchlist = wfGetDB( DB_REPLICA, 'watchlist' );
 				$setOpts += Database::getCacheSetOptions( $dbr, $dbrWatchlist );
 
-				if ( $wgActorTableSchemaMigrationStage === MIGRATION_NEW ) {
+				if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_READ_NEW ) {
 					$tables = [ 'revision_actor_temp' ];
 					$field = 'revactor_actor';
 					$pageField = 'revactor_page';
 					$tsField = 'revactor_timestamp';
 					$joins = [];
-				} elseif ( $wgActorTableSchemaMigrationStage === MIGRATION_OLD ) {
+				} else {
 					$tables = [ 'revision' ];
 					$field = 'rev_user_text';
 					$pageField = 'rev_page';
 					$tsField = 'rev_timestamp';
 					$joins = [];
-				} else {
-					$tables = [ 'revision', 'revision_actor_temp', 'actor' ];
-					$field = 'COALESCE( actor_name, rev_user_text)';
-					$pageField = 'rev_page';
-					$tsField = 'rev_timestamp';
-					$joins = [
-						'revision_actor_temp' => [ 'LEFT JOIN', 'revactor_rev = rev_id' ],
-						'actor' => [ 'LEFT JOIN', 'revactor_actor = actor_id' ],
-					];
 				}
 
 				$watchedItemStore = MediaWikiServices::getInstance()->getWatchedItemStore();

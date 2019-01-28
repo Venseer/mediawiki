@@ -28,7 +28,6 @@ DROP SEQUENCE IF EXISTS archive_ar_id_seq CASCADE;
 DROP SEQUENCE IF EXISTS externallinks_el_id_seq CASCADE;
 DROP SEQUENCE IF EXISTS sites_site_id_seq CASCADE;
 DROP SEQUENCE IF EXISTS change_tag_ct_id_seq CASCADE;
-DROP SEQUENCE IF EXISTS tag_summary_ts_id_seq CASCADE;
 DROP FUNCTION IF EXISTS page_deleted() CASCADE;
 DROP FUNCTION IF EXISTS ts2_page_title() CASCADE;
 DROP FUNCTION IF EXISTS ts2_page_text() CASCADE;
@@ -397,7 +396,6 @@ CREATE TABLE site_stats (
   ss_total_pages    INTEGER            DEFAULT NULL,
   ss_users          INTEGER            DEFAULT NULL,
   ss_active_users   INTEGER            DEFAULT NULL,
-  ss_admins         INTEGER            DEFAULT NULL,
   ss_images         INTEGER            DEFAULT NULL
 );
 
@@ -423,13 +421,22 @@ CREATE TABLE ipblocks (
   ipb_deleted           SMALLINT     NOT NULL  DEFAULT 0,
   ipb_block_email       SMALLINT     NOT NULL  DEFAULT 0,
   ipb_allow_usertalk    SMALLINT     NOT NULL  DEFAULT 0,
-  ipb_parent_block_id             INTEGER          NULL  REFERENCES ipblocks(ipb_id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED
+  ipb_parent_block_id   INTEGER          NULL            REFERENCES ipblocks(ipb_id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+  ipb_sitewide          SMALLINT     NOT NULL  DEFAULT 1
 );
 ALTER SEQUENCE ipblocks_ipb_id_seq OWNED BY ipblocks.ipb_id;
 CREATE UNIQUE INDEX ipb_address_unique ON ipblocks (ipb_address,ipb_user,ipb_auto,ipb_anon_only);
 CREATE INDEX ipb_user    ON ipblocks (ipb_user);
 CREATE INDEX ipb_range   ON ipblocks (ipb_range_start,ipb_range_end);
 CREATE INDEX ipb_parent_block_id   ON ipblocks (ipb_parent_block_id);
+
+CREATE TABLE ipblocks_restrictions (
+  ir_ipb_id INTEGER  NOT NULL REFERENCES ipblocks(ipb_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+  ir_type   SMALLINT NOT NULL,
+  ir_value  INTEGER  NOT NULL,
+  PRIMARY KEY (ir_ipb_id, ir_type, ir_value)
+);
+CREATE INDEX /*i*/ir_type_value ON /*_*/ipblocks_restrictions (ir_type, ir_value);
 
 
 CREATE TABLE image (
@@ -453,13 +460,6 @@ CREATE TABLE image (
 CREATE INDEX img_size_idx      ON image (img_size);
 CREATE INDEX img_timestamp_idx ON image (img_timestamp);
 CREATE INDEX img_sha1          ON image (img_sha1);
-
-CREATE TABLE image_comment_temp (
-	imgcomment_name       TEXT NOT NULL,
-	imgcomment_description_id INTEGER NOT NULL,
-	PRIMARY KEY (imgcomment_name, imgcomment_description_id)
-);
-CREATE UNIQUE INDEX imgcomment_name ON image_comment_temp (imgcomment_name);
 
 CREATE TABLE oldimage (
   oi_name          TEXT         NOT NULL,
@@ -554,7 +554,6 @@ CREATE SEQUENCE recentchanges_rc_id_seq;
 CREATE TABLE recentchanges (
   rc_id              INTEGER      NOT NULL  PRIMARY KEY DEFAULT nextval('recentchanges_rc_id_seq'),
   rc_timestamp       TIMESTAMPTZ  NOT NULL,
-  rc_cur_time        TIMESTAMPTZ      NULL,
   rc_user            INTEGER      NOT NULL  DEFAULT 0 REFERENCES mwuser(user_id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
   rc_user_text       TEXT         NOT NULL  DEFAULT '',
   rc_actor           INTEGER      NOT NULL  DEFAULT 0,
@@ -588,6 +587,7 @@ CREATE INDEX rc_cur_id          ON recentchanges (rc_cur_id);
 CREATE INDEX new_name_timestamp ON recentchanges (rc_new, rc_namespace, rc_timestamp);
 CREATE INDEX rc_ip              ON recentchanges (rc_ip);
 CREATE INDEX rc_name_type_patrolled_timestamp ON recentchanges (rc_namespace, rc_type, rc_patrolled, rc_timestamp);
+CREATE INDEX rc_this_oldid      ON recentchanges (rc_this_oldid);
 
 
 CREATE SEQUENCE watchlist_wl_id_seq;
@@ -645,12 +645,6 @@ CREATE TABLE objectcache (
   exptime  TIMESTAMPTZ  NOT NULL
 );
 CREATE INDEX objectcacache_exptime ON objectcache (exptime);
-
-CREATE TABLE transcache (
-  tc_url       TEXT         NOT NULL  UNIQUE,
-  tc_contents  TEXT         NOT NULL,
-  tc_time      TIMESTAMPTZ  NOT NULL
-);
 
 
 CREATE SEQUENCE logging_log_id_seq;
@@ -794,8 +788,7 @@ CREATE TABLE category (
   cat_title    TEXT     NOT NULL,
   cat_pages    INTEGER  NOT NULL  DEFAULT 0,
   cat_subcats  INTEGER  NOT NULL  DEFAULT 0,
-  cat_files    INTEGER  NOT NULL  DEFAULT 0,
-  cat_hidden   SMALLINT NOT NULL  DEFAULT 0
+  cat_files    INTEGER  NOT NULL  DEFAULT 0
 );
 ALTER SEQUENCE category_cat_id_seq OWNED BY category.cat_id;
 CREATE UNIQUE INDEX category_title ON category(cat_title);
@@ -807,33 +800,16 @@ CREATE TABLE change_tag (
   ct_rc_id   INTEGER      NULL,
   ct_log_id  INTEGER      NULL,
   ct_rev_id  INTEGER      NULL,
-  ct_tag     TEXT     NOT NULL,
   ct_params  TEXT         NULL,
-  ct_tag_id  INTEGER      NULL
+  ct_tag_id  INTEGER  NOT NULL
 );
 ALTER SEQUENCE change_tag_ct_id_seq OWNED BY change_tag.ct_id;
-CREATE UNIQUE INDEX change_tag_rc_tag ON change_tag(ct_rc_id,ct_tag);
-CREATE UNIQUE INDEX change_tag_log_tag ON change_tag(ct_log_id,ct_tag);
-CREATE UNIQUE INDEX change_tag_rev_tag ON change_tag(ct_rev_id,ct_tag);
-CREATE INDEX change_tag_tag_id ON change_tag(ct_tag,ct_rc_id,ct_rev_id,ct_log_id);
+
+CREATE UNIQUE INDEX change_tag_rc_tag_id ON change_tag(ct_rc_id,ct_tag_id);
+CREATE UNIQUE INDEX change_tag_log_tag_id ON change_tag(ct_log_id,ct_tag_id);
+CREATE UNIQUE INDEX change_tag_rev_tag_id ON change_tag(ct_rev_id,ct_tag_id);
+
 CREATE INDEX change_tag_tag_id_id ON change_tag(ct_tag_id,ct_rc_id,ct_rev_id,ct_log_id);
-
-CREATE SEQUENCE tag_summary_ts_id_seq;
-CREATE TABLE tag_summary (
-  ts_id      INTEGER  NOT NULL  PRIMARY KEY DEFAULT nextval('tag_summary_ts_id_seq'),
-  ts_rc_id   INTEGER      NULL,
-  ts_log_id  INTEGER      NULL,
-  ts_rev_id  INTEGER      NULL,
-  ts_tags    TEXT     NOT NULL
-);
-ALTER SEQUENCE tag_summary_ts_id_seq OWNED BY tag_summary.ts_id;
-CREATE UNIQUE INDEX tag_summary_rc_id ON tag_summary(ts_rc_id);
-CREATE UNIQUE INDEX tag_summary_log_id ON tag_summary(ts_log_id);
-CREATE UNIQUE INDEX tag_summary_rev_id ON tag_summary(ts_rev_id);
-
-CREATE TABLE valid_tag (
-  vt_tag TEXT NOT NULL PRIMARY KEY
-);
 
 CREATE TABLE user_properties (
   up_user     INTEGER      NULL  REFERENCES mwuser(user_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,

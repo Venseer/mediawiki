@@ -341,7 +341,7 @@ class ApiParse extends ApiBase {
 			$result_array['text'] = $p_result->getText( [
 				'allowTOC' => !$params['disabletoc'],
 				'enableSectionEditLinks' => !$params['disableeditsection'],
-				'unwrap' => $params['wrapoutputclass'] === '',
+				'wrapperDivClass' => $params['wrapoutputclass'],
 				'deduplicateStyles' => !$params['disablestylededuplication'],
 			] );
 			$result_array[ApiResult::META_BC_SUBELEMENTS][] = 'text';
@@ -625,7 +625,7 @@ class ApiParse extends ApiBase {
 	 * This mimicks the behavior of EditPage in formatting a summary
 	 *
 	 * @param Title $title of the page being parsed
-	 * @param Array $params the API parameters of the request
+	 * @param array $params The API parameters of the request
 	 * @return Content|bool
 	 */
 	private function formatSummary( $title, $params ) {
@@ -868,7 +868,10 @@ class ApiParse extends ApiBase {
 			],
 			'disablelimitreport' => false,
 			'disableeditsection' => false,
-			'disabletidy' => false,
+			'disabletidy' => [
+				ApiBase::PARAM_DFLT => false,
+				ApiBase::PARAM_DEPRECATED => true, // Since 1.32
+			],
 			'disablestylededuplication' => false,
 			'generatexml' => [
 				ApiBase::PARAM_DFLT => false,

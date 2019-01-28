@@ -359,7 +359,7 @@ class Status extends StatusValue {
 	/**
 	 * Returns a list of status messages of the given type (or all if false)
 	 *
-	 * @note: this handles RawMessage poorly
+	 * @note this handles RawMessage poorly
 	 *
 	 * @param string|bool $type
 	 * @return array
@@ -388,6 +388,7 @@ class Status extends StatusValue {
 	/**
 	 * Don't save the callback when serializing, because Closures can't be
 	 * serialized and we're going to clear it in __wakeup anyway.
+	 * @return array
 	 */
 	function __sleep() {
 		$keys = array_keys( get_object_vars( $this ) );

@@ -5,7 +5,7 @@
 * @author neilk@wikimedia.org
 * @author mflaschen@wikimedia.org
 */
-( function ( mw, $ ) {
+( function () {
 	/**
 	 * @class mw.jqueryMsg
 	 * @singleton
@@ -20,7 +20,7 @@
 			},
 			// Whitelist for allowed HTML elements in wikitext.
 			// Self-closing tags are not currently supported.
-			// Can be populated via setPrivateData().
+			// Can be populated via setParserDefaults().
 			allowedHtmlElements: [],
 			// Key tag name, value allowed attributes for that tag.
 			// See Sanitizer::setupAttributeWhitelist
@@ -81,7 +81,7 @@
 			if ( typeof children[ i ] !== 'object' ) {
 				children[ i ] = document.createTextNode( children[ i ] );
 			}
-			if ( children[ i ] instanceof jQuery && children[ i ].hasClass( 'mediaWiki_htmlEmitter' ) ) {
+			if ( children[ i ] instanceof $ && children[ i ].hasClass( 'mediaWiki_htmlEmitter' ) ) {
 				children[ i ] = children[ i ].contents();
 			}
 		}
@@ -113,7 +113,7 @@
 	 * @return {string} Textual value of input
 	 */
 	function textify( input ) {
-		if ( input instanceof jQuery ) {
+		if ( input instanceof $ ) {
 			input = input.text();
 		}
 		return String( input );
@@ -297,7 +297,7 @@
 		 * @return {jQuery}
 		 */
 		parse: function ( key, replacements ) {
-			var ast = this.getAst( key );
+			var ast = this.getAst( key, replacements );
 			return this.emitter.emit( ast, replacements );
 		},
 
@@ -306,16 +306,22 @@
 		 * Note that we pass '⧼' + key + '⧽' back for a missing message here.
 		 *
 		 * @param {string} key
+		 * @param {Array} replacements Variable replacements for $1, $2... $n
 		 * @return {string|Array} string of '⧼key⧽' if message missing, simple string if possible, array of arrays if needs parsing
 		 */
-		getAst: function ( key ) {
+		getAst: function ( key, replacements ) {
 			var wikiText;
 
 			if ( !Object.prototype.hasOwnProperty.call( this.astCache, key ) ) {
-				wikiText = this.settings.messages.get( key );
-				if ( typeof wikiText !== 'string' ) {
-					wikiText = '⧼' + key + '⧽';
+				if ( mw.config.get( 'wgUserLanguage' ) === 'qqx' ) {
+					wikiText = '(' + key + '$*)';
+				} else {
+					wikiText = this.settings.messages.get( key );
+					if ( typeof wikiText !== 'string' ) {
+						wikiText = '⧼' + key + '⧽';
+					}
 				}
+				wikiText = mw.internalDoTransformFormatForQqx( wikiText, replacements );
 				this.astCache[ key ] = this.wikiTextToAst( wikiText );
 			}
 			return this.astCache[ key ];
@@ -956,6 +962,7 @@
 	mw.jqueryMsg.HtmlEmitter = function ( language, magic ) {
 		var jmsg = this;
 		this.language = language;
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( magic, function ( key, val ) {
 			jmsg[ key.toLowerCase() ] = function () {
 				return val;
@@ -981,6 +988,7 @@
 				// typeof returns object for arrays
 				case 'object':
 					// node is an array of nodes
+					// eslint-disable-next-line jquery/no-map-util
 					subnodes = $.map( node.slice( 1 ), function ( n ) {
 						return jmsg.emit( n, replacements );
 					} );
@@ -1021,6 +1029,7 @@
 		 */
 		concat: function ( nodes ) {
 			var $span = $( '<span>' ).addClass( 'mediaWiki_htmlEmitter' );
+			// eslint-disable-next-line jquery/no-each-util
 			$.each( nodes, function ( i, node ) {
 				// Let jQuery append nodes, arrays of nodes and jQuery objects
 				// other things (strings, numbers, ..) are appended as text nodes (not as HTML strings)
@@ -1039,7 +1048,7 @@
 		 *
 		 * @param {Array} nodes List of one element, integer, n >= 0
 		 * @param {Array} replacements List of at least n strings
-		 * @return {string} replacement
+		 * @return {string|jQuery} replacement
 		 */
 		replace: function ( nodes, replacements ) {
 			var index = parseInt( nodes[ 0 ], 10 );
@@ -1112,7 +1121,7 @@
 		 * Handles an (already-validated) HTML element.
 		 *
 		 * @param {Array} nodes Nodes to process when creating element
-		 * @return {jQuery|Array} jQuery node for valid HTML or array for disallowed element
+		 * @return {jQuery}
 		 */
 		htmlelement: function ( nodes ) {
 			var tagName, attributes, contents, $element;
@@ -1141,7 +1150,7 @@
 			var $el,
 				arg = nodes[ 0 ],
 				contents = nodes[ 1 ];
-			if ( arg instanceof jQuery && !arg.hasClass( 'mediaWiki_htmlEmitter' ) ) {
+			if ( arg instanceof $ && !arg.hasClass( 'mediaWiki_htmlEmitter' ) ) {
 				$el = arg;
 			} else {
 				$el = $( '<a>' );
@@ -1170,18 +1179,18 @@
 		 * So convert it back with the current language's convertNumber.
 		 *
 		 * @param {Array} nodes List of nodes, [ {string|number}, {string}, {string} ... ]
-		 * @return {string} selected pluralized form according to current language
+		 * @return {string|jQuery} selected pluralized form according to current language
 		 */
 		plural: function ( nodes ) {
 			var forms, firstChild, firstChildText, explicitPluralFormNumber, formIndex, form, count,
 				explicitPluralForms = {};
 
-			count = parseFloat( this.language.convertNumber( nodes[ 0 ], true ) );
+			count = parseFloat( this.language.convertNumber( textify( nodes[ 0 ] ), true ) );
 			forms = nodes.slice( 1 );
 			for ( formIndex = 0; formIndex < forms.length; formIndex++ ) {
 				form = forms[ formIndex ];
 
-				if ( form instanceof jQuery && form.hasClass( 'mediaWiki_htmlEmitter' ) ) {
+				if ( form instanceof $ && form.hasClass( 'mediaWiki_htmlEmitter' ) ) {
 					// This is a nested node, may be an explicit plural form like 5=[$2 linktext]
 					firstChild = form.contents().get( 0 );
 					if ( firstChild && firstChild.nodeType === Node.TEXT_NODE ) {
@@ -1204,6 +1213,7 @@
 			}
 
 			// Remove explicit plural forms from the forms. They were set undefined in the above loop.
+			// eslint-disable-next-line jquery/no-map-util
 			forms = $.map( forms, function ( form ) {
 				return form;
 			} );
@@ -1222,7 +1232,7 @@
 		 * - a gender string ('male', 'female' or 'unknown')
 		 *
 		 * @param {Array} nodes List of nodes, [ {string|mw.user}, {string}, {string}, {string} ]
-		 * @return {string} Selected gender form according to current language
+		 * @return {string|jQuery} Selected gender form according to current language
 		 */
 		gender: function ( nodes ) {
 			var gender,
@@ -1238,7 +1248,7 @@
 			if ( maybeUser && maybeUser.options instanceof mw.Map ) {
 				gender = maybeUser.options.get( 'gender' );
 			} else {
-				gender = maybeUser;
+				gender = textify( maybeUser );
 			}
 
 			return this.language.gender( gender, forms );
@@ -1249,23 +1259,30 @@
 		 * Invoked by putting `{{grammar:form|word}}` in a message
 		 *
 		 * @param {Array} nodes List of nodes [{Grammar case eg: genitive}, {string word}]
-		 * @return {string} selected grammatical form according to current language
+		 * @return {string|jQuery} selected grammatical form according to current language
 		 */
 		grammar: function ( nodes ) {
 			var form = nodes[ 0 ],
 				word = nodes[ 1 ];
-			return word && form && this.language.convertGrammar( word, form );
+			// These could be jQuery objects (passed as message parameters),
+			// in which case we can't transform them (like rawParams() in PHP).
+			if ( typeof form === 'string' && typeof word === 'string' ) {
+				return this.language.convertGrammar( word, form );
+			}
+			return word;
 		},
 
 		/**
 		 * Tranform parsed structure into a int: (interface language) message include
 		 * Invoked by putting `{{int:othermessage}}` into a message
 		 *
+		 * TODO Syntax in the included message is not parsed, this seems like a bug?
+		 *
 		 * @param {Array} nodes List of nodes
 		 * @return {string} Other message
 		 */
-		'int': function ( nodes ) {
-			var msg = nodes[ 0 ];
+		int: function ( nodes ) {
+			var msg = textify( nodes[ 0 ] );
 			return mw.jqueryMsg.getMessageFunction()( msg.charAt( 0 ).toLowerCase() + msg.slice( 1 ) );
 		},
 
@@ -1291,13 +1308,18 @@
 		 * separator, according to the current language.
 		 *
 		 * @param {Array} nodes List of nodes
-		 * @return {number|string} Formatted number
+		 * @return {number|string|jQuery} Formatted number
 		 */
 		formatnum: function ( nodes ) {
 			var isInteger = !!nodes[ 1 ] && nodes[ 1 ] === 'R',
 				number = nodes[ 0 ];
 
-			return this.language.convertNumber( number, isInteger );
+			// These could be jQuery objects (passed as message parameters),
+			// in which case we can't transform them (like rawParams() in PHP).
+			if ( typeof number === 'string' || typeof number === 'number' ) {
+				return this.language.convertNumber( number, isInteger );
+			}
+			return number;
 		},
 
 		/**
@@ -1353,8 +1375,19 @@
 	// Replace the default message parser with jqueryMsg
 	oldParser = mw.Message.prototype.parser;
 	mw.Message.prototype.parser = function () {
-		if ( this.format === 'plain' || !/\{\{|[<>[&]/.test( this.map.get( this.key ) ) ) {
-			// Fall back to mw.msg's simple parser
+		// Fall back to mw.msg's simple parser where possible
+		if (
+			// Plain text output always uses the simple parser
+			this.format === 'plain' ||
+			(
+				// jqueryMsg parser is needed for messages containing wikitext
+				!/\{\{|[<>[&]/.test( this.map.get( this.key ) ) &&
+				// jqueryMsg parser is needed when jQuery objects or DOM nodes are passed in as parameters
+				!this.parameters.some( function ( param ) {
+					return param instanceof $ || ( param && param.nodeType !== undefined );
+				} )
+			)
+		) {
 			return oldParser.apply( this );
 		}
 
@@ -1385,4 +1418,4 @@
 		};
 	}() );
 
-}( mediaWiki, jQuery ) );
+}() );

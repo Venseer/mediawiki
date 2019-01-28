@@ -100,6 +100,8 @@ class SanitizerTest extends MediaWikiTestCase {
 	 * @param bool $escaped Whether sanitizer let the tag in or escape it (ie: '&lt;video&gt;')
 	 */
 	public function testRemovehtmltagsOnHtml5Tags( $tag, $escaped ) {
+		$this->hideDeprecated( 'disabling tidy' );
+		$this->hideDeprecated( 'MWTidy::setInstance' );
 		MWTidy::setInstance( false );
 
 		if ( $escaped ) {
@@ -162,6 +164,8 @@ class SanitizerTest extends MediaWikiTestCase {
 	 * @covers Sanitizer::removeHTMLtags
 	 */
 	public function testRemoveHTMLtags( $input, $output, $msg = null ) {
+		$this->hideDeprecated( 'disabling tidy' );
+		$this->hideDeprecated( 'MWTidy::setInstance' );
 		MWTidy::setInstance( false );
 		$this->assertEquals( $output, Sanitizer::removeHTMLtags( $input ), $msg );
 	}
@@ -514,7 +518,7 @@ class SanitizerTest extends MediaWikiTestCase {
 	public function provideStripAllTags() {
 		return [
 			[ '<p>Foo</p>', 'Foo' ],
-			[ '<p id="one">Foo</p><p id="two">Bar</p>', 'FooBar' ],
+			[ '<p id="one">Foo</p><p id="two">Bar</p>', 'Foo Bar' ],
 			[ "<p>Foo</p>\n<p>Bar</p>", 'Foo Bar' ],
 			[ '<p>Hello &lt;strong&gt; wor&#x6c;&#100; caf&eacute;</p>', 'Hello <strong> world café' ],
 			[

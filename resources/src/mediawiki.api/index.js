@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 
 	/**
 	 * @class mw.Api
@@ -53,6 +53,7 @@
 	// Pre-populate with fake ajax promises to save http requests for tokens
 	// we already have on the page via the user.tokens module (T36733).
 	promises[ defaultOptions.ajax.url ] = {};
+	// eslint-disable-next-line jquery/no-each-util
 	$.each( mw.user.tokens.get(), function ( key, value ) {
 		// This requires #getToken to use the same key as user.tokens.
 		// Format: token-type + "Token" (eg. csrfToken, patrolToken, watchToken).
@@ -505,4 +506,4 @@
 	];
 	mw.log.deprecate( mw.Api, 'warnings', mw.Api.warnings, null, 'mw.Api.warnings' );
 
-}( mediaWiki, jQuery ) );
+}() );

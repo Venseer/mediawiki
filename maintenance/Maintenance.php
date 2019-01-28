@@ -23,10 +23,9 @@
 // Bail on old versions of PHP, or if composer has not been run yet to install
 // dependencies.
 require_once __DIR__ . '/../includes/PHPVersionCheck.php';
-wfEntryPointCheck( 'cli' );
+wfEntryPointCheck( 'text' );
 
 use MediaWiki\Shell\Shell;
-use Wikimedia\Rdbms\DBReplicationWaitError;
 
 /**
  * @defgroup MaintenanceArchive Maintenance archives
@@ -84,6 +83,9 @@ abstract class Maintenance {
 
 	// This is the list of arguments that were actually passed
 	protected $mArgs = [];
+
+	// Allow arbitrary options to be passed, or only specified ones?
+	protected $mAllowUnregisteredOptions = false;
 
 	// Name of the script currently running
 	protected $mSelf;
@@ -211,6 +213,16 @@ abstract class Maintenance {
 	abstract public function execute();
 
 	/**
+	 * Checks to see if a particular option in supported.  Normally this means it
+	 * has been registered by the script via addOption.
+	 * @param string $name The name of the option
+	 * @return bool true if the option exists, false otherwise
+	 */
+	protected function supportsOption( $name ) {
+		return isset( $this->mParams[$name] );
+	}
+
+	/**
 	 * Add a parameter to the script. Will be displayed on --help
 	 * with the associated description
 	 *
@@ -238,8 +250,8 @@ abstract class Maintenance {
 	}
 
 	/**
-	 * Checks to see if a particular param exists.
-	 * @param string $name The name of the param
+	 * Checks to see if a particular option exists.
+	 * @param string $name The name of the option
 	 * @return bool
 	 */
 	protected function hasOption( $name ) {
@@ -287,6 +299,15 @@ abstract class Maintenance {
 	 */
 	protected function deleteOption( $name ) {
 		unset( $this->mParams[$name] );
+	}
+
+	/**
+	 * Sets whether to allow unregistered options, which are options passed to
+	 * a script that do not match an expected parameter.
+	 * @param bool $allow Should we allow?
+	 */
+	protected function setAllowUnregisteredOptions( $allow ) {
+		$this->mAllowUnregisteredOptions = $allow;
 	}
 
 	/**
@@ -511,7 +532,7 @@ abstract class Maintenance {
 		# Generic (non script dependant) options:
 
 		$this->addOption( 'help', 'Display this help message', false, false, 'h' );
-		$this->addOption( 'quiet', 'Whether to supress non-error output', false, false, 'q' );
+		$this->addOption( 'quiet', 'Whether to suppress non-error output', false, false, 'q' );
 		$this->addOption( 'conf', 'Location of LocalSettings.php, if not default', false, true );
 		$this->addOption( 'wiki', 'For specifying the wiki ID', false, true );
 		$this->addOption( 'globals', 'Output globals at the end of processing for debugging' );
@@ -974,6 +995,15 @@ abstract class Maintenance {
 				$die = true;
 			}
 		}
+		if ( !$this->mAllowUnregisteredOptions ) {
+			# Check for unexpected options
+			foreach ( $this->mOptions as $opt => $val ) {
+				if ( !$this->supportsOption( $opt ) ) {
+					$this->error( "Unexpected option $opt!" );
+					$die = true;
+				}
+			}
+		}
 
 		if ( $die ) {
 			$this->maybeHelp( true );
@@ -1118,7 +1148,7 @@ abstract class Maintenance {
 	 * Handle some last-minute setup here.
 	 */
 	public function finalSetup() {
-		global $wgCommandLineMode, $wgShowSQLErrors, $wgServer;
+		global $wgCommandLineMode, $wgServer, $wgShowExceptionDetails, $wgShowHostnames;
 		global $wgDBadminuser, $wgDBadminpassword, $wgDBDefaultGroup;
 		global $wgDBuser, $wgDBpassword, $wgDBservers, $wgLBFactoryConf;
 
@@ -1177,7 +1207,8 @@ abstract class Maintenance {
 
 		$this->afterFinalSetup();
 
-		$wgShowSQLErrors = true;
+		$wgShowExceptionDetails = true;
+		$wgShowHostnames = true;
 
 		Wikimedia\suppressWarnings();
 		set_time_limit( 0 );
@@ -1361,17 +1392,12 @@ abstract class Maintenance {
 	 */
 	protected function commitTransaction( IDatabase $dbw, $fname ) {
 		$dbw->commit( $fname );
-		try {
-			$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
-			$lbFactory->waitForReplication(
-				[ 'timeout' => 30, 'ifWritesSince' => $this->lastReplicationWait ]
-			);
-			$this->lastReplicationWait = microtime( true );
-
-			return true;
-		} catch ( DBReplicationWaitError $e ) {
-			return false;
-		}
+		$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
+		$waitSucceeded = $lbFactory->waitForReplication(
+			[ 'timeout' => 30, 'ifWritesSince' => $this->lastReplicationWait ]
+		);
+		$this->lastReplicationWait = microtime( true );
+		return $waitSucceeded;
 	}
 
 	/**
@@ -1643,7 +1669,6 @@ class FakeMaintenance extends Maintenance {
 	protected $mSelf = "FakeMaintenanceScript";
 
 	public function execute() {
-		return;
 	}
 }
 
@@ -1674,13 +1699,9 @@ abstract class LoggedUpdateMaintenance extends Maintenance {
 			return false;
 		}
 
-		if ( $db->insert( 'updatelog', [ 'ul_key' => $key ], __METHOD__, 'IGNORE' ) ) {
-			return true;
-		} else {
-			$this->output( $this->updatelogFailedMessage() . "\n" );
+		$db->insert( 'updatelog', [ 'ul_key' => $key ], __METHOD__, 'IGNORE' );
 
-			return false;
-		}
+		return true;
 	}
 
 	/**
@@ -1691,16 +1712,6 @@ abstract class LoggedUpdateMaintenance extends Maintenance {
 		$key = $this->getUpdateKey();
 
 		return "Update '{$key}' already logged as completed.";
-	}
-
-	/**
-	 * Message to show that the update log was unable to log the completion of this update
-	 * @return string
-	 */
-	protected function updatelogFailedMessage() {
-		$key = $this->getUpdateKey();
-
-		return "Unable to log update '{$key}' as completed.";
 	}
 
 	/**

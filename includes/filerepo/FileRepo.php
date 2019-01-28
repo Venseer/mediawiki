@@ -7,6 +7,8 @@
  * @details
  */
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * Base code for file repositories.
  *
@@ -135,6 +137,9 @@ class FileRepo {
 	/** @var string Secret key to pass as an X-Swift-Secret header to the proxied thumb service */
 	protected $thumbProxySecret;
 
+	/** @var WANObjectCache */
+	protected $wanCache;
+
 	/**
 	 * @param array|null $info
 	 * @throws MWException
@@ -198,6 +203,8 @@ class FileRepo {
 		}
 
 		$this->supportsSha1URLs = !empty( $info['supportsSha1URLs'] );
+
+		$this->wanCache = $info['wanCache'] ?? WANObjectCache::newEmpty();
 	}
 
 	/**
@@ -638,11 +645,10 @@ class FileRepo {
 	 * @return string
 	 */
 	public function getNameFromTitle( Title $title ) {
-		global $wgContLang;
 		if ( $this->initialCapital != MWNamespace::isCapitalized( NS_FILE ) ) {
 			$name = $title->getUserCaseDBKey();
 			if ( $this->initialCapital ) {
-				$name = $wgContLang->ucfirst( $name );
+				$name = MediaWikiServices::getInstance()->getContentLanguage()->ucfirst( $name );
 			}
 		} else {
 			$name = $title->getDBkey();
@@ -809,8 +815,9 @@ class FileRepo {
 	 */
 	public function getDescriptionStylesheetUrl() {
 		if ( isset( $this->scriptDirUrl ) ) {
-			return $this->makeUrl( 'title=MediaWiki:Filepage.css&' .
-				wfArrayToCgi( Skin::getDynamicStylesheetQuery() ) );
+			// Must match canonical query parameter order for optimum caching
+			// See Title::getCdnUrls
+			return $this->makeUrl( 'title=MediaWiki:Filepage.css&action=raw&ctype=text/css' );
 		}
 
 		return false;
@@ -1350,7 +1357,7 @@ class FileRepo {
 	}
 
 	/**
-	 * Checks existence of a a file
+	 * Checks existence of a file
 	 *
 	 * @param string $file Virtual URL (or storage path) of file to check
 	 * @return bool
@@ -1505,7 +1512,7 @@ class FileRepo {
 	 * @throws MWException
 	 */
 	protected function resolveToStoragePath( $path ) {
-		if ( $this->isVirtualUrl( $path ) ) {
+		if ( self::isVirtualUrl( $path ) ) {
 			return $this->resolveVirtualUrl( $path );
 		}
 
@@ -1816,7 +1823,7 @@ class FileRepo {
 	/**
 	 * Get a key on the primary cache for this repository.
 	 * Returns false if the repository's cache is not accessible at this site.
-	 * The parameters are the parts of the key, as for wfMemcKey().
+	 * The parameters are the parts of the key.
 	 *
 	 * STUB
 	 * @return bool
@@ -1828,7 +1835,7 @@ class FileRepo {
 	/**
 	 * Get a key for this repo in the local cache domain. These cache keys are
 	 * not shared with remote instances of the repo.
-	 * The parameters are the parts of the key, as for wfMemcKey().
+	 * The parameters are the parts of the key.
 	 *
 	 * @return string
 	 */
@@ -1836,7 +1843,7 @@ class FileRepo {
 		$args = func_get_args();
 		array_unshift( $args, 'filerepo', $this->getName() );
 
-		return wfMemcKey( ...$args );
+		return $this->wanCache->makeKey( ...$args );
 	}
 
 	/**

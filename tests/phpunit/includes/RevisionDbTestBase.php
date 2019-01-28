@@ -1,8 +1,10 @@
 <?php
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Storage\RevisionStore;
-use MediaWiki\Storage\IncompleteRevisionException;
-use MediaWiki\Storage\RevisionRecord;
+use MediaWiki\Revision\MutableRevisionRecord;
+use MediaWiki\Revision\RevisionStore;
+use MediaWiki\Revision\IncompleteRevisionException;
+use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Revision\SlotRecord;
 
 /**
  * RevisionDbTestBase contains test cases for the Revision class that have Database interactions.
@@ -58,8 +60,6 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 	abstract protected function getMcrTablesToReset();
 
 	protected function setUp() {
-		global $wgContLang;
-
 		$this->tablesUsed += $this->getMcrTablesToReset();
 
 		parent::setUp();
@@ -87,15 +87,12 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 			]
 		);
 
-		$this->setMwGlobals( 'wgContentHandlerUseDB', $this->getContentHandlerUseDB() );
-		$this->setMwGlobals(
-			'wgMultiContentRevisionSchemaMigrationStage',
-			$this->getMcrMigrationStage()
-		);
-
-		MWNamespace::clearCaches();
-		// Reset namespace cache
-		$wgContLang->resetNamespaces();
+		$this->setMwGlobals( [
+			'wgMultiContentRevisionSchemaMigrationStage' => $this->getMcrMigrationStage(),
+			'wgContentHandlerUseDB' => $this->getContentHandlerUseDB(),
+			'wgCommentTableSchemaMigrationStage' => MIGRATION_NEW,
+			'wgActorTableSchemaMigrationStage' => SCHEMA_COMPAT_OLD,
+		] );
 
 		$this->overrideMwServices();
 
@@ -108,14 +105,28 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 		}
 	}
 
-	protected function tearDown() {
-		global $wgContLang;
+	/**
+	 * @param string $model
+	 * @return Title
+	 */
+	protected function getMockTitle() {
+		$mock = $this->getMockBuilder( Title::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$mock->expects( $this->any() )
+			->method( 'getNamespace' )
+			->will( $this->returnValue( $this->getDefaultWikitextNS() ) );
+		$mock->expects( $this->any() )
+			->method( 'getPrefixedText' )
+			->will( $this->returnValue( __CLASS__ ) );
+		$mock->expects( $this->any() )
+			->method( 'getDBkey' )
+			->will( $this->returnValue( __CLASS__ ) );
+		$mock->expects( $this->any() )
+			->method( 'getArticleID' )
+			->will( $this->returnValue( 23 ) );
 
-		parent::tearDown();
-
-		MWNamespace::clearCaches();
-		// Reset namespace cache
-		$wgContLang->resetNamespaces();
+		return $mock;
 	}
 
 	abstract protected function getContentHandlerUseDB();
@@ -248,7 +259,7 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 		// getTextId() must be an int!
 		$this->assertInternalType( 'integer', $rev->getTextId() );
 
-		$mainSlot = $rev->getRevisionRecord()->getSlot( 'main', RevisionRecord::RAW );
+		$mainSlot = $rev->getRevisionRecord()->getSlot( SlotRecord::MAIN, RevisionRecord::RAW );
 
 		// we currently only support storage in the text table
 		$textId = MediaWikiServices::getInstance()
@@ -447,6 +458,7 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 			$services->getCommentStore(),
 			$services->getContentModelStore(),
 			$services->getSlotRoleStore(),
+			$services->getSlotRoleRegistry(),
 			$this->getMcrMigrationStage(),
 			$services->getActorMigration()
 		);
@@ -1402,7 +1414,7 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 	 */
 	public function testNewKnownCurrent() {
 		// Setup the services
-		$this->resetGlobalServices();
+		$this->overrideMwServices();
 		$cache = new WANObjectCache( [ 'cache' => new HashBagOStuff() ] );
 		$this->setService( 'MainWANObjectCache', $cache );
 		$db = wfGetDB( DB_MASTER );
@@ -1468,14 +1480,14 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 			Revision::DELETED_TEXT,
 			Revision::DELETED_TEXT,
 			[ 'sysop' ],
-			Title::newFromText( __METHOD__ ),
+			__METHOD__,
 			true,
 		];
 		yield [
 			Revision::DELETED_TEXT,
 			Revision::DELETED_TEXT,
 			[],
-			Title::newFromText( __METHOD__ ),
+			__METHOD__,
 			false,
 		];
 	}
@@ -1485,6 +1497,8 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 	 * @covers Revision::userCanBitfield
 	 */
 	public function testUserCanBitfield( $bitField, $field, $userGroups, $title, $expected ) {
+		$title = Title::newFromText( $title );
+
 		$this->setMwGlobals(
 			'wgGroupPermissions',
 			[
@@ -1558,6 +1572,68 @@ abstract class RevisionDbTestBase extends MediaWikiTestCase {
 			$expected,
 			$revision->userCan( $field, $user )
 		);
+	}
+
+	public function provideGetTextId() {
+		yield [ [], null ];
+
+		$slot = new SlotRecord( (object)[
+			'slot_revision_id' => 42,
+			'slot_content_id' => 1,
+			'content_address' => 'tt:789',
+			'model_name' => CONTENT_MODEL_WIKITEXT,
+			'role_name' => SlotRecord::MAIN,
+			'slot_origin' => 1,
+		], new WikitextContent( 'Test' ) );
+
+		$rec = new MutableRevisionRecord( $this->testPage->getTitle() );
+		$rec->setId( 42 );
+		$rec->setSlot( $slot );
+
+		yield [ $rec, 789 ];
+	}
+
+	/**
+	 * @dataProvider provideGetTextId
+	 * @covers Revision::getTextId()
+	 */
+	public function testGetTextId( $spec, $expected ) {
+		$rev = new Revision( $spec, 0, $this->testPage->getTitle() );
+		$this->assertSame( $expected, $rev->getTextId() );
+	}
+
+	public function provideGetRevisionText() {
+		yield [
+			[ 'text' ]
+		];
+	}
+
+	/**
+	 * @dataProvider provideGetRevisionText
+	 * @covers Revision::getRevisionText
+	 */
+	public function testGetRevisionText( array $queryInfoOptions, array $queryInfoExtra = [] ) {
+		$rev = $this->testPage->getRevisionRecord();
+
+		$queryInfo = Revision::getQueryInfo( $queryInfoOptions );
+		$queryInfo['tables'] = array_merge( $queryInfo['tables'], $queryInfoExtra['tables'] ?? [] );
+		$queryInfo['fields'] = array_merge( $queryInfo['fields'], $queryInfoExtra['fields'] ?? [] );
+		$queryInfo['joins'] = array_merge( $queryInfo['joins'], $queryInfoExtra['joins'] ?? [] );
+
+		$conds = [ 'rev_id' => $rev->getId() ];
+		$row = $this->db->selectRow(
+			$queryInfo['tables'],
+			$queryInfo['fields'],
+			$conds,
+			__METHOD__,
+			[],
+			$queryInfo['joins']
+		);
+
+		$expected = $rev->getContent( SlotRecord::MAIN )->serialize();
+
+		$this->hideDeprecated( 'Revision::getRevisionText (MCR without SCHEMA_COMPAT_WRITE_OLD)' );
+		$this->assertSame( $expected, Revision::getRevisionText( $row ) );
 	}
 
 }

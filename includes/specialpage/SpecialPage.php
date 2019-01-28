@@ -95,7 +95,8 @@ class SpecialPage implements MessageLocalizer {
 	 * @return TitleValue
 	 */
 	public static function getTitleValueFor( $name, $subpage = false, $fragment = '' ) {
-		$name = SpecialPageFactory::getLocalNameFor( $name, $subpage );
+		$name = MediaWikiServices::getInstance()->getSpecialPageFactory()->
+			getLocalNameFor( $name, $subpage );
 
 		return new TitleValue( NS_SPECIAL, $name, $fragment );
 	}
@@ -108,7 +109,8 @@ class SpecialPage implements MessageLocalizer {
 	 * @return Title|null Title object or null if the page doesn't exist
 	 */
 	public static function getSafeTitleFor( $name, $subpage = false ) {
-		$name = SpecialPageFactory::getLocalNameFor( $name, $subpage );
+		$name = MediaWikiServices::getInstance()->getSpecialPageFactory()->
+			getLocalNameFor( $name, $subpage );
 		if ( $name ) {
 			return Title::makeTitleSafe( NS_SPECIAL, $name );
 		} else {
@@ -233,7 +235,8 @@ class SpecialPage implements MessageLocalizer {
 	 */
 	function getLocalName() {
 		if ( !isset( $this->mLocalName ) ) {
-			$this->mLocalName = SpecialPageFactory::getLocalNameFor( $this->mName );
+			$this->mLocalName = MediaWikiServices::getInstance()->getSpecialPageFactory()->
+				getLocalNameFor( $this->mName );
 		}
 
 		return $this->mLocalName;
@@ -628,10 +631,9 @@ class SpecialPage implements MessageLocalizer {
 	 * @param string $summaryMessageKey Message key of the summary
 	 */
 	function outputHeader( $summaryMessageKey = '' ) {
-		global $wgContLang;
-
 		if ( $summaryMessageKey == '' ) {
-			$msg = $wgContLang->lc( $this->getName() ) . '-summary';
+			$msg = MediaWikiServices::getInstance()->getContentLanguage()->lc( $this->getName() ) .
+				'-summary';
 		} else {
 			$msg = $summaryMessageKey;
 		}
@@ -832,8 +834,9 @@ class SpecialPage implements MessageLocalizer {
 			return;
 		}
 
-		global $wgContLang;
-		$msg = $this->msg( $wgContLang->lc( $this->getName() ) . '-helppage' );
+		$msg = $this->msg(
+			MediaWikiServices::getInstance()->getContentLanguage()->lc( $this->getName() ) .
+			'-helppage' );
 
 		if ( !$msg->isDisabled() ) {
 			$helpUrl = Skin::makeUrl( $msg->plain() );

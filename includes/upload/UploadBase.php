@@ -98,11 +98,7 @@ abstract class UploadBase {
 			self::WINDOWS_NONASCII_FILENAME => 'windows-nonascii-filename',
 			self::FILENAME_TOO_LONG => 'filename-toolong',
 		];
-		if ( isset( $code_to_status[$error] ) ) {
-			return $code_to_status[$error];
-		}
-
-		return 'unknown-error';
+		return $code_to_status[$error] ?? 'unknown-error';
 	}
 
 	/**
@@ -300,7 +296,7 @@ abstract class UploadBase {
 	 */
 	public function getRealPath( $srcPath ) {
 		$repo = RepoGroup::singleton()->getLocalRepo();
-		if ( $repo->isVirtualUrl( $srcPath ) ) {
+		if ( FileRepo::isVirtualUrl( $srcPath ) ) {
 			/** @todo Just make uploads work with storage paths UploadFromStash
 			 *  loads files via virtual URLs.
 			 */
@@ -1348,7 +1344,7 @@ abstract class UploadBase {
 		}
 
 		foreach ( $tags as $tag ) {
-			if ( false !== strpos( $chunk, $tag ) ) {
+			if ( strpos( $chunk, $tag ) !== false ) {
 				wfDebug( __METHOD__ . ": found something that may make it be mistaken for html: $tag\n" );
 
 				return true;
@@ -1744,9 +1740,10 @@ abstract class UploadBase {
 			}
 
 			# image filters can pull in url, which could be svg that executes scripts
+			# Only allow url( "#foo" ). Do not allow url( http://example.com )
 			if ( $strippedElement == 'image'
 				&& $stripped == 'filter'
-				&& preg_match( '!url\s*\(!sim', $value )
+				&& preg_match( '!url\s*\(\s*["\']?[^#]!sim', $value )
 			) {
 				wfDebug( __METHOD__ . ": Found image filter with url: "
 					. "\"<$strippedElement $stripped='$value'...\" in uploaded file.\n" );

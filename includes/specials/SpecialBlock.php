@@ -21,6 +21,10 @@
  * @ingroup SpecialPage
  */
 
+use MediaWiki\Block\BlockRestriction;
+use MediaWiki\Block\Restriction\PageRestriction;
+use MediaWiki\Block\Restriction\NamespaceRestriction;
+
 /**
  * A special page that allows users with 'block' right to block users from
  * editing pages and other actions
@@ -63,12 +67,20 @@ class SpecialBlock extends FormSpecialPage {
 	 */
 	protected function checkExecutePermissions( User $user ) {
 		parent::checkExecutePermissions( $user );
-
 		# T17810: blocked admins should have limited access here
 		$status = self::checkUnblockSelf( $this->target, $user );
 		if ( $status !== true ) {
 			throw new ErrorPageError( 'badaccess', $status );
 		}
+	}
+
+	/**
+	 * We allow certain special cases where user is blocked
+	 *
+	 * @return bool
+	 */
+	public function requiresUnblock() {
+		return false;
 	}
 
 	/**
@@ -137,47 +149,76 @@ class SpecialBlock extends FormSpecialPage {
 
 		$conf = $this->getConfig();
 		$oldCommentSchema = $conf->get( 'CommentTableSchemaMigrationStage' ) === MIGRATION_OLD;
+		$enablePartialBlocks = $conf->get( 'EnablePartialBlocks' );
 
-		$a = [
-			'Target' => [
-				'type' => 'user',
-				'ipallowed' => true,
-				'iprange' => true,
-				'label-message' => 'ipaddressorusername',
-				'id' => 'mw-bi-target',
-				'size' => '45',
-				'autofocus' => true,
-				'required' => true,
-				'validation-callback' => [ __CLASS__, 'validateTargetField' ],
-			],
-			'Expiry' => [
-				'type' => 'expiry',
-				'label-message' => 'ipbexpiry',
-				'required' => true,
-				'options' => $suggestedDurations,
-				'default' => $this->msg( 'ipb-default-expiry' )->inContentLanguage()->text(),
-			],
-			'Reason' => [
-				'type' => 'selectandother',
-				// HTML maxlength uses "UTF-16 code units", which means that characters outside BMP
-				// (e.g. emojis) count for two each. This limit is overridden in JS to instead count
-				// Unicode codepoints (or 255 UTF-8 bytes for old schema).
-				'maxlength' => $oldCommentSchema ? 255 : CommentStore::COMMENT_CHARACTER_LIMIT,
-				'maxlength-unit' => 'codepoints',
-				'label-message' => 'ipbreason',
-				'options-message' => 'ipbreason-dropdown',
-			],
-			'CreateAccount' => [
-				'type' => 'check',
-				'label-message' => 'ipbcreateaccount',
-				'default' => true,
-			],
+		$a = [];
+
+		$a['Target'] = [
+			'type' => 'user',
+			'ipallowed' => true,
+			'iprange' => true,
+			'id' => 'mw-bi-target',
+			'size' => '45',
+			'autofocus' => true,
+			'required' => true,
+			'validation-callback' => [ __CLASS__, 'validateTargetField' ],
+			'section' => 'target',
+		];
+
+		$a['Editing'] = [
+			'type' => 'check',
+			'label-message' => 'block-prevent-edit',
+			'default' => true,
+			'section' => 'actions',
+			'disabled' => $enablePartialBlocks ? false : true,
+		];
+
+		if ( $enablePartialBlocks ) {
+			$a['EditingRestriction'] = [
+				'type' => 'radio',
+				'cssclass' => 'mw-block-editing-restriction',
+				'options' => [
+					$this->msg( 'ipb-sitewide' )->text() => 'sitewide',
+					$this->msg( 'ipb-partial' )->text() => 'partial',
+				],
+				'section' => 'actions',
+			];
+			$a['PageRestrictions'] = [
+				'type' => 'titlesmultiselect',
+				'label' => $this->msg( 'ipb-pages-label' )->text(),
+				'exists' => true,
+				'max' => 10,
+				'cssclass' => 'mw-block-restriction',
+				'showMissing' => false,
+				'input' => [
+					'autocomplete' => false
+				],
+				'section' => 'actions',
+			];
+			$a['NamespaceRestrictions'] = [
+				'type' => 'namespacesmultiselect',
+				'label' => $this->msg( 'ipb-namespaces-label' )->text(),
+				'exists' => true,
+				'cssclass' => 'mw-block-restriction',
+				'input' => [
+					'autocomplete' => false
+				],
+				'section' => 'actions',
+			];
+		}
+
+		$a['CreateAccount'] = [
+			'type' => 'check',
+			'label-message' => 'ipbcreateaccount',
+			'default' => true,
+			'section' => 'actions',
 		];
 
 		if ( self::canBlockEmail( $user ) ) {
 			$a['DisableEmail'] = [
 				'type' => 'check',
 				'label-message' => 'ipbemailban',
+				'section' => 'actions',
 			];
 		}
 
@@ -186,13 +227,34 @@ class SpecialBlock extends FormSpecialPage {
 				'type' => 'check',
 				'label-message' => 'ipb-disableusertalk',
 				'default' => false,
+				'section' => 'actions',
 			];
 		}
+
+		$a['Expiry'] = [
+			'type' => 'expiry',
+			'required' => true,
+			'options' => $suggestedDurations,
+			'default' => $this->msg( 'ipb-default-expiry' )->inContentLanguage()->text(),
+			'section' => 'expiry',
+		];
+
+		$a['Reason'] = [
+			'type' => 'selectandother',
+			// HTML maxlength uses "UTF-16 code units", which means that characters outside BMP
+			// (e.g. emojis) count for two each. This limit is overridden in JS to instead count
+			// Unicode codepoints (or 255 UTF-8 bytes for old schema).
+			'maxlength' => $oldCommentSchema ? 255 : CommentStore::COMMENT_CHARACTER_LIMIT,
+			'maxlength-unit' => 'codepoints',
+			'options-message' => 'ipbreason-dropdown',
+			'section' => 'reason',
+		];
 
 		$a['AutoBlock'] = [
 			'type' => 'check',
 			'label-message' => 'ipbenableautoblock',
 			'default' => true,
+			'section' => 'options',
 		];
 
 		# Allow some users to hide name from block log, blocklist and listusers
@@ -201,6 +263,7 @@ class SpecialBlock extends FormSpecialPage {
 				'type' => 'check',
 				'label-message' => 'ipbhidename',
 				'cssclass' => 'mw-block-hideuser',
+				'section' => 'options',
 			];
 		}
 
@@ -209,6 +272,7 @@ class SpecialBlock extends FormSpecialPage {
 			$a['Watch'] = [
 				'type' => 'check',
 				'label-message' => 'ipbwatchuser',
+				'section' => 'options',
 			];
 		}
 
@@ -216,6 +280,7 @@ class SpecialBlock extends FormSpecialPage {
 			'type' => 'check',
 			'label-message' => 'ipb-hardblock',
 			'default' => false,
+			'section' => 'options',
 		];
 
 		# This is basically a copy of the Target field, but the user can't change it, so we
@@ -327,6 +392,43 @@ class SpecialBlock extends FormSpecialPage {
 			unset( $fields['Confirm']['default'] );
 			$this->preErrors[] = [ 'ipb-blockingself', 'ipb-confirmaction' ];
 		}
+
+		if ( $this->getConfig()->get( 'EnablePartialBlocks' ) ) {
+			if ( $block instanceof Block && !$block->isSitewide() ) {
+				$fields['EditingRestriction']['default'] = 'partial';
+			} else {
+				$fields['EditingRestriction']['default'] = 'sitewide';
+			}
+
+			if ( $block instanceof Block ) {
+				$pageRestrictions = [];
+				$namespaceRestrictions = [];
+				foreach ( $block->getRestrictions() as $restriction ) {
+					switch ( $restriction->getType() ) {
+						case PageRestriction::TYPE:
+							$pageRestrictions[] = $restriction->getTitle()->getPrefixedText();
+							break;
+						case NamespaceRestriction::TYPE:
+							$namespaceRestrictions[] = $restriction->getValue();
+							break;
+					}
+				}
+
+				if (
+					!$block->isSitewide() &&
+					empty( $pageRestrictions ) &&
+					empty( $namespaceRestrictions )
+				) {
+					$fields['Editing']['default'] = false;
+				}
+
+				// Sort the restrictions so they are in alphabetical order.
+				sort( $pageRestrictions );
+				$fields['PageRestrictions']['default'] = implode( "\n", $pageRestrictions );
+				sort( $namespaceRestrictions );
+				$fields['NamespaceRestrictions']['default'] = implode( "\n", $namespaceRestrictions );
+			}
+		}
 	}
 
 	/**
@@ -334,6 +436,10 @@ class SpecialBlock extends FormSpecialPage {
 	 * @return string
 	 */
 	protected function preText() {
+		$this->getOutput()->addModuleStyles( [
+			'mediawiki.widgets.TagMultiselectWidget.styles',
+			'mediawiki.special',
+		] );
 		$this->getOutput()->addModules( [ 'mediawiki.special.block' ] );
 
 		$blockCIDRLimit = $this->getConfig()->get( 'BlockCIDRLimit' );
@@ -632,6 +738,7 @@ class SpecialBlock extends FormSpecialPage {
 		global $wgBlockAllowsUTEdit, $wgHideUserContribLimit;
 
 		$performer = $context->getUser();
+		$enablePartialBlocks = $context->getConfig()->get( 'EnablePartialBlocks' );
 
 		// Handled by field validator callback
 		// self::validateTargetField( $data['Target'] );
@@ -740,9 +847,40 @@ class SpecialBlock extends FormSpecialPage {
 		$block->isAutoblocking( $data['AutoBlock'] );
 		$block->mHideName = $data['HideUser'];
 
+		if (
+			$enablePartialBlocks &&
+			isset( $data['EditingRestriction'] ) &&
+			$data['EditingRestriction'] === 'partial'
+		 ) {
+			 $block->isSitewide( false );
+		}
+
 		$reason = [ 'hookaborted' ];
 		if ( !Hooks::run( 'BlockIp', [ &$block, &$performer, &$reason ] ) ) {
 			return $reason;
+		}
+
+		$pageRestrictions = [];
+		$namespaceRestrictions = [];
+		if ( $enablePartialBlocks ) {
+			if ( $data['PageRestrictions'] !== '' ) {
+				$pageRestrictions = array_map( function ( $text ) {
+					$title = Title::newFromText( $text );
+					// Use the link cache since the title has already been loaded when
+					// the field was validated.
+					$restriction = new PageRestriction( 0, $title->getArticleId() );
+					$restriction->setTitle( $title );
+					return $restriction;
+				}, explode( "\n", $data['PageRestrictions'] ) );
+			}
+			if ( $data['NamespaceRestrictions'] !== '' ) {
+				$namespaceRestrictions = array_map( function ( $id ) {
+					return new NamespaceRestriction( 0, $id );
+				}, explode( "\n", $data['NamespaceRestrictions'] ) );
+			}
+
+			$restrictions = ( array_merge( $pageRestrictions, $namespaceRestrictions ) );
+			$block->setRestrictions( $restrictions );
 		}
 
 		$priorBlock = null;
@@ -784,7 +922,19 @@ class SpecialBlock extends FormSpecialPage {
 				$currentBlock->prevents( 'editownusertalk', $block->prevents( 'editownusertalk' ) );
 				$currentBlock->mReason = $block->mReason;
 
+				if ( $enablePartialBlocks ) {
+					// Maintain the sitewide status. If partial blocks is not enabled,
+					// saving the block will result in a sitewide block.
+					$currentBlock->isSitewide( $block->isSitewide() );
+
+					// Set the block id of the restrictions.
+					$currentBlock->setRestrictions(
+						BlockRestriction::setBlockId( $currentBlock->getId(), $restrictions )
+					);
+				}
+
 				$status = $currentBlock->update();
+				// TODO handle failure
 
 				$logaction = 'reblock';
 
@@ -797,6 +947,8 @@ class SpecialBlock extends FormSpecialPage {
 				if ( (bool)$currentBlock->mHideName ) {
 					$data['HideUser'] = true;
 				}
+
+				$block = $currentBlock;
 			}
 		} else {
 			$logaction = 'block';
@@ -826,6 +978,17 @@ class SpecialBlock extends FormSpecialPage {
 		$logParams = [];
 		$logParams['5::duration'] = $data['Expiry'];
 		$logParams['6::flags'] = self::blockLogFlags( $data, $type );
+		$logParams['sitewide'] = $block->isSitewide();
+
+		if ( $enablePartialBlocks && !$block->isSitewide() ) {
+			if ( $data['PageRestrictions'] !== '' ) {
+				$logParams['7::restrictions']['pages'] = explode( "\n", $data['PageRestrictions'] );
+			}
+
+			if ( $data['NamespaceRestrictions'] !== '' ) {
+				$logParams['7::restrictions']['namespaces'] = explode( "\n", $data['NamespaceRestrictions'] );
+			}
+		}
 
 		# Make log entry, if the name is hidden, put it in the suppression log
 		$log_type = $data['HideUser'] ? 'suppress' : 'block';
@@ -834,9 +997,8 @@ class SpecialBlock extends FormSpecialPage {
 		$logEntry->setComment( $data['Reason'][0] );
 		$logEntry->setPerformer( $performer );
 		$logEntry->setParameters( $logParams );
-		# Relate log ID to block IDs (T27763)
-		$blockIds = array_merge( [ $status['id'] ], $status['autoIds'] );
-		$logEntry->setRelations( [ 'ipb_id' => $blockIds ] );
+		# Relate log ID to block ID (T27763)
+		$logEntry->setRelations( [ 'ipb_id' => $block->getId() ] );
 		$logId = $logEntry->insert();
 
 		if ( !empty( $data['Tags'] ) ) {
@@ -854,9 +1016,11 @@ class SpecialBlock extends FormSpecialPage {
 	 *     to the standard "**<duration>|<displayname>" format?
 	 * @param Language|null $lang The language to get the durations in, or null to use
 	 *     the wiki's content language
+	 * @param bool $includeOther Whether to include the 'other' option in the list of
+	 *     suggestions
 	 * @return array
 	 */
-	public static function getSuggestedDurations( $lang = null ) {
+	public static function getSuggestedDurations( Language $lang = null, $includeOther = true ) {
 		$a = [];
 		$msg = $lang === null
 			? wfMessage( 'ipboptions' )->inContentLanguage()->text()
@@ -875,7 +1039,7 @@ class SpecialBlock extends FormSpecialPage {
 			$a[$show] = $value;
 		}
 
-		if ( $a ) {
+		if ( $a && $includeOther ) {
 			// if options exist, add other to the end instead of the begining (which
 			// is what happens by default).
 			$a[ wfMessage( 'ipbother' )->text() ] = 'other';
@@ -924,19 +1088,24 @@ class SpecialBlock extends FormSpecialPage {
 	 * T17810: blocked admins should not be able to block/unblock
 	 * others, and probably shouldn't be able to unblock themselves
 	 * either.
-	 * @param User|int|string $user
+	 *
+	 * Exception: Users can block the user who blocked them, to reduce
+	 * advantage of a malicious account blocking all admins (T150826)
+	 *
+	 * @param User|int|string|null $target Target to block or unblock; could be a User object,
+	 *   or a user ID or username, or null when the target is not known yet (e.g. when
+	 *   displaying Special:Block)
 	 * @param User $performer User doing the request
 	 * @return bool|string True or error message key
 	 */
-	public static function checkUnblockSelf( $user, User $performer ) {
-		if ( is_int( $user ) ) {
-			$user = User::newFromId( $user );
-		} elseif ( is_string( $user ) ) {
-			$user = User::newFromName( $user );
+	public static function checkUnblockSelf( $target, User $performer ) {
+		if ( is_int( $target ) ) {
+			$target = User::newFromId( $target );
+		} elseif ( is_string( $target ) ) {
+			$target = User::newFromName( $target );
 		}
-
 		if ( $performer->isBlocked() ) {
-			if ( $user instanceof User && $user->getId() == $performer->getId() ) {
+			if ( $target instanceof User && $target->getId() == $performer->getId() ) {
 				# User is trying to unblock themselves
 				if ( $performer->isAllowed( 'unblockself' ) ) {
 					return true;
@@ -946,6 +1115,19 @@ class SpecialBlock extends FormSpecialPage {
 				} else {
 					return 'ipbnounblockself';
 				}
+			} elseif (
+				$target instanceof User &&
+				$performer->getBlock() instanceof Block &&
+				$performer->getBlock()->getBy() &&
+				$performer->getBlock()->getBy() === $target->getId()
+			) {
+				// Allow users to block the user that blocked them.
+				// This is to prevent a situation where a malicious user
+				// blocks all other users. This way, the non-malicious
+				// user can block the malicious user back, resulting
+				// in a stalemate.
+				return true;
+
 			} else {
 				# User is trying to block/unblock someone else
 				return 'ipbblocked';
@@ -963,7 +1145,10 @@ class SpecialBlock extends FormSpecialPage {
 	 * @return string
 	 */
 	protected static function blockLogFlags( array $data, $type ) {
-		global $wgBlockAllowsUTEdit;
+		$config = RequestContext::getMain()->getConfig();
+
+		$blockAllowsUTEdit = $config->get( 'BlockAllowsUTEdit' );
+
 		$flags = [];
 
 		# when blocking a user the option 'anononly' is not available/has no effect
@@ -989,7 +1174,7 @@ class SpecialBlock extends FormSpecialPage {
 			$flags[] = 'noemail';
 		}
 
-		if ( $wgBlockAllowsUTEdit && $data['DisableUTEdit'] ) {
+		if ( $blockAllowsUTEdit && $data['DisableUTEdit'] ) {
 			// For grepping: message block-log-flags-nousertalk
 			$flags[] = 'nousertalk';
 		}
@@ -1009,6 +1194,13 @@ class SpecialBlock extends FormSpecialPage {
 	 * @return bool|array True for success, false for didn't-try, array of errors on failure
 	 */
 	public function onSubmit( array $data, HTMLForm $form = null ) {
+		// If "Editing" checkbox is unchecked, the block must be a partial block affecting
+		// actions other than editing, and there must be no restrictions.
+		if ( isset( $data['Editing'] ) && $data['Editing'] === false ) {
+			$data['EditingRestriction'] = 'partial';
+			$data['PageRestrictions'] = '';
+			$data['NamespaceRestrictions'] = '';
+		}
 		return self::processForm( $data, $form->getContext() );
 	}
 

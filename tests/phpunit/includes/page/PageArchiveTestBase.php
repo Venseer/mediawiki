@@ -1,6 +1,6 @@
 <?php
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Storage\RevisionRecord;
+use MediaWiki\Revision\RevisionRecord;
 
 /**
  * Base class for tests of PageArchive against different database schemas.
@@ -43,12 +43,14 @@ abstract class PageArchiveTestBase extends MediaWikiTestCase {
 			[
 				'page',
 				'revision',
+				'revision_comment_temp',
 				'ip_changes',
 				'text',
 				'archive',
 				'recentchanges',
 				'logging',
 				'page_props',
+				'comment',
 			]
 		);
 	}
@@ -80,8 +82,8 @@ abstract class PageArchiveTestBase extends MediaWikiTestCase {
 
 		$this->tablesUsed += $this->getMcrTablesToReset();
 
-		$this->setMwGlobals( 'wgCommentTableSchemaMigrationStage', MIGRATION_OLD );
-		$this->setMwGlobals( 'wgActorTableSchemaMigrationStage', MIGRATION_OLD );
+		$this->setMwGlobals( 'wgCommentTableSchemaMigrationStage', MIGRATION_NEW );
+		$this->setMwGlobals( 'wgActorTableSchemaMigrationStage', SCHEMA_COMPAT_OLD );
 		$this->setMwGlobals( 'wgContentHandlerUseDB', $this->getContentHandlerUseDB() );
 		$this->setMwGlobals(
 			'wgMultiContentRevisionSchemaMigrationStage',

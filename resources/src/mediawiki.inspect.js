@@ -7,7 +7,7 @@
 
 /* eslint-disable no-console */
 
-( function ( mw, $ ) {
+( function () {
 
 	// mw.inspect is a singleton class with static methods
 	// that itself can also be invoked as a function (mediawiki.base/mw#inspect).
@@ -28,6 +28,10 @@
 	function sortByProperty( array, prop, descending ) {
 		var order = descending ? -1 : 1;
 		return array.sort( function ( a, b ) {
+			if ( a[ prop ] === undefined || b[ prop ] === undefined ) {
+				// Sort undefined to the end, regardless of direction
+				return a[ prop ] !== undefined ? -1 : b[ prop ] !== undefined ? 1 : 0;
+			}
 			return a[ prop ] > b[ prop ] ? order : a[ prop ] < b[ prop ] ? -order : 0;
 		} );
 	}
@@ -36,9 +40,13 @@
 		var i,
 			units = [ '', ' KiB', ' MiB', ' GiB', ' TiB', ' PiB' ];
 
-		if ( !$.isNumeric( bytes ) || bytes === 0 ) { return bytes; }
+		if ( !$.isNumeric( bytes ) || bytes === 0 ) {
+			return bytes;
+		}
 
-		for ( i = 0; bytes >= 1024; bytes /= 1024 ) { i++; }
+		for ( i = 0; bytes >= 1024; bytes /= 1024 ) {
+			i++;
+		}
 		// Maintain one decimal for kB and above, but don't
 		// add ".0" for bytes.
 		return bytes.toFixed( i > 0 ? 1 : 0 ) + units[ i ];
@@ -149,6 +157,7 @@
 
 		style.textContent = css;
 		document.body.appendChild( style );
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( style.sheet.cssRules, function ( index, rule ) {
 			selectors.total++;
 			// document.querySelector() on prefixed pseudo-elements can throw exceptions
@@ -185,8 +194,6 @@
 	 */
 	inspect.dumpTable = function ( data ) {
 		try {
-			// Bartosz made me put this here.
-			if ( window.opera ) { throw window.opera; }
 			// Use Function.prototype#call to force an exception on Firefox,
 			// which doesn't define console#table but doesn't complain if you
 			// try to invoke it.
@@ -196,9 +203,7 @@
 		} catch ( e ) {}
 		try {
 			console.log( JSON.stringify( data, null, 2 ) );
-			return;
 		} catch ( e ) {}
-		mw.log( data );
 	};
 
 	/**
@@ -206,7 +211,7 @@
 	 *
 	 * When invoked without arguments, prints all available reports.
 	 *
-	 * @param {...string} [reports] One or more of "size", "css", or "store".
+	 * @param {...string} [reports] One or more of "size", "css", "store", or "time".
 	 */
 	inspect.runReports = function () {
 		var reports = arguments.length > 0 ?
@@ -243,7 +248,7 @@
 			var module = mw.loader.moduleRegistry[ moduleName ];
 
 			// Grep module's JavaScript
-			if ( $.isFunction( module.script ) && pattern.test( module.script.toString() ) ) {
+			if ( typeof module.script === 'function' && pattern.test( module.script.toString() ) ) {
 				return true;
 			}
 
@@ -261,6 +266,7 @@
 	};
 
 	/**
+	 * @private
 	 * @class mw.inspect.reports
 	 * @singleton
 	 */
@@ -339,6 +345,44 @@
 				} catch ( e ) {}
 			}
 			return [ stats ];
+		},
+
+		/**
+		 * Generate a breakdown of all loaded modules and their time
+		 * spent during initialisation (measured in milliseconds).
+		 *
+		 * This timing data is collected by mw.loader.profiler.
+		 *
+		 * @return {Object[]} Table rows
+		 */
+		time: function () {
+			var modules;
+
+			if ( !mw.loader.profiler ) {
+				mw.log.warn( 'mw.inspect: The time report requires $wgResourceLoaderEnableJSProfiler.' );
+				return [];
+			}
+
+			modules = inspect.getLoadedModules()
+				.map( function ( moduleName ) {
+					return mw.loader.profiler.getProfile( moduleName );
+				} )
+				.filter( function ( perf ) {
+					// Exclude modules that reached "ready" state without involvement from mw.loader.
+					// This is primarily styles-only as loaded via <link rel="stylesheet">.
+					return perf !== null;
+				} );
+
+			// Sort by total time spent, highest first.
+			sortByProperty( modules, 'total', true );
+
+			// Add human-readable strings
+			modules.forEach( function ( module ) {
+				module.totalInMs = module.total;
+				module.total = module.totalInMs.toLocaleString() + ' ms';
+			} );
+
+			return modules;
 		}
 	};
 
@@ -346,4 +390,4 @@
 		mw.log( 'mw.inspect: reports are not available in debug mode.' );
 	}
 
-}( mediaWiki, jQuery ) );
+}() );

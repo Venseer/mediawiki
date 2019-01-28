@@ -226,20 +226,6 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	}
 
 	/**
-	 * Get all custom filters
-	 *
-	 * @return array Map of filter URL param names to properties (msg/default)
-	 */
-	protected function getCustomFilters() {
-		if ( $this->customFilters === null ) {
-			$this->customFilters = parent::getCustomFilters();
-			Hooks::run( 'SpecialRecentChangesFilters', [ $this, &$this->customFilters ], '1.23' );
-		}
-
-		return $this->customFilters;
-	}
-
-	/**
 	 * Process $par and put options found in $opts. Used when including the page.
 	 *
 	 * @param string $par
@@ -351,17 +337,6 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		);
 
 		return $rows;
-	}
-
-	protected function runMainQueryHook( &$tables, &$fields, &$conds,
-		&$query_options, &$join_conds, $opts
-	) {
-		return parent::runMainQueryHook( $tables, $fields, $conds, $query_options, $join_conds, $opts )
-			&& Hooks::run(
-				'SpecialRecentChangesQuery',
-				[ &$conds, &$tables, &$join_conds, $opts, &$query_options, &$fields ],
-				'1.23'
-			);
 	}
 
 	protected function getDB() {
@@ -578,10 +553,9 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 * @param FormOptions $opts Unused
 	 */
 	function setTopText( FormOptions $opts ) {
-		global $wgContLang;
-
 		$message = $this->msg( 'recentchangestext' )->inContentLanguage();
 		if ( !$message->isDisabled() ) {
+			$contLang = MediaWikiServices::getInstance()->getContentLanguage();
 			// Parse the message in this weird ugly way to preserve the ability to include interlanguage
 			// links in it (T172461). In the future when T66969 is resolved, perhaps we can just use
 			// $message->parse() instead. This code is copied from Message::parseText().
@@ -592,7 +566,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 				// Message class sets the interface flag to false when parsing in a language different than
 				// user language, and this is wiki content language
 				/*interface*/false,
-				$wgContLang
+				$contLang
 			);
 			$content = $parserOutput->getText( [
 				'enableSectionEditLinks' => false,
@@ -601,8 +575,8 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 			$this->getOutput()->addParserOutputMetadata( $parserOutput );
 
 			$langAttributes = [
-				'lang' => $wgContLang->getHtmlCode(),
-				'dir' => $wgContLang->getDir(),
+				'lang' => $contLang->getHtmlCode(),
+				'dir' => $contLang->getDir(),
 			];
 
 			$topLinksAttributes = [ 'class' => 'mw-recentchanges-toplinks' ];
@@ -704,7 +678,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 	 */
 	protected function namespaceFilterForm( FormOptions $opts ) {
 		$nsSelect = Html::namespaceSelector(
-			[ 'selected' => $opts['namespace'], 'all' => '' ],
+			[ 'selected' => $opts['namespace'], 'all' => '', 'in-user-lang' => true ],
 			[ 'name' => 'namespace', 'id' => 'namespace' ]
 		);
 		$nsLabel = Xml::label( $this->msg( 'namespace' )->text(), 'namespace' );
@@ -735,7 +709,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 
 		$categories = array_map( 'trim', explode( '|', $opts['categories'] ) );
 
-		if ( !count( $categories ) ) {
+		if ( $categories === [] ) {
 			return;
 		}
 
@@ -770,7 +744,7 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		}
 
 		# Shortcut?
-		if ( !count( $articles ) || !count( $cats ) ) {
+		if ( $articles === [] || $cats === [] ) {
 			return;
 		}
 
@@ -826,7 +800,11 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$note = '';
 		$msg = $this->msg( 'rclegend' );
 		if ( !$msg->isDisabled() ) {
-			$note .= '<div class="mw-rclegend">' . $msg->parse() . "</div>\n";
+			$note .= Html::rawElement(
+				'div',
+				[ 'class' => 'mw-rclegend' ],
+				$msg->parse()
+			);
 		}
 
 		$lang = $this->getLanguage();
@@ -924,14 +902,21 @@ class SpecialRecentChanges extends ChangesListSpecialPage {
 		$datenow = $lang->userDate( $timestamp, $user );
 		$pipedLinks = '<span class="rcshowhide">' . $lang->pipeList( $links ) . '</span>';
 
-		$rclinks = '<span class="rclinks">' . $this->msg( 'rclinks' )->rawParams( $cl, $dl, '' )
-			->parse() . '</span>';
+		$rclinks = Html::rawElement(
+			'span',
+			[ 'class' => 'rclinks' ],
+			$this->msg( 'rclinks' )->rawParams( $cl, $dl, '' )->parse()
+		);
 
-		$rclistfrom = '<span class="rclistfrom">' . $this->makeOptionsLink(
-			$this->msg( 'rclistfrom' )->rawParams( $now, $timenow, $datenow )->parse(),
-			[ 'from' => $timestamp ],
-			$nondefaults
-		) . '</span>';
+		$rclistfrom = Html::rawElement(
+			'span',
+			[ 'class' => 'rclistfrom' ],
+			$this->makeOptionsLink(
+				$this->msg( 'rclistfrom' )->rawParams( $now, $timenow, $datenow )->parse(),
+				[ 'from' => $timestamp ],
+				$nondefaults
+			)
+		);
 
 		return "{$note}$rclinks<br />$pipedLinks<br />$rclistfrom";
 	}

@@ -1,5 +1,8 @@
 <?php
 
+use Composer\Semver\Semver;
+use Wikimedia\ScopedCallback;
+
 /**
  * ExtensionRegistry class
  *
@@ -36,7 +39,7 @@ class ExtensionRegistry {
 	/**
 	 * Bump whenever the registration cache needs resetting
 	 */
-	const CACHE_VERSION = 6;
+	const CACHE_VERSION = 7;
 
 	/**
 	 * Special key that defines the merge strategy
@@ -73,6 +76,13 @@ class ExtensionRegistry {
 	 * @var array
 	 */
 	protected $attributes = [];
+
+	/**
+	 * Attributes for testing
+	 *
+	 * @var array
+	 */
+	protected $testAttributes = [];
 
 	/**
 	 * @var ExtensionRegistry
@@ -211,7 +221,11 @@ class ExtensionRegistry {
 		$autoloadNamespaces = [];
 		$autoloaderPaths = [];
 		$processor = new ExtensionProcessor();
-		$versionChecker = new VersionChecker( $wgVersion );
+		$versionChecker = new VersionChecker(
+			$wgVersion,
+			PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION . '.' . PHP_RELEASE_VERSION,
+			get_loaded_extensions()
+		);
 		$extDependencies = [];
 		$incompatible = [];
 		$warnings = false;
@@ -381,10 +395,24 @@ class ExtensionRegistry {
 	/**
 	 * Whether a thing has been loaded
 	 * @param string $name
+	 * @param string $constraint The required version constraint for this dependency
+	 * @throws LogicException if a specific contraint is asked for,
+	 *                        but the extension isn't versioned
 	 * @return bool
 	 */
-	public function isLoaded( $name ) {
-		return isset( $this->loaded[$name] );
+	public function isLoaded( $name, $constraint = '*' ) {
+		$isLoaded = isset( $this->loaded[$name] );
+		if ( $constraint === '*' || !$isLoaded ) {
+			return $isLoaded;
+		}
+		// if a specific constraint is requested, but no version is set, throw an exception
+		if ( !isset( $this->loaded[$name]['version'] ) ) {
+			$msg = "{$name} does not expose its version, but an extension or a skin"
+					. " requires: {$constraint}.";
+			throw new LogicException( $msg );
+		}
+
+		return SemVer::satisfies( $this->loaded[$name]['version'], $constraint );
 	}
 
 	/**
@@ -392,11 +420,31 @@ class ExtensionRegistry {
 	 * @return array
 	 */
 	public function getAttribute( $name ) {
-		if ( isset( $this->attributes[$name] ) ) {
-			return $this->attributes[$name];
-		} else {
-			return [];
+		return $this->testAttributes[$name] ??
+			$this->attributes[$name] ?? [];
+	}
+
+	/**
+	 * Force override the value of an attribute during tests
+	 *
+	 * @param string $name Name of attribute to override
+	 * @param array $value Value to set
+	 * @return ScopedCallback to reset
+	 * @since 1.33
+	 */
+	public function setAttributeForTest( $name, array $value ) {
+		// @codeCoverageIgnoreStart
+		if ( !defined( 'MW_PHPUNIT_TEST' ) ) {
+			throw new RuntimeException( __METHOD__ . ' can only be used in tests' );
 		}
+		// @codeCoverageIgnoreEnd
+		if ( isset( $this->testAttributes[$name] ) ) {
+			throw new Exception( "The attribute '$name' has already been overridden" );
+		}
+		$this->testAttributes[$name] = $value;
+		return new ScopedCallback( function () use ( $name ) {
+			unset( $this->testAttributes[$name] );
+		} );
 	}
 
 	/**

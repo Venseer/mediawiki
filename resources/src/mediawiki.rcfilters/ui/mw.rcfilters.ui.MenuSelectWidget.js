@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	/**
 	 * A floating menu widget for the filter list
 	 *
@@ -149,6 +149,7 @@
 		this.$overlay.append( this.highlightPopup.$element );
 
 		// Count groups per view
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( groups, function ( groupName, groupModel ) {
 			if ( !groupModel.isHidden() ) {
 				viewGroupCount[ groupModel.getView() ] = viewGroupCount[ groupModel.getView() ] || 0;
@@ -156,6 +157,7 @@
 			}
 		} );
 
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( groups, function ( groupName, groupModel ) {
 			var currentItems = [],
 				view = groupModel.getView();
@@ -304,12 +306,12 @@
 	/**
 	 * @inheritdoc
 	 */
-	mw.rcfilters.ui.MenuSelectWidget.prototype.onKeyDown = function ( e ) {
+	mw.rcfilters.ui.MenuSelectWidget.prototype.onDocumentKeyDown = function ( e ) {
 		var nextItem,
 			currentItem = this.findHighlightedItem() || this.findSelectedItem();
 
 		// Call parent
-		mw.rcfilters.ui.MenuSelectWidget.parent.prototype.onKeyDown.call( this, e );
+		mw.rcfilters.ui.MenuSelectWidget.parent.prototype.onDocumentKeyDown.call( this, e );
 
 		// We want to select the item on arrow movement
 		// rather than just highlight it, like the menu
@@ -354,4 +356,4 @@
 	mw.rcfilters.ui.MenuSelectWidget.prototype.setUserSelecting = function ( isSelecting ) {
 		this.userSelecting = !!isSelecting;
 	};
-}( mediaWiki ) );
+}() );

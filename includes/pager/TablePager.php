@@ -110,7 +110,7 @@ abstract class TablePager extends IndexPager {
 	 * @protected
 	 * @return string
 	 */
-	function getStartBody() {
+	protected function getStartBody() {
 		$sortClass = $this->getSortHeaderClass();
 
 		$s = '';
@@ -162,7 +162,7 @@ abstract class TablePager extends IndexPager {
 	 * @protected
 	 * @return string
 	 */
-	function getEndBody() {
+	protected function getEndBody() {
 		return "</tbody></table>\n";
 	}
 
@@ -298,7 +298,6 @@ abstract class TablePager extends IndexPager {
 		$types = [ 'first', 'prev', 'next', 'last' ];
 
 		$queries = $this->getPagingQueries();
-		$links = [];
 
 		$buttons = [];
 
@@ -311,6 +310,9 @@ abstract class TablePager extends IndexPager {
 				// * table_pager_prev
 				// * table_pager_next
 				// * table_pager_last
+				'classes' => [ 'TablePager-button-' . $type ],
+				'flags' => [ 'progressive' ],
+				'framed' => false,
 				'label' => $this->msg( 'table_pager_' . $type )->text(),
 				'href' => $queries[ $type ] ?
 					$title->getLinkURL( $queries[ $type ] + $this->getDefaultQuery() ) :

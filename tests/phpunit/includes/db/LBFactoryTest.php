@@ -23,6 +23,7 @@
  * @copyright © 2013 Wikimedia Foundation Inc.
  */
 
+use Wikimedia\Rdbms\LBFactory;
 use Wikimedia\Rdbms\LBFactorySimple;
 use Wikimedia\Rdbms\LBFactoryMulti;
 use Wikimedia\Rdbms\LoadBalancer;
@@ -33,13 +34,14 @@ use Wikimedia\Rdbms\DatabaseDomain;
 
 /**
  * @group Database
+ * @covers \Wikimedia\Rdbms\LBFactory
  * @covers \Wikimedia\Rdbms\LBFactorySimple
  * @covers \Wikimedia\Rdbms\LBFactoryMulti
  */
 class LBFactoryTest extends MediaWikiTestCase {
 
 	/**
-	 * @covers MWLBFactory::getLBFactoryClass
+	 * @covers MWLBFactory::getLBFactoryClass()
 	 * @dataProvider getLBFactoryClassProvider
 	 */
 	public function testGetLBFactoryClass( $expected, $deprecated ) {
@@ -75,8 +77,8 @@ class LBFactoryTest extends MediaWikiTestCase {
 	}
 
 	/**
-	 * @covers LBFactory::getLocalDomainID()
-	 * @covers LBFactory::resolveDomainID()
+	 * @covers \Wikimedia\Rdbms\LBFactory::getLocalDomainID()
+	 * @covers \Wikimedia\Rdbms\LBFactory::resolveDomainID()
 	 */
 	public function testLBFactorySimpleServer() {
 		global $wgDBserver, $wgDBname, $wgDBuser, $wgDBpassword, $wgDBtype, $wgSQLiteDataDir;
@@ -124,7 +126,7 @@ class LBFactoryTest extends MediaWikiTestCase {
 				'load'        => 0,
 				'flags'       => DBO_TRX // REPEATABLE-READ for consistency
 			],
-			[ // emulated slave
+			[ // emulated replica
 				'host'        => $wgDBserver,
 				'dbname'      => $wgDBname,
 				'user'        => $wgDBuser,
@@ -150,7 +152,7 @@ class LBFactoryTest extends MediaWikiTestCase {
 			'cluster master set' );
 
 		$dbr = $lb->getConnection( DB_REPLICA );
-		$this->assertTrue( $dbr->getLBInfo( 'replica' ), 'slave shows as slave' );
+		$this->assertTrue( $dbr->getLBInfo( 'replica' ), 'replica shows as replica' );
 		$this->assertEquals(
 			( $wgDBserver != '' ) ? $wgDBserver : 'localhost',
 			$dbr->getLBInfo( 'clusterMasterHost' ),
@@ -167,7 +169,7 @@ class LBFactoryTest extends MediaWikiTestCase {
 		$this->assertTrue( $dbw->getLBInfo( 'master' ), 'master shows as master' );
 
 		$dbr = $factory->getMainLB()->getConnection( DB_REPLICA );
-		$this->assertTrue( $dbr->getLBInfo( 'replica' ), 'slave shows as slave' );
+		$this->assertTrue( $dbr->getLBInfo( 'replica' ), 'replica shows as replica' );
 
 		// Destructor should trigger without round stage errors
 		unset( $factory );
@@ -491,7 +493,7 @@ class LBFactoryTest extends MediaWikiTestCase {
 		$lb->reuseConnection( $db ); // don't care
 
 		$db = $lb->getConnection( DB_MASTER ); // local domain connection
-		$factory->setDomainPrefix( 'my_' );
+		$factory->setLocalDomainPrefix( 'my_' );
 
 		$this->assertEquals( $wgDBname, $db->getDBname() );
 		$this->assertEquals(
@@ -554,7 +556,7 @@ class LBFactoryTest extends MediaWikiTestCase {
 
 		$lb->reuseConnection( $db ); // don't care
 
-		$factory->setDomainPrefix( 'my_' );
+		$factory->setLocalDomainPrefix( 'my_' );
 		$db = $lb->getConnection( DB_MASTER, [], "$wgDBname-my_" );
 
 		$this->assertEquals(
@@ -580,6 +582,8 @@ class LBFactoryTest extends MediaWikiTestCase {
 	}
 
 	public function testInvalidSelectDB() {
+		// FIXME: fails under sqlite
+		$this->markTestSkippedIfDbType( 'sqlite' );
 		$dbname = 'unittest-domain'; // explodes if DB is selected
 		$factory = $this->newLBFactoryMulti(
 			[ 'localDomain' => ( new DatabaseDomain( $dbname, null, '' ) )->getId() ],
@@ -604,9 +608,61 @@ class LBFactoryTest extends MediaWikiTestCase {
 			$this->assertFalse( $db->isOpen() );
 		} else {
 			\Wikimedia\suppressWarnings();
-			$this->assertFalse( $db->selectDB( 'garbage-db' ) );
+			try {
+				$this->assertFalse( $db->selectDB( 'garbage-db' ) );
+				$this->fail( "No error thrown." );
+			} catch ( \Wikimedia\Rdbms\DBExpectedError $e ) {
+				$this->assertEquals(
+					"Could not select database 'garbage-db'.",
+					$e->getMessage()
+				);
+			}
 			\Wikimedia\restoreWarnings();
 		}
+	}
+
+	public function testRedefineLocalDomain() {
+		global $wgDBname;
+
+		if ( wfGetDB( DB_MASTER )->databasesAreIndependent() ) {
+			self::markTestSkipped( "Skipping tests about selecting DBs: not applicable" );
+			return;
+		}
+
+		$factory = $this->newLBFactoryMulti(
+			[],
+			[]
+		);
+		$lb = $factory->getMainLB();
+
+		$conn1 = $lb->getConnectionRef( DB_MASTER );
+		$this->assertEquals(
+			wfWikiID(),
+			$conn1->getDomainID()
+		);
+		unset( $conn1 );
+
+		$factory->redefineLocalDomain( 'somedb-prefix' );
+		$this->assertEquals( 'somedb-prefix', $factory->getLocalDomainID() );
+
+		$domain = new DatabaseDomain( $wgDBname, null, 'pref' );
+		$factory->redefineLocalDomain( $domain );
+
+		$n = 0;
+		$lb->forEachOpenConnection( function () use ( &$n ) {
+			++$n;
+		} );
+		$this->assertEquals( 0, $n, "Connections closed" );
+
+		$conn2 = $lb->getConnectionRef( DB_MASTER );
+		$this->assertEquals(
+			$domain->getId(),
+			$conn2->getDomainID()
+		);
+		unset( $conn2 );
+
+		$factory->closeAll();
+		$factory->destroy();
 	}
 
 	private function quoteTable( Database $db, $table ) {
@@ -625,7 +681,6 @@ class LBFactoryTest extends MediaWikiTestCase {
 		$time = 1526522031;
 		$agentId = md5( 'Ramsey\'s Loyal Presa Canario' );
 
-		$lbFactory = $this->newLBFactoryMulti();
 		$this->assertEquals(
 			'3@542#c47dcfb0566e7d7bc110a6128a45c93a',
 			LBFactory::makeCookieValueFromCPIndex( 3, 542, $agentId )

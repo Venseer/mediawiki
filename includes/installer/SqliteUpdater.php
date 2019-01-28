@@ -43,8 +43,6 @@ class SqliteUpdater extends DatabaseUpdater {
 
 			// 1.15
 			[ 'addTable', 'change_tag', 'patch-change_tag.sql' ],
-			[ 'addTable', 'tag_summary', 'patch-tag_summary.sql' ],
-			[ 'addTable', 'valid_tag', 'patch-valid_tag.sql' ],
 
 			// 1.16
 			[ 'addTable', 'user_properties', 'patch-user_properties.sql' ],
@@ -54,9 +52,8 @@ class SqliteUpdater extends DatabaseUpdater {
 			[ 'doLogUsertextPopulation' ],
 			[ 'doLogSearchPopulation' ],
 			[ 'addTable', 'l10n_cache', 'patch-l10n_cache.sql' ],
-			[ 'addIndex', 'change_tag', 'change_tag_rc_tag', 'patch-change_tag-indexes.sql' ],
+			[ 'dropIndex', 'change_tag', 'ct_rc_id', 'patch-change_tag-indexes.sql' ],
 			[ 'addField', 'redirect', 'rd_interwiki', 'patch-rd_interwiki.sql' ],
-			[ 'doUpdateTranscacheField' ],
 			[ 'sqliteSetupSearchindex' ],
 
 			// 1.17
@@ -158,7 +155,6 @@ class SqliteUpdater extends DatabaseUpdater {
 			[ 'addIndex', 'recentchanges', 'rc_name_type_patrolled_timestamp',
 				'patch-add-rc_name_type_patrolled_timestamp_index.sql' ],
 			[ 'addField', 'change_tag', 'ct_id', 'patch-change_tag-ct_id.sql' ],
-			[ 'addField', 'tag_summary', 'ts_id', 'patch-tag_summary-ts_id.sql' ],
 
 			// 1.29
 			[ 'addField', 'externallinks', 'el_index_60', 'patch-externallinks-el_index_60.sql' ],
@@ -184,7 +180,6 @@ class SqliteUpdater extends DatabaseUpdater {
 			[ 'renameIndex', 'querycache_info', 'qci_type', 'PRIMARY', false,
 				'patch-querycache_info-fix-pk.sql' ],
 			[ 'renameIndex', 'site_stats', 'ss_row_id', 'PRIMARY', false, 'patch-site_stats-fix-pk.sql' ],
-			[ 'renameIndex', 'transcache', 'tc_url_idx', 'PRIMARY', false, 'patch-transcache-fix-pk.sql' ],
 			[ 'renameIndex', 'user_former_groups', 'ufg_user_group', 'PRIMARY', false,
 				'patch-user_former_groups-fix-pk.sql' ],
 			[ 'renameIndex', 'user_properties', 'user_properties_user_property', 'PRIMARY', false,
@@ -193,6 +188,7 @@ class SqliteUpdater extends DatabaseUpdater {
 
 			// This field was added in 1.31, but is put here so it can be used by 'migrateComments'
 			[ 'addField', 'image', 'img_description_id', 'patch-image-img_description_id.sql' ],
+			[ 'addField', 'filearchive', 'fa_description_id', 'patch-filearchive-fa_description_id.sql' ],
 
 			[ 'migrateComments' ],
 			[ 'renameIndex', 'l10n_cache', 'lc_lang_key', 'PRIMARY', false,
@@ -206,6 +202,7 @@ class SqliteUpdater extends DatabaseUpdater {
 			[ 'addTable', 'slot_roles', 'patch-slot_roles.sql' ],
 			[ 'migrateArchiveText' ],
 			[ 'addTable', 'actor', 'patch-actor-table.sql' ],
+			[ 'addField', 'filearchive', 'fa_actor', 'patch-filearchive-fa_actor.sql' ],
 			[ 'migrateActors' ],
 			[ 'modifyField', 'revision', 'rev_text_id', 'patch-rev_text_id-default.sql' ],
 			[ 'modifyTable', 'site_stats', 'patch-site_stats-modify.sql' ],
@@ -231,6 +228,19 @@ class SqliteUpdater extends DatabaseUpdater {
 				'patch-protected_titles-fix-pk.sql' ],
 			[ 'renameIndex', 'site_identifiers', 'site_ids_type', 'PRIMARY', false,
 				'patch-site_identifiers-fix-pk.sql' ],
+			[ 'addIndex', 'recentchanges', 'rc_this_oldid', 'patch-recentchanges-rc_this_oldid-index.sql' ],
+			[ 'dropTable', 'transcache' ],
+			[ 'runMaintenance', PopulateChangeTagDef::class, 'maintenance/populateChangeTagDef.php' ],
+			[ 'addIndex', 'change_tag', 'change_tag_rc_tag_id',
+				'patch-change_tag-change_tag_rc_tag_id.sql' ],
+			[ 'addField', 'ipblocks', 'ipb_sitewide', 'patch-ipb_sitewide.sql' ],
+			[ 'addTable', 'ipblocks_restrictions', 'patch-ipblocks_restrictions-table.sql' ],
+			[ 'migrateImageCommentTemp' ],
+
+			// 1.33
+			[ 'dropField', 'change_tag', 'ct_tag', 'patch-drop-ct_tag.sql' ],
+			[ 'dropTable', 'valid_tag' ],
+			[ 'dropTable', 'tag_summary' ],
 		];
 	}
 

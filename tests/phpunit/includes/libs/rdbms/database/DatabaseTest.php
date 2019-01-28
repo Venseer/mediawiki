@@ -2,6 +2,7 @@
 
 use Wikimedia\Rdbms\Database;
 use Wikimedia\Rdbms\IDatabase;
+use Wikimedia\Rdbms\DatabaseDomain;
 use Wikimedia\Rdbms\DatabaseMysqli;
 use Wikimedia\Rdbms\LBFactorySingle;
 use Wikimedia\Rdbms\TransactionProfiler;
@@ -217,9 +218,10 @@ class DatabaseTest extends PHPUnit\Framework\TestCase {
 	 * @covers Wikimedia\Rdbms\Database::runOnTransactionIdleCallbacks
 	 */
 	public function testTransactionIdle_TRX() {
-		$db = $this->getMockDB( [ 'isOpen', 'ping' ] );
+		$db = $this->getMockDB( [ 'isOpen', 'ping', 'getDBname' ] );
 		$db->method( 'isOpen' )->willReturn( true );
 		$db->method( 'ping' )->willReturn( true );
+		$db->method( 'getDBname' )->willReturn( '' );
 		$db->setFlag( DBO_TRX );
 
 		$lbFactory = LBFactorySingle::newFromConnection( $db );
@@ -310,9 +312,10 @@ class DatabaseTest extends PHPUnit\Framework\TestCase {
 	 * @covers Wikimedia\Rdbms\Database::runOnTransactionPreCommitCallbacks
 	 */
 	public function testTransactionPreCommitOrIdle_TRX() {
-		$db = $this->getMockDB( [ 'isOpen', 'ping' ] );
+		$db = $this->getMockDB( [ 'isOpen', 'ping', 'getDBname' ] );
 		$db->method( 'isOpen' )->willReturn( true );
 		$db->method( 'ping' )->willReturn( true );
+		$db->method( 'getDBname' )->willReturn( 'unittest' );
 		$db->setFlag( DBO_TRX );
 
 		$lbFactory = LBFactorySingle::newFromConnection( $db );
@@ -453,6 +456,7 @@ class DatabaseTest extends PHPUnit\Framework\TestCase {
 		$wdb->trxProfiler = new TransactionProfiler();
 		$wdb->connLogger = new \Psr\Log\NullLogger();
 		$wdb->queryLogger = new \Psr\Log\NullLogger();
+		$wdb->currentDomain = DatabaseDomain::newUnspecified();
 		return $db;
 	}
 
@@ -482,8 +486,9 @@ class DatabaseTest extends PHPUnit\Framework\TestCase {
 	 * @covers Wikimedia\Rdbms\Database::lockIsFree
 	 */
 	public function testGetScopedLock() {
-		$db = $this->getMockDB( [ 'isOpen' ] );
+		$db = $this->getMockDB( [ 'isOpen', 'getDBname' ] );
 		$db->method( 'isOpen' )->willReturn( true );
+		$db->method( 'getDBname' )->willReturn( 'unittest' );
 
 		$this->assertEquals( 0, $db->trxLevel() );
 		$this->assertEquals( true, $db->lockIsFree( 'x', __METHOD__ ) );
@@ -623,21 +628,58 @@ class DatabaseTest extends PHPUnit\Framework\TestCase {
 	 * @covers Wikimedia\Rdbms\Database::tablePrefix
 	 * @covers Wikimedia\Rdbms\Database::dbSchema
 	 */
-	public function testMutators() {
+	public function testSchemaAndPrefixMutators() {
 		$old = $this->db->tablePrefix();
+		$oldDomain = $this->db->getDomainId();
 		$this->assertInternalType( 'string', $old, 'Prefix is string' );
-		$this->assertEquals( $old, $this->db->tablePrefix(), "Prefix unchanged" );
-		$this->assertEquals( $old, $this->db->tablePrefix( 'xxx' ) );
-		$this->assertEquals( 'xxx', $this->db->tablePrefix(), "Prefix set" );
+		$this->assertSame( $old, $this->db->tablePrefix(), "Prefix unchanged" );
+		$this->assertSame( $old, $this->db->tablePrefix( 'xxx' ) );
+		$this->assertSame( 'xxx', $this->db->tablePrefix(), "Prefix set" );
 		$this->db->tablePrefix( $old );
 		$this->assertNotEquals( 'xxx', $this->db->tablePrefix() );
+		$this->assertSame( $oldDomain, $this->db->getDomainId() );
 
 		$old = $this->db->dbSchema();
+		$oldDomain = $this->db->getDomainId();
 		$this->assertInternalType( 'string', $old, 'Schema is string' );
-		$this->assertEquals( $old, $this->db->dbSchema(), "Schema unchanged" );
-		$this->assertEquals( $old, $this->db->dbSchema( 'xxx' ) );
-		$this->assertEquals( 'xxx', $this->db->dbSchema(), "Schema set" );
+		$this->assertSame( $old, $this->db->dbSchema(), "Schema unchanged" );
+		$this->assertSame( $old, $this->db->dbSchema( 'xxx' ) );
+		$this->assertSame( 'xxx', $this->db->dbSchema(), "Schema set" );
 		$this->db->dbSchema( $old );
 		$this->assertNotEquals( 'xxx', $this->db->dbSchema() );
+		$this->assertSame( $oldDomain, $this->db->getDomainId() );
 	}
+
+	/**
+	 * @covers Wikimedia\Rdbms\Database::selectDomain
+	 */
+	public function testSelectDomain() {
+		$oldDomain = $this->db->getDomainId();
+		$oldDatabase = $this->db->getDBname();
+		$oldSchema = $this->db->dbSchema();
+		$oldPrefix = $this->db->tablePrefix();
+
+		$this->db->selectDomain( 'testselectdb-xxx' );
+		$this->assertSame( 'testselectdb', $this->db->getDBname() );
+		$this->assertSame( '', $this->db->dbSchema() );
+		$this->assertSame( 'xxx', $this->db->tablePrefix() );
+
+		$this->db->selectDomain( $oldDomain );
+		$this->assertSame( $oldDatabase, $this->db->getDBname() );
+		$this->assertSame( $oldSchema, $this->db->dbSchema() );
+		$this->assertSame( $oldPrefix, $this->db->tablePrefix() );
+		$this->assertSame( $oldDomain, $this->db->getDomainId() );
+
+		$this->db->selectDomain( 'testselectdb-schema-xxx' );
+		$this->assertSame( 'testselectdb', $this->db->getDBname() );
+		$this->assertSame( 'schema', $this->db->dbSchema() );
+		$this->assertSame( 'xxx', $this->db->tablePrefix() );
+
+		$this->db->selectDomain( $oldDomain );
+		$this->assertSame( $oldDatabase, $this->db->getDBname() );
+		$this->assertSame( $oldSchema, $this->db->dbSchema() );
+		$this->assertSame( $oldPrefix, $this->db->tablePrefix() );
+		$this->assertSame( $oldDomain, $this->db->getDomainId() );
+	}
+
 }

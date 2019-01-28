@@ -20,6 +20,8 @@ project.index
 ## Sublime
 sublime-*
 sftp-config.json
+## Visual Studio Code
+*.vscode/
 
 # MediaWiki install & usage
 /cache
@@ -43,7 +45,6 @@ sftp-config.json
 /maintenance/dev/data
 /AdminSettings.php
 /LocalSettings.php
-/StartProfiler.php
 
 # Building & testing
 npm-debug.log
@@ -70,6 +71,7 @@ Thumbs.db
 .buildpath
 .classpath
 .idea
+*.iml
 .metadata*
 .settings
 /favicon.ico

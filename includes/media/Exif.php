@@ -290,7 +290,7 @@ class Exif {
 			$this->byteOrder = 'BE'; // BE seems about twice as popular as LE in jpg's.
 		}
 
-		$this->debugFile( $this->basename, __FUNCTION__, true );
+		$this->debugFile( __FUNCTION__, true );
 		if ( function_exists( 'exif_read_data' ) ) {
 			Wikimedia\suppressWarnings();
 			$data = exif_read_data( $this->file, 0, true );
@@ -742,12 +742,16 @@ class Exif {
 				$ecount = 1; // checking individual elements
 			}
 		}
-		$count = count( $val );
-		if ( $ecount != $count ) {
-			$this->debug( $val, __FUNCTION__, "Expected $ecount elements for $tag but got $count" );
 
-			return false;
+		$count = 1;
+		if ( is_array( $val ) ) {
+			$count = count( $val );
+			if ( $ecount != $count ) {
+				$this->debug( $val, __FUNCTION__, "Expected $ecount elements for $tag but got $count" );
+				return false;
+			}
 		}
+		// If there are multiple values, recursively validate each of them.
 		if ( $count > 1 ) {
 			foreach ( $val as $v ) {
 				if ( !$this->validate( $section, $tag, $v, true ) ) {

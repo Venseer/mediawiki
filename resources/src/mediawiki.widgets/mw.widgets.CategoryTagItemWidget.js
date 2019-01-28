@@ -4,7 +4,7 @@
  * @copyright 2011-2015 MediaWiki Widgets Team and others; see AUTHORS.txt
  * @license The MIT License (MIT); see LICENSE.txt
  */
-( function ( $, mw ) {
+( function () {
 
 	var hasOwn = Object.prototype.hasOwnProperty;
 
@@ -57,10 +57,10 @@
 			var
 				normalized = {},
 				pages = {};
-			$.each( response.query.normalized || [], function ( index, data ) {
+			( response.query.normalized || [] ).forEach( function ( data ) {
 				normalized[ data.fromencoded ? decodeURIComponent( data.from ) : data.from ] = data.to;
 			} );
-			$.each( response.query.pages, function ( index, page ) {
+			response.query.pages.forEach( function ( page ) {
 				pages[ page.title ] = !page.missing;
 			} );
 			titles.forEach( function ( title ) {
@@ -112,7 +112,7 @@
 	};
 
 	/**
-	 * Category selector capsule item widget. Extends OO.ui.CapsuleItemWidget with the ability to link
+	 * Category selector tag item widget. Extends OO.ui.TagItemWidget with the ability to link
 	 * to the given page, and to show its existence status (i.e., whether it is a redlink).
 	 *
 	 * @class mw.widgets.CategoryTagItemWidget
@@ -203,7 +203,4 @@
 				.addClass( 'new' );
 		}
 	};
-
-	// For backwards compatibility. See T183299.
-	mw.widgets.CategoryCapsuleItemWidget = mw.widgets.CategoryTagItemWidget;
-}( jQuery, mediaWiki ) );
+}() );

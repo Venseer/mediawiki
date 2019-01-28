@@ -98,11 +98,6 @@ class CoreParserFunctions {
 			$args = array_slice( func_get_args(), 2 );
 			$message = wfMessage( $part1, $args )
 				->inLanguage( $parser->getOptions()->getUserLangObj() );
-			if ( !$message->exists() ) {
-				// When message does not exists, the message name is surrounded by angle
-				// and can result in a tag, therefore escape the angles
-				return $message->escaped();
-			}
 			return [ $message->plain(), 'noparse' => false ];
 		} else {
 			return [ 'found' => false ];
@@ -135,14 +130,13 @@ class CoreParserFunctions {
 	}
 
 	public static function ns( $parser, $part1 = '' ) {
-		global $wgContLang;
 		if ( intval( $part1 ) || $part1 == "0" ) {
 			$index = intval( $part1 );
 		} else {
-			$index = $wgContLang->getNsIndex( str_replace( ' ', '_', $part1 ) );
+			$index = $parser->getContentLanguage()->getNsIndex( str_replace( ' ', '_', $part1 ) );
 		}
 		if ( $index !== false ) {
-			return $wgContLang->getFormattedNsText( $index );
+			return $parser->getContentLanguage()->getFormattedNsText( $index );
 		} else {
 			return [ 'found' => false ];
 		}
@@ -171,7 +165,8 @@ class CoreParserFunctions {
 	public static function urlencode( $parser, $s = '', $arg = null ) {
 		static $magicWords = null;
 		if ( is_null( $magicWords ) ) {
-			$magicWords = new MagicWordArray( [ 'url_path', 'url_query', 'url_wiki' ] );
+			$magicWords =
+				$parser->getMagicWordFactory()->newArray( [ 'url_path', 'url_query', 'url_wiki' ] );
 		}
 		switch ( $magicWords->matchStartToEnd( $arg ) ) {
 			// Encode as though it's a wiki page, '_' for ' '.
@@ -196,13 +191,11 @@ class CoreParserFunctions {
 	}
 
 	public static function lcfirst( $parser, $s = '' ) {
-		global $wgContLang;
-		return $wgContLang->lcfirst( $s );
+		return $parser->getContentLanguage()->lcfirst( $s );
 	}
 
 	public static function ucfirst( $parser, $s = '' ) {
-		global $wgContLang;
-		return $wgContLang->ucfirst( $s );
+		return $parser->getContentLanguage()->ucfirst( $s );
 	}
 
 	/**
@@ -211,8 +204,7 @@ class CoreParserFunctions {
 	 * @return string
 	 */
 	public static function lc( $parser, $s = '' ) {
-		global $wgContLang;
-		return $parser->markerSkipCallback( $s, [ $wgContLang, 'lc' ] );
+		return $parser->markerSkipCallback( $s, [ $parser->getContentLanguage(), 'lc' ] );
 	}
 
 	/**
@@ -221,8 +213,7 @@ class CoreParserFunctions {
 	 * @return string
 	 */
 	public static function uc( $parser, $s = '' ) {
-		global $wgContLang;
-		return $parser->markerSkipCallback( $s, [ $wgContLang, 'uc' ] );
+		return $parser->markerSkipCallback( $s, [ $parser->getContentLanguage(), 'uc' ] );
 	}
 
 	public static function localurl( $parser, $s = '', $arg = null ) {
@@ -296,9 +287,11 @@ class CoreParserFunctions {
 	 * @return string
 	 */
 	public static function formatnum( $parser, $num = '', $arg = null ) {
-		if ( self::matchAgainstMagicword( 'rawsuffix', $arg ) ) {
+		if ( self::matchAgainstMagicword( $parser->getMagicWordFactory(), 'rawsuffix', $arg ) ) {
 			$func = [ $parser->getFunctionLang(), 'parseFormattedNumber' ];
-		} elseif ( self::matchAgainstMagicword( 'nocommafysuffix', $arg ) ) {
+		} elseif (
+			self::matchAgainstMagicword( $parser->getMagicWordFactory(), 'nocommafysuffix', $arg )
+		) {
 			$func = [ $parser->getFunctionLang(), 'formatNumNoSeparators' ];
 		} else {
 			$func = [ $parser->getFunctionLang(), 'formatNum' ];
@@ -391,7 +384,8 @@ class CoreParserFunctions {
 
 		static $magicWords = null;
 		if ( is_null( $magicWords ) ) {
-			$magicWords = new MagicWordArray( [ 'displaytitle_noerror', 'displaytitle_noreplace' ] );
+			$magicWords = $parser->getMagicWordFactory()->newArray(
+				[ 'displaytitle_noerror', 'displaytitle_noreplace' ] );
 		}
 		$arg = $magicWords->matchStartToEnd( $uarg );
 
@@ -461,11 +455,10 @@ class CoreParserFunctions {
 				return '';
 			}
 		} else {
-			$converter = $parser->getTargetLanguage()->getConverter();
 			$parser->getOutput()->addWarning(
 				wfMessage( 'restricted-displaytitle',
 					// Message should be parsed, but this param should only be escaped.
-					$converter->markNoConversion( wfEscapeWikiText( $text ) )
+					wfEscapeWikiText( $text )
 				)->text()
 			);
 			$parser->addTrackingCategory( 'restricted-displaytitle-ignored' );
@@ -475,16 +468,20 @@ class CoreParserFunctions {
 	/**
 	 * Matches the given value against the value of given magic word
 	 *
+	 * @param MagicWordFactory $magicWordFactory A factory to get the word from, e.g., from
+	 *   $parser->getMagicWordFactory()
 	 * @param string $magicword Magic word key
 	 * @param string $value Value to match
 	 * @return bool True on successful match
 	 */
-	private static function matchAgainstMagicword( $magicword, $value ) {
+	private static function matchAgainstMagicword(
+		MagicWordFactory $magicWordFactory, $magicword, $value
+	) {
 		$value = trim( strval( $value ) );
 		if ( $value === '' ) {
 			return false;
 		}
-		$mwObject = MagicWord::get( $magicword );
+		$mwObject = $magicWordFactory->get( $magicword );
 		return $mwObject->matchStartToEnd( $value );
 	}
 
@@ -494,10 +491,18 @@ class CoreParserFunctions {
 	 * @param int|float $num
 	 * @param string $raw
 	 * @param Language|StubUserLang $language
+	 * @param MagicWordFactory|null $magicWordFactory To evaluate $raw
 	 * @return string
 	 */
-	public static function formatRaw( $num, $raw, $language ) {
-		if ( self::matchAgainstMagicword( 'rawsuffix', $raw ) ) {
+	public static function formatRaw(
+		$num, $raw, $language, MagicWordFactory $magicWordFactory = null
+	) {
+		if ( $raw !== null && !$magicWordFactory ) {
+			$magicWordFactory = MediaWikiServices::getInstance()->getMagicWordFactory();
+		}
+		if (
+			$raw !== null && self::matchAgainstMagicword( $magicWordFactory, 'rawsuffix', $raw )
+		) {
 			return $num;
 		} else {
 			return $language->formatNum( $num );
@@ -726,10 +731,9 @@ class CoreParserFunctions {
 	 * @return string
 	 */
 	public static function pagesincategory( $parser, $name = '', $arg1 = null, $arg2 = null ) {
-		global $wgContLang;
 		static $magicWords = null;
 		if ( is_null( $magicWords ) ) {
-			$magicWords = new MagicWordArray( [
+			$magicWords = $parser->getMagicWordFactory()->newArray( [
 				'pagesincategory_all',
 				'pagesincategory_pages',
 				'pagesincategory_subcats',
@@ -739,7 +743,7 @@ class CoreParserFunctions {
 		static $cache = [];
 
 		// split the given option to its variable
-		if ( self::matchAgainstMagicword( 'rawsuffix', $arg1 ) ) {
+		if ( self::matchAgainstMagicword( $parser->getMagicWordFactory(), 'rawsuffix', $arg1 ) ) {
 			// {{pagesincategory:|raw[|type]}}
 			$raw = $arg1;
 			$type = $magicWords->matchStartToEnd( $arg2 );
@@ -756,7 +760,7 @@ class CoreParserFunctions {
 		if ( !$title ) { # invalid title
 			return self::formatRaw( 0, $raw, $parser->getFunctionLang() );
 		}
-		$wgContLang->findVariantLink( $name, $title, true );
+		$parser->getContentLanguage()->findVariantLink( $name, $title, true );
 
 		// Normalize name for cache
 		$name = $title->getDBkey();
@@ -940,7 +944,8 @@ class CoreParserFunctions {
 	}
 
 	public static function special( $parser, $text ) {
-		list( $page, $subpage ) = SpecialPageFactory::resolveAlias( $text );
+		list( $page, $subpage ) = MediaWikiServices::getInstance()->getSpecialPageFactory()->
+			resolveAlias( $text );
 		if ( $page ) {
 			$title = SpecialPage::getTitleFor( $page, $subpage );
 			return $title->getPrefixedText();
@@ -966,7 +971,8 @@ class CoreParserFunctions {
 	public static function defaultsort( $parser, $text, $uarg = '' ) {
 		static $magicWords = null;
 		if ( is_null( $magicWords ) ) {
-			$magicWords = new MagicWordArray( [ 'defaultsort_noerror', 'defaultsort_noreplace' ] );
+			$magicWords = $parser->getMagicWordFactory()->newArray(
+				[ 'defaultsort_noerror', 'defaultsort_noreplace' ] );
 		}
 		$arg = $magicWords->matchStartToEnd( $uarg );
 

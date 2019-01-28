@@ -172,7 +172,7 @@ class PreferencesFormOOUI extends OOUIHTMLForm {
 					'div',
 					[
 						'class' =>
-							'oo-ui-widget oo-ui-widget-enabled oo-ui-optionWidget '.
+							'oo-ui-widget oo-ui-widget-enabled oo-ui-optionWidget ' .
 							'oo-ui-tabOptionWidget oo-ui-labelElement' .
 							( $i === 0 ? ' oo-ui-optionWidget-selected' : '' )
 					],
@@ -193,7 +193,7 @@ class PreferencesFormOOUI extends OOUIHTMLForm {
 			[ 'class' => 'oo-ui-layout oo-ui-panelLayout oo-ui-indexLayout-tabPanel' ],
 			Html::rawElement(
 				'div',
-				[ 'class' => 'oo-ui-widget oo-ui-widget-enabled oo-ui-selectWidget '.
+				[ 'class' => 'oo-ui-widget oo-ui-widget-enabled oo-ui-selectWidget ' .
 					'oo-ui-selectWidget-depressed oo-ui-tabSelectWidget' ],
 				implode( $fakeTabs )
 			)
@@ -213,7 +213,7 @@ class PreferencesFormOOUI extends OOUIHTMLForm {
 				) .
 				Html::rawElement(
 					'div',
-					[ 'class' => 'oo-ui-menuLayout-content' ],
+					[ 'class' => 'oo-ui-menuLayout-content mw-htmlform-autoinfuse-lazy' ],
 					$this->displaySection( $this->mFieldTree, '', 'mw-prefsection-' )
 				)
 			)
@@ -227,8 +227,7 @@ class PreferencesFormOOUI extends OOUIHTMLForm {
 	 * @return string
 	 */
 	function getLegend( $key ) {
-		$aliasKey = ( $key === 'optoutwatchlist' || $key === 'optoutrc' ) ? 'opt-out' : $key;
-		$legend = parent::getLegend( $aliasKey );
+		$legend = parent::getLegend( $key );
 		Hooks::run( 'PreferencesGetLegend', [ $this, $key, &$legend ] );
 		return $legend;
 	}

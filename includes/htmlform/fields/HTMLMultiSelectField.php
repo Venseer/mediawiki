@@ -22,8 +22,7 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 			$this->mParams['disabled-options'] = [];
 		}
 
-		// For backwards compatibility, also handle the old way with 'cssclass' => 'mw-chosen'
-		if ( isset( $params['dropdown'] ) || strpos( $this->mClass, 'mw-chosen' ) !== false ) {
+		if ( isset( $params['dropdown'] ) ) {
 			$this->mClass .= ' mw-htmlform-dropdown';
 		}
 
@@ -122,7 +121,7 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 
 	/**
 	 * Get options and make them into arrays suitable for OOUI.
-	 * @return array Options for inclusion in a select or whatever.
+	 * @throws MWException
 	 */
 	public function getOptionsOOUI() {
 		// Sections make this difficult. See getInputOOUI().
@@ -214,10 +213,14 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 	 * @return string|array
 	 */
 	public function loadDataFromRequest( $request ) {
-		if ( $this->isSubmitAttempt( $request ) ) {
+		$fromRequest = $request->getArray( $this->mName, [] );
+		// Fetch the value in either one of the two following case:
+		// - we have a valid submit attempt (form was just submitted)
+		// - we have a value (an URL manually built by the user, or GET form with no wpFormIdentifier)
+		if ( $this->isSubmitAttempt( $request ) || $fromRequest ) {
 			// Checkboxes are just not added to the request arrays if they're not checked,
 			// so it's perfectly possible for there not to be an entry at all
-			return $request->getArray( $this->mName, [] );
+			return $fromRequest;
 		} else {
 			// That's ok, the user has not yet submitted the form, so show the defaults
 			return $this->getDefault();
@@ -225,11 +228,7 @@ class HTMLMultiSelectField extends HTMLFormField implements HTMLNestedFilterable
 	}
 
 	public function getDefault() {
-		if ( isset( $this->mDefault ) ) {
-			return $this->mDefault;
-		} else {
-			return [];
-		}
+		return $this->mDefault ?? [];
 	}
 
 	public function filterDataForSubmit( $data ) {

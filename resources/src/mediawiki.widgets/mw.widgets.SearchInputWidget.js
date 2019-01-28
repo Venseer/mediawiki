@@ -4,7 +4,7 @@
  * @copyright 2011-2015 MediaWiki Widgets Team and others; see AUTHORS.txt
  * @license The MIT License (MIT); see LICENSE.txt
  */
-( function ( $, mw ) {
+( function () {
 
 	/**
 	 * Creates a mw.widgets.SearchInputWidget object.
@@ -151,11 +151,12 @@
 			self = this;
 
 		// reuse the searchSuggest function from mw.searchSuggest
-		promise = mw.searchSuggest.request( api, this.getQueryValue(), $.noop, this.limit, this.getNamespace() );
+		promise = mw.searchSuggest.request( api, this.getQueryValue(), function () {}, this.limit, this.getNamespace() );
 
 		// tracking purposes
 		promise.done( function ( data, jqXHR ) {
 			self.requestType = jqXHR.getResponseHeader( 'X-OpenSearch-Type' );
+			self.searchId = jqXHR.getResponseHeader( 'X-Search-ID' );
 		} );
 
 		return promise;
@@ -173,10 +174,12 @@
 			data: response || {},
 			metadata: {
 				type: this.requestType || 'unknown',
+				searchId: this.searchId || null,
 				query: this.getQueryValue()
 			}
 		};
 		this.requestType = undefined;
+		this.searchId = undefined;
 
 		return resp;
 	};
@@ -191,6 +194,7 @@
 			urls = data.data[ 3 ],
 			self = this;
 
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( titles, function ( i, result ) {
 			items.push( new mw.widgets.TitleOptionWidget(
 				self.getOptionWidgetData(
@@ -214,6 +218,7 @@
 			action: 'impression-results',
 			numberOfResults: items.length,
 			resultSetType: data.metadata.type,
+			searchId: data.metadata.searchId,
 			query: data.metadata.query,
 			inputLocation: this.dataLocation || 'header'
 		} );
@@ -228,7 +233,7 @@
 		mw.widgets.SearchInputWidget.parent.prototype.onLookupMenuItemChoose.apply( this, arguments );
 
 		if ( this.performSearchOnClick ) {
-			this.$element.closest( 'form' ).submit();
+			this.$element.closest( 'form' ).trigger( 'submit' );
 		}
 	};
 
@@ -247,4 +252,4 @@
 		return items;
 	};
 
-}( jQuery, mediaWiki ) );
+}() );

@@ -22,6 +22,7 @@
  *
  * @file
  */
+use MediaWiki\MediaWikiServices;
 
 /**
  * This class is a collection of static functions that serve two purposes:
@@ -253,6 +254,12 @@ class Html {
 		// This is not required in HTML5, but let's do it anyway, for
 		// consistency and better compression.
 		$element = strtolower( $element );
+
+		// Some people were abusing this by passing things like
+		// 'h1 id="foo" to $element, which we don't want.
+		if ( strpos( $element, ' ' ) !== false ) {
+			wfWarn( __METHOD__ . " given element name with space '$element'" );
+		}
 
 		// Remove invalid input types
 		if ( $element == 'input' ) {
@@ -551,10 +558,13 @@ class Html {
 	}
 
 	/**
-	 * Output a "<script>" tag with the given contents.
+	 * Output an HTML script tag with the given contents.
 	 *
-	 * @todo do some useful escaping as well, like if $contents contains
-	 * literal "</script>" or (for XML) literal "]]>".
+	 * It is unsupported for the contents to contain the sequence `<script` or `</script`
+	 * (case-insensitive). This ensures the script can be terminated easily and consistently.
+	 * It is the responsibility of the caller to avoid such character sequence by escaping
+	 * or avoiding it. If found at run-time, the contents are replaced with a comment, and
+	 * a warning is logged server-side.
 	 *
 	 * @param string $contents JavaScript
 	 * @param string|null $nonce Nonce for CSP header, from OutputPage::getCSPNonce()
@@ -570,8 +580,9 @@ class Html {
 			}
 		}
 
-		if ( preg_match( '/[<&]/', $contents ) ) {
-			$contents = "/*<![CDATA[*/$contents/*]]>*/";
+		if ( preg_match( '/<\/?script/i', $contents ) ) {
+			wfLogWarning( __METHOD__ . ': Illegal character sequence found in inline script.' );
+			$contents = '/* ERROR: Invalid script */';
 		}
 
 		return self::rawElement( 'script', $attrs, $contents );
@@ -703,7 +714,7 @@ class Html {
 	 * @return string of HTML representing a box.
 	 */
 	private static function messageBox( $html, $className, $heading = '' ) {
-		if ( $heading ) {
+		if ( $heading !== '' ) {
 			$html = self::element( 'h2', [], $heading ) . $html;
 		}
 		return self::rawElement( 'div', [ 'class' => $className ], $html );
@@ -824,8 +835,6 @@ class Html {
 	 * @return array
 	 */
 	public static function namespaceSelectorOptions( array $params = [] ) {
-		global $wgContLang;
-
 		$options = [];
 
 		if ( !isset( $params['exclude'] ) || !is_array( $params['exclude'] ) ) {
@@ -837,8 +846,14 @@ class Html {
 			// Value is provided by user, the name shown is localized for the user.
 			$options[$params['all']] = wfMessage( 'namespacesall' )->text();
 		}
-		// Add all namespaces as options (in the content language)
-		$options += $wgContLang->getFormattedNamespaces();
+		if ( $params['in-user-lang'] ?? false ) {
+			global $wgLang;
+			$lang = $wgLang;
+		} else {
+			$lang = MediaWikiServices::getInstance()->getContentLanguage();
+		}
+		// Add all namespaces as options
+		$options += $lang->getFormattedNamespaces();
 
 		$optionsOut = [];
 		// Filter out namespaces below 0 and massage labels
@@ -851,7 +866,7 @@ class Html {
 				// main we don't use "" but the user message describing it (e.g. "(Main)" or "(Article)")
 				$nsName = wfMessage( 'blanknamespace' )->text();
 			} elseif ( is_int( $nsId ) ) {
-				$nsName = $wgContLang->convertNamespace( $nsId );
+				$nsName = $lang->convertNamespace( $nsId );
 			}
 			$optionsOut[$nsId] = $nsName;
 		}

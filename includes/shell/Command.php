@@ -433,16 +433,17 @@ class Command {
 			// TODO replace with clear_last_error when requirements are bumped to PHP7
 			set_error_handler( function () {
 			}, 0 );
-			// phpcs:ignore Generic.PHP.NoSilencedErrors.Discouraged
-			@trigger_error( '' );
+			\MediaWiki\suppressWarnings();
+			trigger_error( '' );
+			\MediaWiki\restoreWarnings();
 			restore_error_handler();
 
-			$readPipes = wfArrayFilterByKey( $pipes, function ( $fd ) use ( $desc ) {
+			$readPipes = array_filter( $pipes, function ( $fd ) use ( $desc ) {
 				return $desc[$fd][0] === 'pipe' && $desc[$fd][1] === 'r';
-			} );
-			$writePipes = wfArrayFilterByKey( $pipes, function ( $fd ) use ( $desc ) {
+			}, ARRAY_FILTER_USE_KEY );
+			$writePipes = array_filter( $pipes, function ( $fd ) use ( $desc ) {
 				return $desc[$fd][0] === 'pipe' && $desc[$fd][1] === 'w';
-			} );
+			}, ARRAY_FILTER_USE_KEY );
 			// stream_select parameter names are from the POV of us being able to do the operation;
 			// proc_open desriptor types are from the POV of the process doing it.
 			// So $writePipes is passed as the $read parameter and $readPipes as $write.
@@ -551,5 +552,16 @@ class Command {
 		}
 
 		return new Result( $retval, $buffers[1], $buffers[2] );
+	}
+
+	/**
+	 * Returns the final command line before environment/limiting, etc are applied.
+	 * Use string conversion only for debugging, don't try to pass this to
+	 * some other execution medium.
+	 *
+	 * @return string
+	 */
+	public function __toString() {
+		return "#Command: {$this->command}";
 	}
 }

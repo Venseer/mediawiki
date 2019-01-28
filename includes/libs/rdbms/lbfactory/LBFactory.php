@@ -135,6 +135,7 @@ abstract class LBFactory implements ILBFactory {
 			'IPAddress' => $_SERVER[ 'REMOTE_ADDR' ] ?? '',
 			'UserAgent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
 			// Headers application can inject via LBFactory::setRequestInfo()
+			'ChronologyProtection' => null,
 			'ChronologyClientId' => null, // prior $cpClientId value from LBFactory::shutdown()
 			'ChronologyPositionIndex' => null // prior $cpIndex value from LBFactory::shutdown()
 		];
@@ -256,7 +257,7 @@ abstract class LBFactory implements ILBFactory {
 			);
 		}
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForCommit(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 		// Run pre-commit callbacks and suppress post-commit callbacks, aborting on failure
 		do {
 			$count = 0; // number of callbacks executed this iteration
@@ -374,7 +375,7 @@ abstract class LBFactory implements ILBFactory {
 		$opts += [
 			'domain' => false,
 			'cluster' => false,
-			'timeout' => $this->cliMode ? 60 : 10,
+			'timeout' => $this->cliMode ? 60 : 1,
 			'ifWritesSince' => null
 		];
 
@@ -431,13 +432,7 @@ abstract class LBFactory implements ILBFactory {
 			}
 		}
 
-		if ( $failed ) {
-			throw new DBReplicationWaitError(
-				null,
-				"Could not wait for replica DBs to catch up to " .
-				implode( ', ', $failed )
-			);
-		}
+		return !$failed;
 	}
 
 	public function setWaitForReplicationListener( $name, callable $callback = null ) {
@@ -477,12 +472,13 @@ abstract class LBFactory implements ILBFactory {
 		}
 
 		$this->commitMasterChanges( $fnameEffective );
-		$this->waitForReplication( $opts );
+		$waitSucceeded = $this->waitForReplication( $opts );
 		// If a nested caller committed on behalf of $fname, start another empty $fname
 		// transaction, leaving the caller with the same empty transaction state as before.
 		if ( $fnameEffective !== $fname ) {
 			$this->beginMasterChanges( $fnameEffective );
 		}
+		return $waitSucceeded;
 	}
 
 	public function getChronologyProtectorTouched( $dbName ) {
@@ -622,7 +618,15 @@ abstract class LBFactory implements ILBFactory {
 		$this->indexAliases = $aliases;
 	}
 
+	/**
+	 * @param string $prefix
+	 * @deprecated Since 1.33
+	 */
 	public function setDomainPrefix( $prefix ) {
+		$this->setLocalDomainPrefix( $prefix );
+	}
+
+	public function setLocalDomainPrefix( $prefix ) {
 		$this->localDomain = new DatabaseDomain(
 			$this->localDomain->getDatabase(),
 			null,
@@ -630,7 +634,17 @@ abstract class LBFactory implements ILBFactory {
 		);
 
 		$this->forEachLB( function ( ILoadBalancer $lb ) use ( $prefix ) {
-			$lb->setDomainPrefix( $prefix );
+			$lb->setLocalDomainPrefix( $prefix );
+		} );
+	}
+
+	public function redefineLocalDomain( $domain ) {
+		$this->closeAll();
+
+		$this->localDomain = DatabaseDomain::newFromId( $domain );
+
+		$this->forEachLB( function ( ILoadBalancer $lb ) {
+			$lb->redefineLocalDomain( $this->localDomain );
 		} );
 	}
 
@@ -711,29 +725,7 @@ abstract class LBFactory implements ILBFactory {
 		}
 	}
 
-	/**
-	 * Make PHP ignore user aborts/disconnects until the returned
-	 * value leaves scope. This returns null and does nothing in CLI mode.
-	 *
-	 * @return ScopedCallback|null
-	 */
-	final protected function getScopedPHPBehaviorForCommit() {
-		if ( PHP_SAPI != 'cli' ) { // https://bugs.php.net/bug.php?id=47540
-			$old = ignore_user_abort( true ); // avoid half-finished operations
-			return new ScopedCallback( function () use ( $old ) {
-				ignore_user_abort( $old );
-			} );
-		}
-
-		return null;
-	}
-
 	function __destruct() {
 		$this->destroy();
 	}
 }
-
-/**
- * @deprecated since 1.29
- */
-class_alias( LBFactory::class, 'LBFactory' );

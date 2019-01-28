@@ -78,9 +78,8 @@ class ChronologyProtector implements LoggerAwareInterface {
 	 */
 	public function __construct( BagOStuff $store, array $client, $posIndex = null ) {
 		$this->store = $store;
-		$this->clientId = isset( $client['clientId'] )
-			? $client['clientId']
-			: md5( $client['ip'] . "\n" . $client['agent'] );
+		$this->clientId = $client['clientId'] ??
+			md5( $client['ip'] . "\n" . $client['agent'] );
 		$this->key = $store->makeGlobalKey( __CLASS__, $this->clientId, 'v2' );
 		$this->waitForPosIndex = $posIndex;
 
@@ -203,7 +202,7 @@ class ChronologyProtector implements LoggerAwareInterface {
 			);
 		}
 
-		if ( !count( $this->shutdownPositions ) ) {
+		if ( $this->shutdownPositions === [] ) {
 			return []; // nothing to save
 		}
 

@@ -41,7 +41,7 @@ if ( !$wgRequest->checkUrlExtension() ) {
 	return;
 }
 
-// Pathinfo can be used for stupid things. We don't support it for api.php at
+// PATH_INFO can be used for stupid things. We don't support it for api.php at
 // all, so error out if it's present.
 if ( isset( $_SERVER['PATH_INFO'] ) && $_SERVER['PATH_INFO'] != '' ) {
 	$correctUrl = wfAppendQuery( wfScript( 'api' ), $wgRequest->getQueryValues() );
@@ -72,7 +72,11 @@ try {
 	if ( !$processor instanceof ApiMain ) {
 		throw new MWException( 'ApiBeforeMain hook set $processor to a non-ApiMain class' );
 	}
-} catch ( Exception $e ) {
+} catch ( Exception $e ) { // @todo Remove this block when HHVM is no longer supported
+	// Crap. Try to report the exception in API format to be friendly to clients.
+	ApiMain::handleApiBeforeMainException( $e );
+	$processor = false;
+} catch ( Throwable $e ) {
 	// Crap. Try to report the exception in API format to be friendly to clients.
 	ApiMain::handleApiBeforeMainException( $e );
 	$processor = false;
@@ -99,7 +103,9 @@ if ( $wgAPIRequestLog ) {
 		try {
 			$manager = $processor->getModuleManager();
 			$module = $manager->getModule( $wgRequest->getVal( 'action' ), 'action' );
-		} catch ( Exception $ex ) {
+		} catch ( Exception $ex ) { // @todo Remove this block when HHVM is no longer supported
+			$module = null;
+		} catch ( Throwable $ex ) {
 			$module = null;
 		}
 		if ( !$module || $module->mustBePosted() ) {

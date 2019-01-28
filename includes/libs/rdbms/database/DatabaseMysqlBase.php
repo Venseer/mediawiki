@@ -27,6 +27,7 @@ use DateTimeZone;
 use Wikimedia;
 use InvalidArgumentException;
 use Exception;
+use RuntimeException;
 use stdClass;
 
 /**
@@ -120,26 +121,17 @@ abstract class DatabaseMysqlBase extends Database {
 		return 'mysql';
 	}
 
-	/**
-	 * @param string $server
-	 * @param string $user
-	 * @param string $password
-	 * @param string $dbName
-	 * @throws Exception|DBConnectionError
-	 * @return bool
-	 */
-	public function open( $server, $user, $password, $dbName ) {
+	protected function open( $server, $user, $password, $dbName, $schema, $tablePrefix ) {
 		# Close/unset connection handle
 		$this->close();
 
 		$this->server = $server;
 		$this->user = $user;
 		$this->password = $password;
-		$this->dbName = $dbName;
 
 		$this->installErrorHandler();
 		try {
-			$this->conn = $this->mysqlConnect( $this->server );
+			$this->conn = $this->mysqlConnect( $this->server, $dbName );
 		} catch ( Exception $ex ) {
 			$this->restoreErrorHandler();
 			throw $ex;
@@ -164,20 +156,9 @@ abstract class DatabaseMysqlBase extends Database {
 		}
 
 		if ( strlen( $dbName ) ) {
-			Wikimedia\suppressWarnings();
-			$success = $this->selectDB( $dbName );
-			Wikimedia\restoreWarnings();
-			if ( !$success ) {
-				$error = $this->lastError();
-				$this->queryLogger->error(
-					"Error selecting database {db_name} on server {db_server}: {error}",
-					$this->getLogContext( [
-						'method' => __METHOD__,
-						'error' => $error,
-					] )
-				);
-				throw new DBConnectionError( $this, "Error selecting database $dbName: $error" );
-			}
+			$this->selectDomain( new DatabaseDomain( $dbName, null, $tablePrefix ) );
+		} else {
+			$this->currentDomain = new DatabaseDomain( null, null, $tablePrefix );
 		}
 
 		// Tell the server what we're communicating with
@@ -248,10 +229,11 @@ abstract class DatabaseMysqlBase extends Database {
 	 * Open a connection to a MySQL server
 	 *
 	 * @param string $realServer
+	 * @param string|null $dbName
 	 * @return mixed Raw connection
 	 * @throws DBConnectionError
 	 */
-	abstract protected function mysqlConnect( $realServer );
+	abstract protected function mysqlConnect( $realServer, $dbName );
 
 	/**
 	 * Set the character set of the MySQL link
@@ -367,7 +349,7 @@ abstract class DatabaseMysqlBase extends Database {
 			$res = $res->result;
 		}
 		Wikimedia\suppressWarnings();
-		$n = $this->mysqlNumRows( $res );
+		$n = !is_bool( $res ) ? $this->mysqlNumRows( $res ) : 0;
 		Wikimedia\restoreWarnings();
 
 		// Unfortunately, mysql_num_rows does not reset the last errno.
@@ -512,10 +494,9 @@ abstract class DatabaseMysqlBase extends Database {
 	 * @param array $uniqueIndexes
 	 * @param array $rows
 	 * @param string $fname
-	 * @return ResultWrapper
 	 */
 	public function replace( $table, $uniqueIndexes, $rows, $fname = __METHOD__ ) {
-		return $this->nativeReplace( $table, $rows, $fname );
+		$this->nativeReplace( $table, $rows, $fname );
 	}
 
 	protected function isInsertSelectSafe( array $insertOptions, array $selectOptions ) {
@@ -777,7 +758,11 @@ abstract class DatabaseMysqlBase extends Database {
 				// given that the isolation level will typically be REPEATABLE-READ
 				$this->queryLogger->warning(
 					"Using cached lag value for {db_server} due to active transaction",
-					$this->getLogContext( [ 'method' => __METHOD__, 'age' => $staleness ] )
+					$this->getLogContext( [
+						'method' => __METHOD__,
+						'age' => $staleness,
+						'trace' => ( new RuntimeException() )->getTraceAsString()
+					] )
 				);
 			}
 
@@ -832,11 +817,12 @@ abstract class DatabaseMysqlBase extends Database {
 			// Using one key for all cluster replica DBs is preferable
 			$this->getLBInfo( 'clusterMasterHost' ) ?: $this->getServer()
 		);
+		$fname = __METHOD__;
 
 		return $cache->getWithSetCallback(
 			$key,
 			$cache::TTL_INDEFINITE,
-			function () use ( $cache, $key ) {
+			function () use ( $cache, $key, $fname ) {
 				// Get and leave a lock key in place for a short period
 				if ( !$cache->lock( $key, 0, 10 ) ) {
 					return false; // avoid master connection spike slams
@@ -849,7 +835,7 @@ abstract class DatabaseMysqlBase extends Database {
 
 				// Connect to and query the master; catch errors to avoid outages
 				try {
-					$res = $conn->query( 'SELECT @@server_id AS id', __METHOD__ );
+					$res = $conn->query( 'SELECT @@server_id AS id', $fname );
 					$row = $res ? $res->fetchObject() : false;
 					$id = $row ? (int)$row->id : 0;
 				} catch ( DBError $e ) {
@@ -1051,11 +1037,12 @@ abstract class DatabaseMysqlBase extends Database {
 	 * @throws DBQueryError If the variable doesn't exist for some reason
 	 */
 	protected function getServerId() {
+		$fname = __METHOD__;
 		return $this->srvCache->getWithSetCallback(
 			$this->srvCache->makeGlobalKey( 'mysql-server-id', $this->getServer() ),
 			self::SERVER_ID_CACHE_TTL,
-			function () {
-				$res = $this->query( "SELECT @@server_id AS id", __METHOD__ );
+			function () use ( $fname ) {
+				$res = $this->query( "SELECT @@server_id AS id", $fname );
 				return intval( $this->fetchObject( $res )->id );
 			}
 		);
@@ -1320,7 +1307,6 @@ abstract class DatabaseMysqlBase extends Database {
 	 * @param array|string $conds
 	 * @param bool|string $fname
 	 * @throws DBUnexpectedError
-	 * @return bool|ResultWrapper
 	 */
 	public function deleteJoin(
 		$delTable, $joinTable, $delVar, $joinVar, $conds, $fname = __METHOD__
@@ -1337,7 +1323,7 @@ abstract class DatabaseMysqlBase extends Database {
 			$sql .= ' AND ' . $this->makeList( $conds, self::LIST_AND );
 		}
 
-		return $this->query( $sql, $fname );
+		$this->query( $sql, $fname );
 	}
 
 	/**
@@ -1351,7 +1337,7 @@ abstract class DatabaseMysqlBase extends Database {
 	public function upsert( $table, array $rows, array $uniqueIndexes,
 		array $set, $fname = __METHOD__
 	) {
-		if ( !count( $rows ) ) {
+		if ( $rows === [] ) {
 			return true; // nothing to do
 		}
 
@@ -1370,7 +1356,9 @@ abstract class DatabaseMysqlBase extends Database {
 		$sql .= implode( ',', $rowTuples );
 		$sql .= " ON DUPLICATE KEY UPDATE " . $this->makeList( $set, self::LIST_SET );
 
-		return (bool)$this->query( $sql, $fname );
+		$this->query( $sql, $fname );
+
+		return true;
 	}
 
 	/**
@@ -1519,7 +1507,7 @@ abstract class DatabaseMysqlBase extends Database {
 	 */
 	public function listViews( $prefix = null, $fname = __METHOD__ ) {
 		// The name of the column containing the name of the VIEW
-		$propertyName = 'Tables_in_' . $this->dbName;
+		$propertyName = 'Tables_in_' . $this->getDBname();
 
 		// Query for the VIEWS
 		$res = $this->query( 'SHOW FULL TABLES WHERE TABLE_TYPE = "VIEW"' );

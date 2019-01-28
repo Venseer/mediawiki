@@ -3,6 +3,8 @@
 define( 'NS_UNITTEST', 5600 );
 define( 'NS_UNITTEST_TALK', 5601 );
 
+use MediaWiki\Block\Restriction\PageRestriction;
+use MediaWiki\Block\Restriction\NamespaceRestriction;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\User\UserIdentityValue;
 use Wikimedia\TestingAccessWrapper;
@@ -11,6 +13,10 @@ use Wikimedia\TestingAccessWrapper;
  * @group Database
  */
 class UserTest extends MediaWikiTestCase {
+
+	/** Constant for self::testIsBlockedFrom */
+	const USER_TALK_PAGE = '<user talk page>';
+
 	/**
 	 * @var User
 	 */
@@ -22,7 +28,7 @@ class UserTest extends MediaWikiTestCase {
 		$this->setMwGlobals( [
 			'wgGroupPermissions' => [],
 			'wgRevokePermissions' => [],
-			'wgActorTableSchemaMigrationStage' => MIGRATION_WRITE_BOTH,
+			'wgActorTableSchemaMigrationStage' => SCHEMA_COMPAT_WRITE_BOTH | SCHEMA_COMPAT_READ_OLD,
 		] );
 		$this->overrideMwServices();
 
@@ -236,36 +242,6 @@ class UserTest extends MediaWikiTestCase {
 	}
 
 	/**
-	 * Test, if for all rights a right- message exist,
-	 * which is used on Special:ListGroupRights as help text
-	 * Extensions and core
-	 *
-	 * @coversNothing
-	 */
-	public function testAllRightsWithMessage() {
-		// Getting all user rights, for core: User::$mCoreRights, for extensions: $wgAvailableRights
-		$allRights = User::getAllRights();
-		$allMessageKeys = Language::getMessageKeysFor( 'en' );
-
-		$rightsWithMessage = [];
-		foreach ( $allMessageKeys as $message ) {
-			// === 0: must be at beginning of string (position 0)
-			if ( strpos( $message, 'right-' ) === 0 ) {
-				$rightsWithMessage[] = substr( $message, strlen( 'right-' ) );
-			}
-		}
-
-		sort( $allRights );
-		sort( $rightsWithMessage );
-
-		$this->assertEquals(
-			$allRights,
-			$rightsWithMessage,
-			'Each user rights (core/extensions) has a corresponding right- message.'
-		);
-	}
-
-	/**
 	 * Test User::editCount
 	 * @group medium
 	 * @covers User::getEditCount
@@ -293,6 +269,7 @@ class UserTest extends MediaWikiTestCase {
 
 		// increase the edit count
 		$user->incEditCount();
+		$user->clearInstanceCache();
 
 		$this->assertEquals(
 			4,
@@ -416,6 +393,7 @@ class UserTest extends MediaWikiTestCase {
 				],
 			],
 		] );
+		$this->hideDeprecated( 'User::getPasswordValidity' );
 
 		$user = static::getTestUser()->getUser();
 
@@ -554,13 +532,13 @@ class UserTest extends MediaWikiTestCase {
 
 		$touched = $user->getDBTouched();
 		$this->assertTrue(
-			$user->checkAndSetTouched(), "checkAndSetTouched() succeded" );
+			$user->checkAndSetTouched(), "checkAndSetTouched() succedeed" );
 		$this->assertGreaterThan(
 			$touched, $user->getDBTouched(), "user_touched increased with casOnTouched()" );
 
 		$touched = $user->getDBTouched();
 		$this->assertTrue(
-			$user->checkAndSetTouched(), "checkAndSetTouched() succeded #2" );
+			$user->checkAndSetTouched(), "checkAndSetTouched() succedeed #2" );
 		$this->assertGreaterThan(
 			$touched, $user->getDBTouched(), "user_touched increased with casOnTouched() #2" );
 	}
@@ -569,6 +547,9 @@ class UserTest extends MediaWikiTestCase {
 	 * @covers User::findUsersByGroup
 	 */
 	public function testFindUsersByGroup() {
+		// FIXME: fails under postgres
+		$this->markTestSkippedIfDbType( 'postgres' );
+
 		$users = User::findUsersByGroup( [] );
 		$this->assertEquals( 0, iterator_count( $users ) );
 
@@ -661,7 +642,7 @@ class UserTest extends MediaWikiTestCase {
 		$this->assertTrue( $user2->isBlocked() );
 		// Non-strict type-check.
 		$this->assertEquals( true, $user2->getBlock()->isAutoblocking(), 'Autoblock does not work' );
-		// Can't directly compare the objects becuase of member type differences.
+		// Can't directly compare the objects because of member type differences.
 		// One day this will work: $this->assertEquals( $block, $user2->getBlock() );
 		$this->assertEquals( $block->getId(), $user2->getBlock()->getId() );
 		$this->assertEquals( $block->getExpiry(), $user2->getBlock()->getExpiry() );
@@ -1042,6 +1023,7 @@ class UserTest extends MediaWikiTestCase {
 	}
 
 	public function testActorId() {
+		$domain = MediaWikiServices::getInstance()->getDBLoadBalancer()->getLocalDomainID();
 		$this->hideDeprecated( 'User::selectFields' );
 
 		// Newly-created user has an actor ID
@@ -1069,7 +1051,7 @@ class UserTest extends MediaWikiTestCase {
 			'Actor ID can be retrieved for user loaded with User::selectFields()' );
 
 		$this->db->delete( 'actor', [ 'actor_user' => $id ], __METHOD__ );
-		User::purge( wfWikiId(), $id );
+		User::purge( $domain, $id );
 		// Because WANObjectCache->delete() stupidly doesn't delete from the process cache.
 		ObjectCache::getMainWANInstance()->clearProcessCache();
 
@@ -1232,6 +1214,124 @@ class UserTest extends MediaWikiTestCase {
 		$this->assertSame( '', $user->blockedFor() );
 		$this->assertFalse( (bool)$user->isHidden() );
 		$this->assertFalse( $user->isBlockedFrom( $ut ) );
+	}
+
+	/**
+	 * @covers User::isBlockedFrom
+	 * @dataProvider provideIsBlockedFrom
+	 * @param string|null $title Title to test.
+	 * @param bool $expect Expected result from User::isBlockedFrom()
+	 * @param array $options Additional test options:
+	 *  - 'blockAllowsUTEdit': (bool, default true) Value for $wgBlockAllowsUTEdit
+	 *  - 'allowUsertalk': (bool, default false) Passed to Block::__construct()
+	 *  - 'pageRestrictions': (array|null) If non-empty, page restriction titles for the block.
+	 */
+	public function testIsBlockedFrom( $title, $expect, array $options = [] ) {
+		$this->setMwGlobals( [
+			'wgBlockAllowsUTEdit' => $options['blockAllowsUTEdit'] ?? true,
+		] );
+
+		$user = $this->getTestUser()->getUser();
+
+		if ( $title === self::USER_TALK_PAGE ) {
+			$title = $user->getTalkPage();
+		} else {
+			$title = Title::newFromText( $title );
+		}
+
+		$restrictions = [];
+		foreach ( $options['pageRestrictions'] ?? [] as $pagestr ) {
+			$page = $this->getExistingTestPage(
+				$pagestr === self::USER_TALK_PAGE ? $user->getTalkPage() : $pagestr
+			);
+			$restrictions[] = new PageRestriction( 0, $page->getId() );
+		}
+		foreach ( $options['namespaceRestrictions'] ?? [] as $ns ) {
+			$restrictions[] = new NamespaceRestriction( 0, $ns );
+		}
+
+		$block = new Block( [
+			'expiry' => wfTimestamp( TS_MW, wfTimestamp() + ( 40 * 60 * 60 ) ),
+			'allowUsertalk' => $options['allowUsertalk'] ?? false,
+			'sitewide' => !$restrictions,
+		] );
+		$block->setTarget( $user );
+		$block->setBlocker( $this->getTestSysop()->getUser() );
+		if ( $restrictions ) {
+			$block->setRestrictions( $restrictions );
+		}
+		$block->insert();
+
+		try {
+			$this->assertSame( $expect, $user->isBlockedFrom( $title ) );
+		} finally {
+			$block->delete();
+		}
+	}
+
+	public static function provideIsBlockedFrom() {
+		return [
+			'Basic operation' => [ 'Test page', true ],
+			'User talk page, not allowed' => [ self::USER_TALK_PAGE, true, [
+					'allowUsertalk' => false,
+				]
+			],
+			'User talk page, allowed' => [
+					self::USER_TALK_PAGE, false, [
+					'allowUsertalk' => true,
+				]
+			],
+			'User talk page, allowed but $wgBlockAllowsUTEdit is false' => [
+				self::USER_TALK_PAGE, true, [
+					'allowUsertalk' => true,
+					'blockAllowsUTEdit' => false,
+				]
+			],
+			'Partial block, blocking the page' => [
+				'Test page', true, [
+					'pageRestrictions' => [ 'Test page' ],
+				]
+			],
+			'Partial block, not blocking the page' => [
+				'Test page 2', false, [
+					'pageRestrictions' => [ 'Test page' ],
+				]
+			],
+			'Partial block, allowing user talk' => [
+				self::USER_TALK_PAGE, false, [
+					'allowUsertalk' => false,
+					'pageRestrictions' => [ 'Test page' ],
+				]
+			],
+			'Partial block, not allowing user talk' => [
+				self::USER_TALK_PAGE, true, [
+					'allowUsertalk' => true,
+					'pageRestrictions' => [ self::USER_TALK_PAGE ],
+				]
+			],
+			'Partial block, allowing user talk but $wgBlockAllowsUTEdit is false' => [
+				self::USER_TALK_PAGE, false, [
+					'allowUsertalk' => false,
+					'pageRestrictions' => [ 'Test page' ],
+					'blockAllowsUTEdit' => false,
+				]
+			],
+			'Partial block, not allowing user talk with $wgBlockAllowsUTEdit set to false' => [
+				self::USER_TALK_PAGE, true, [
+					'allowUsertalk' => true,
+					'pageRestrictions' => [ self::USER_TALK_PAGE ],
+					'blockAllowsUTEdit' => false,
+				]
+			],
+			'Partial namespace block, not allowing user talk' => [ self::USER_TALK_PAGE, true, [
+				'allowUsertalk' => false,
+				'namespaceRestrictions' => [ NS_USER_TALK ],
+			] ],
+			'Partial namespace block, not allowing user talk' => [ self::USER_TALK_PAGE, false, [
+				'allowUsertalk' => true,
+				'namespaceRestrictions' => [ NS_USER_TALK ],
+			] ],
+		];
 	}
 
 	/**

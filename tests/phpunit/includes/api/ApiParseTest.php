@@ -77,11 +77,15 @@ class ApiParseTest extends ApiTestCase {
 			$expectedEnd = "</div>";
 			$this->assertSame( $expectedEnd, substr( $html, -strlen( $expectedEnd ) ) );
 
+			$unexpectedEnd = '#<!-- \nNewPP limit report|' .
+				'<!--\nTransclusion expansion time report#s';
+			$this->assertNotRegExp( $unexpectedEnd, $html );
+
 			$html = substr( $html, 0, strlen( $html ) - strlen( $expectedEnd ) );
 		} else {
 			$expectedEnd = '#\n<!-- \nNewPP limit report\n(?>.+?\n-->)\n' .
 				'<!--\nTransclusion expansion time report \(%,ms,calls,template\)\n(?>.*?\n-->)\n' .
-				'</div>(\n<!-- Saved in parser cache (?>.*?\n -->)\n)?$#s';
+				'(\n<!-- Saved in parser cache (?>.*?\n -->)\n)?</div>$#s';
 			$this->assertRegExp( $expectedEnd, $html );
 
 			$html = preg_replace( $expectedEnd, '', $html );
@@ -93,8 +97,7 @@ class ApiParseTest extends ApiTestCase {
 			$this->assertCount( 1, $res[0] );
 		} else {
 			$this->assertCount( 2, $res[0] );
-			// This deliberately fails if there are extra warnings
-			$this->assertSame( [ 'parse' => [ 'warnings' => $warnings ] ], $res[0]['warnings'] );
+			$this->assertSame( [ 'warnings' => $warnings ], $res[0]['warnings']['parse'] );
 		}
 	}
 
@@ -823,7 +826,8 @@ class ApiParseTest extends ApiTestCase {
 			'disabletidy' => '',
 		] );
 
-		$this->assertParsedTo( "<p><b>Mixed <i>up</b></i>\n</p>", $res2 );
+		$this->assertParsedTo( "<p><b>Mixed <i>up</b></i>\n</p>", $res2,
+			'The parameter "disabletidy" has been deprecated.' );
 	}
 
 	public function testFormatCategories() {

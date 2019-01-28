@@ -3,16 +3,12 @@
  *
  * Set options:
  *
- *		$( '#textbox' ).suggestions( { option1: value1, option2: value2 } );
- *		$( '#textbox' ).suggestions( option, value );
- *
- * Get option:
- *
- *		value = $( '#textbox' ).suggestions( option );
+ *  $( '#textbox' ).suggestions( { option1: value1, option2: value2 } );
+ *  $( '#textbox' ).suggestions( option, value );
  *
  * Initialize:
  *
- *		$( '#textbox' ).suggestions();
+ *  $( '#textbox' ).suggestions();
  *
  * Uses jQuery.suggestions singleton internally.
  *
@@ -94,7 +90,7 @@
  *  input or not.
  */
 
-( function ( $, mw ) {
+( function () {
 
 	var hasOwn = Object.hasOwnProperty;
 
@@ -116,7 +112,7 @@
 			if ( context.data.timerID !== null ) {
 				clearTimeout( context.data.timerID );
 			}
-			if ( $.isFunction( context.config.cancel ) ) {
+			if ( typeof context.config.cancel === 'function' ) {
 				context.config.cancel.call( context.data.$textbox );
 			}
 		},
@@ -167,6 +163,7 @@
 				// Only fetch if the value in the textbox changed and is not empty, or if the results were hidden
 				// if the textbox is empty then clear the result div, but leave other settings intouched
 				if ( val.length === 0 ) {
+					// eslint-disable-next-line jquery/no-animate-toggle
 					$.suggestions.hide( context );
 					context.data.prevText = '';
 				} else if (
@@ -270,6 +267,7 @@
 					if ( context.data !== undefined ) {
 						if ( context.data.$textbox.val().length === 0 ) {
 							// Hide the div when no suggestion exist
+							// eslint-disable-next-line jquery/no-animate-toggle
 							$.suggestions.hide( context );
 						} else {
 							// Rebuild the suggestions list
@@ -356,7 +354,7 @@
 									.addClass( 'suggestions-result' )
 									.attr( 'rel', i )
 									.data( 'text', context.config.suggestions[ i ] )
-									.mousemove( function () {
+									.on( 'mousemove', function () {
 										context.data.selectedWithMouse = true;
 										$.suggestions.highlight(
 											context,
@@ -493,7 +491,7 @@
 					context.data.$textbox.val( result.data( 'text' ) );
 					// .val() doesn't call any event handlers, so
 					// let the world know what happened
-					context.data.$textbox.change();
+					context.data.$textbox.trigger( 'change' );
 				}
 				context.data.$textbox.trigger( 'change' );
 			}
@@ -532,6 +530,7 @@
 					break;
 				// Escape
 				case 27:
+					// eslint-disable-next-line jquery/no-animate-toggle
 					$.suggestions.hide( context );
 					$.suggestions.restore( context );
 					$.suggestions.cancel( context );
@@ -542,6 +541,7 @@
 				case 13:
 					preventDefault = wasVisible;
 					selected = context.data.$container.find( '.suggestions-result-current' );
+					// eslint-disable-next-line jquery/no-animate-toggle
 					$.suggestions.hide( context );
 					if ( selected.length === 0 || context.data.selectedWithMouse ) {
 						// If nothing is selected or if something was selected with the mouse
@@ -578,10 +578,8 @@
 
 	// See file header for method documentation
 	$.fn.suggestions = function () {
-
 		// Multi-context fields
-		var returnValue,
-			args = arguments;
+		var args = arguments;
 
 		$( this ).each( function () {
 			var context, key;
@@ -624,9 +622,6 @@
 					if ( args.length > 1 ) {
 						// Set property values
 						$.suggestions.configure( context, args[ 0 ], args[ 1 ] );
-					} else if ( returnValue === null || returnValue === undefined ) {
-						// Get property values, but don't give access to internal data - returns only the first
-						returnValue = ( args[ 0 ] in context.config ? undefined : context.config[ args[ 0 ] ] );
 					}
 				}
 			}
@@ -661,10 +656,10 @@
 							// Can't use click() because the container div is hidden when the
 							// textbox loses focus. Instead, listen for a mousedown followed
 							// by a mouseup on the same div.
-							.mousedown( function ( e ) {
+							.on( 'mousedown', function ( e ) {
 								context.data.mouseDownOn = $( e.target ).closest( '.suggestions-results .suggestions-result' );
 							} )
-							.mouseup( function ( e ) {
+							.on( 'mouseup', function ( e ) {
 								var $result = $( e.target ).closest( '.suggestions-results .suggestions-result' ),
 									$other = context.data.mouseDownOn;
 
@@ -681,12 +676,13 @@
 									// This will hide the link we're just clicking on, which causes problems
 									// when done synchronously in at least Firefox 3.6 (T64858).
 									setTimeout( function () {
+										// eslint-disable-next-line jquery/no-animate-toggle
 										$.suggestions.hide( context );
-									}, 0 );
+									} );
 								}
 								// Always bring focus to the textbox, as that's probably where the user expects it
 								// if they were just typing.
-								context.data.$textbox.focus();
+								context.data.$textbox.trigger( 'focus' );
 							} )
 					)
 					.append(
@@ -694,10 +690,10 @@
 							// Can't use click() because the container div is hidden when the
 							// textbox loses focus. Instead, listen for a mousedown followed
 							// by a mouseup on the same div.
-							.mousedown( function ( e ) {
+							.on( 'mousedown', function ( e ) {
 								context.data.mouseDownOn = $( e.target ).closest( '.suggestions-special' );
 							} )
-							.mouseup( function ( e ) {
+							.on( 'mouseup', function ( e ) {
 								var $special = $( e.target ).closest( '.suggestions-special' ),
 									$other = context.data.mouseDownOn;
 
@@ -713,14 +709,15 @@
 									// This will hide the link we're just clicking on, which causes problems
 									// when done synchronously in at least Firefox 3.6 (T64858).
 									setTimeout( function () {
+										// eslint-disable-next-line jquery/no-animate-toggle
 										$.suggestions.hide( context );
-									}, 0 );
+									} );
 								}
 								// Always bring focus to the textbox, as that's probably where the user expects it
 								// if they were just typing.
-								context.data.$textbox.focus();
+								context.data.$textbox.trigger( 'focus' );
 							} )
-							.mousemove( function ( e ) {
+							.on( 'mousemove', function ( e ) {
 								context.data.selectedWithMouse = true;
 								$.suggestions.highlight(
 									context, $( e.target ).closest( '.suggestions-special' ), false
@@ -732,16 +729,17 @@
 				$( this )
 					// Stop browser autocomplete from interfering
 					.attr( 'autocomplete', 'off' )
-					.keydown( function ( e ) {
+					.on( 'keydown', function ( e ) {
 						// Store key pressed to handle later
 						context.data.keypressed = e.which;
 						context.data.keypressedCount = 0;
 					} )
-					.keypress( function ( e ) {
+					.on( 'keypress', function ( e ) {
 						context.data.keypressedCount++;
+						// eslint-disable-next-line jquery/no-event-shorthand
 						$.suggestions.keypress( e, context, context.data.keypressed );
 					} )
-					.keyup( function ( e ) {
+					.on( 'keyup', function ( e ) {
 						// The keypress event is fired when a key is pressed down and that key normally
 						// produces a character value. We also want to handle some keys that don't
 						// produce a character value so we also attach to the keydown/keyup events.
@@ -759,15 +757,17 @@
 							e.which === context.data.keypressed &&
 							allowed.indexOf( e.which ) !== -1
 						) {
+							// eslint-disable-next-line jquery/no-event-shorthand
 							$.suggestions.keypress( e, context, context.data.keypressed );
 						}
 					} )
-					.blur( function () {
+					.on( 'blur', function () {
 						// When losing focus because of a mousedown
 						// on a suggestion, don't hide the suggestions
 						if ( context.data.mouseDownOn.length > 0 ) {
 							return;
 						}
+						// eslint-disable-next-line jquery/no-animate-toggle
 						$.suggestions.hide( context );
 						$.suggestions.cancel( context );
 					} );
@@ -776,7 +776,7 @@
 			// Store the context for next time
 			$( this ).data( 'suggestions-context', context );
 		} );
-		return returnValue !== undefined ? returnValue : $( this );
+		return this;
 	};
 
 	/**
@@ -784,4 +784,4 @@
 	 * @mixins jQuery.plugin.suggestions
 	 */
 
-}( jQuery, mediaWiki ) );
+}() );

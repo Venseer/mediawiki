@@ -34,6 +34,8 @@ require_once __DIR__ . '/../../maintenance/Maintenance.php';
  * @since 1.17
  */
 abstract class DatabaseUpdater {
+	const REPLICATION_WAIT_TIMEOUT = 300;
+
 	/**
 	 * Array of updates to perform on the database
 	 *
@@ -85,6 +87,7 @@ abstract class DatabaseUpdater {
 		AddRFCandPMIDInterwiki::class,
 		PopulatePPSortKey::class,
 		PopulateIpChanges::class,
+		RefreshExternallinksIndex::class,
 	];
 
 	/**
@@ -162,10 +165,7 @@ abstract class DatabaseUpdater {
 
 		// This will automatically add "AutoloadClasses" to $wgAutoloadClasses
 		$data = $registry->readFromQueue( $queue );
-		$hooks = [];
-		if ( isset( $data['globals']['wgHooks']['LoadExtensionSchemaUpdates'] ) ) {
-			$hooks = $data['globals']['wgHooks']['LoadExtensionSchemaUpdates'];
-		}
+		$hooks = $data['globals']['wgHooks']['LoadExtensionSchemaUpdates'] ?? [];
 		if ( $vars && isset( $vars['wgHooks']['LoadExtensionSchemaUpdates'] ) ) {
 			$hooks = array_merge_recursive( $hooks, $vars['wgHooks']['LoadExtensionSchemaUpdates'] );
 		}
@@ -484,7 +484,7 @@ abstract class DatabaseUpdater {
 			flush();
 			if ( $ret !== false ) {
 				$updatesDone[] = $origParams;
-				$lbFactory->waitForReplication();
+				$lbFactory->waitForReplication( [ 'timeout' => self::REPLICATION_WAIT_TIMEOUT ] );
 			} else {
 				$updatesSkipped[] = [ $func, $params, $origParams ];
 			}
@@ -1154,21 +1154,6 @@ abstract class DatabaseUpdater {
 	}
 
 	/**
-	 * Updates the timestamps in the transcache table
-	 * @return bool
-	 */
-	protected function doUpdateTranscacheField() {
-		if ( $this->updateRowExists( 'convert transcache field' ) ) {
-			$this->output( "...transcache tc_time already converted.\n" );
-
-			return true;
-		}
-
-		return $this->applyPatch( 'patch-tc-timestamp.sql', false,
-			"Converting tc_time from UNIX epoch to MediaWiki timestamp" );
-	}
-
-	/**
 	 * Update CategoryLinks collation
 	 */
 	protected function doCollationUpdate() {
@@ -1292,12 +1277,37 @@ abstract class DatabaseUpdater {
 	}
 
 	/**
+	 * Merge `image_comment_temp` into the `image` table
+	 * @since 1.32
+	 */
+	protected function migrateImageCommentTemp() {
+		global $wgCommentTableSchemaMigrationStage;
+
+		if ( $this->tableExists( 'image_comment_temp' ) ) {
+			if ( $wgCommentTableSchemaMigrationStage > MIGRATION_OLD ) {
+				$this->output( "Merging image_comment_temp into the image table\n" );
+				$task = $this->maintenance->runChild(
+					MigrateImageCommentTemp::class, 'migrateImageCommentTemp.php'
+				);
+				$task->setForce();
+				$ok = $task->execute();
+				$this->output( $ok ? "done.\n" : "errors were encountered.\n" );
+			} else {
+				$ok = true;
+			}
+			if ( $ok ) {
+				$this->dropTable( 'image_comment_temp' );
+			}
+		}
+	}
+
+	/**
 	 * Migrate actors to the new 'actor' table
 	 * @since 1.31
 	 */
 	protected function migrateActors() {
 		global $wgActorTableSchemaMigrationStage;
-		if ( $wgActorTableSchemaMigrationStage >= MIGRATION_WRITE_NEW &&
+		if ( ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_WRITE_NEW ) &&
 			!$this->updateRowExists( 'MigrateActors' )
 		) {
 			$this->output(

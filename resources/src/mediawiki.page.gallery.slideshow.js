@@ -1,7 +1,7 @@
 /*!
  * mw.GallerySlideshow: Interface controls for the slideshow gallery
  */
-( function ( mw, $, OO ) {
+( function () {
 	/**
 	 * mw.GallerySlideshow encapsulates the user interface of the slideshow
 	 * galleries. An object is instantiated for each `.mw-gallery-slideshow`
@@ -113,7 +113,7 @@
 	 * Draws the carousel and the interface around it.
 	 */
 	mw.GallerySlideshow.prototype.drawCarousel = function () {
-		var next, prev, toggle,	interfaceElements, carouselStack;
+		var next, prev, toggle, interfaceElements, carouselStack;
 
 		this.$carousel = $( '<li>' ).addClass( 'gallerycarousel' );
 
@@ -297,7 +297,7 @@
 	 *
 	 * @param {Object} $img
 	 * @return {jQuery.Promise} Resolves with the images URL and original
-	 *	element once the image has loaded.
+	 *   element once the image has loaded.
 	 */
 	mw.GallerySlideshow.prototype.loadImage = function ( $img ) {
 		var img, d = $.Deferred();
@@ -457,4 +457,4 @@
 			new mw.GallerySlideshow( this );
 		} );
 	} );
-}( mediaWiki, jQuery, OO ) );
+}() );

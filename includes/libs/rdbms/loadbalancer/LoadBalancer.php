@@ -28,6 +28,7 @@ use BagOStuff;
 use EmptyBagOStuff;
 use WANObjectCache;
 use ArrayUtils;
+use UnexpectedValueException;
 use InvalidArgumentException;
 use RuntimeException;
 use Exception;
@@ -46,7 +47,7 @@ class LoadBalancer implements ILoadBalancer {
 	private $srvCache;
 	/** @var WANObjectCache */
 	private $wanCache;
-	/** @var object|string Class name or object With profileIn/profileOut methods */
+	/** @var mixed Class name or object With profileIn/profileOut methods */
 	private $profiler;
 	/** @var TransactionProfiler */
 	private $trxProfiler;
@@ -203,11 +204,7 @@ class LoadBalancer implements ILoadBalancer {
 			$this->maxLag = $params['maxLag'];
 		}
 
-		if ( isset( $params['loadMonitor'] ) ) {
-			$this->loadMonitorConfig = $params['loadMonitor'];
-		} else {
-			$this->loadMonitorConfig = [ 'class' => 'LoadMonitorNull' ];
-		}
+		$this->loadMonitorConfig = $params['loadMonitor'] ?? [ 'class' => 'LoadMonitorNull' ];
 		$this->loadMonitorConfig += [ 'lagWarnThreshold' => $this->maxLag ];
 
 		foreach ( $params['servers'] as $i => $server ) {
@@ -222,22 +219,10 @@ class LoadBalancer implements ILoadBalancer {
 			}
 		}
 
-		if ( isset( $params['srvCache'] ) ) {
-			$this->srvCache = $params['srvCache'];
-		} else {
-			$this->srvCache = new EmptyBagOStuff();
-		}
-		if ( isset( $params['wanCache'] ) ) {
-			$this->wanCache = $params['wanCache'];
-		} else {
-			$this->wanCache = WANObjectCache::newEmpty();
-		}
+		$this->srvCache = $params['srvCache'] ?? new EmptyBagOStuff();
+		$this->wanCache = $params['wanCache'] ?? WANObjectCache::newEmpty();
 		$this->profiler = $params['profiler'] ?? null;
-		if ( isset( $params['trxProfiler'] ) ) {
-			$this->trxProfiler = $params['trxProfiler'];
-		} else {
-			$this->trxProfiler = new TransactionProfiler();
-		}
+		$this->trxProfiler = $params['trxProfiler'] ?? new TransactionProfiler();
 
 		$this->errorLogger = $params['errorLogger'] ?? function ( Exception $e ) {
 			trigger_error( get_class( $e ) . ': ' . $e->getMessage(), E_USER_WARNING );
@@ -327,7 +312,7 @@ class LoadBalancer implements ILoadBalancer {
 						": server {host} is not replicating?", [ 'host' => $host ] );
 					unset( $loads[$i] );
 				} elseif ( $lag > $maxServerLag ) {
-					$this->replLogger->info(
+					$this->replLogger->debug(
 						__METHOD__ .
 						": server {host} has {lag} seconds of lag (>= {maxlag})",
 						[ 'host' => $host, 'lag' => $lag, 'maxlag' => $maxServerLag ]
@@ -423,7 +408,7 @@ class LoadBalancer implements ILoadBalancer {
 	 * @return array (reader index, lagged replica mode) or false on failure
 	 */
 	private function pickReaderIndex( array $loads, $domain = false ) {
-		if ( !count( $loads ) ) {
+		if ( $loads === [] ) {
 			throw new InvalidArgumentException( "Empty server array given to LoadBalancer" );
 		}
 
@@ -491,7 +476,7 @@ class LoadBalancer implements ILoadBalancer {
 		}
 
 		// If all servers were down, quit now
-		if ( !count( $currentLoads ) ) {
+		if ( $currentLoads === [] ) {
 			$this->connLogger->error( __METHOD__ . ": all servers down" );
 		}
 
@@ -886,34 +871,7 @@ class LoadBalancer implements ILoadBalancer {
 			$conn = $this->openForeignConnection( $i, $domain, $flags );
 		} else {
 			// Connection is to the local domain
-			$connKey = $autoCommit ? self::KEY_LOCAL_NOROUND : self::KEY_LOCAL;
-			if ( isset( $this->conns[$connKey][$i][0] ) ) {
-				$conn = $this->conns[$connKey][$i][0];
-			} else {
-				if ( !isset( $this->servers[$i] ) || !is_array( $this->servers[$i] ) ) {
-					throw new InvalidArgumentException( "No server with index '$i'." );
-				}
-				// Open a new connection
-				$server = $this->servers[$i];
-				$server['serverIndex'] = $i;
-				$server['autoCommitOnly'] = $autoCommit;
-				if ( $this->localDomain->getDatabase() !== null ) {
-					// Use the local domain table prefix if the local domain is specified
-					$server['tablePrefix'] = $this->localDomain->getTablePrefix();
-				}
-				$conn = $this->reallyOpenConnection( $server, $this->localDomain );
-				$host = $this->getServerName( $i );
-				if ( $conn->isOpen() ) {
-					$this->connLogger->debug(
-						__METHOD__ . ": connected to database $i at '$host'." );
-					$this->conns[$connKey][$i][0] = $conn;
-				} else {
-					$this->connLogger->warning(
-						__METHOD__ . ": failed to connect to database $i at '$host'." );
-					$this->errorConnection = $conn;
-					$conn = false;
-				}
-			}
+			$conn = $this->openLocalConnection( $i, $flags );
 		}
 
 		if ( $conn instanceof IDatabase && !$conn->isOpen() ) {
@@ -926,7 +884,67 @@ class LoadBalancer implements ILoadBalancer {
 		}
 
 		if ( $autoCommit && $conn instanceof IDatabase ) {
+			if ( $conn->trxLevel() ) { // sanity
+				throw new DBUnexpectedError(
+					$conn,
+					__METHOD__ . ': CONN_TRX_AUTOCOMMIT handle has a transaction.'
+				);
+			}
+
 			$conn->clearFlag( $conn::DBO_TRX ); // auto-commit mode
+		}
+
+		return $conn;
+	}
+
+	/**
+	 * Open a connection to a local DB, or return one if it is already open.
+	 *
+	 * On error, returns false, and the connection which caused the
+	 * error will be available via $this->errorConnection.
+	 *
+	 * @note If disable() was called on this LoadBalancer, this method will throw a DBAccessError.
+	 *
+	 * @param int $i Server index
+	 * @param int $flags Class CONN_* constant bitfield
+	 * @return Database
+	 */
+	private function openLocalConnection( $i, $flags = 0 ) {
+		$autoCommit = ( ( $flags & self::CONN_TRX_AUTOCOMMIT ) == self::CONN_TRX_AUTOCOMMIT );
+
+		$connKey = $autoCommit ? self::KEY_LOCAL_NOROUND : self::KEY_LOCAL;
+		if ( isset( $this->conns[$connKey][$i][0] ) ) {
+			$conn = $this->conns[$connKey][$i][0];
+		} else {
+			if ( !isset( $this->servers[$i] ) || !is_array( $this->servers[$i] ) ) {
+				throw new InvalidArgumentException( "No server with index '$i'." );
+			}
+			// Open a new connection
+			$server = $this->servers[$i];
+			$server['serverIndex'] = $i;
+			$server['autoCommitOnly'] = $autoCommit;
+			$conn = $this->reallyOpenConnection( $server, $this->localDomain );
+			$host = $this->getServerName( $i );
+			if ( $conn->isOpen() ) {
+				$this->connLogger->debug(
+					__METHOD__ . ": connected to database $i at '$host'." );
+				$this->conns[$connKey][$i][0] = $conn;
+			} else {
+				$this->connLogger->warning(
+					__METHOD__ . ": failed to connect to database $i at '$host'." );
+				$this->errorConnection = $conn;
+				$conn = false;
+			}
+		}
+
+		// Final sanity check to make sure the right domain is selected
+		if (
+			$conn instanceof IDatabase &&
+			!$this->localDomain->isCompatible( $conn->getDomainID() )
+		) {
+			throw new UnexpectedValueException(
+				"Got connection to '{$conn->getDomainID()}', " .
+				"but expected local domain ('{$this->localDomain}')." );
 		}
 
 		return $conn;
@@ -951,12 +969,11 @@ class LoadBalancer implements ILoadBalancer {
 	 * @param int $i Server index
 	 * @param string $domain Domain ID to open
 	 * @param int $flags Class CONN_* constant bitfield
-	 * @return Database
+	 * @return Database|bool Returns false on connection error
+	 * @throws DBError When database selection fails
 	 */
 	private function openForeignConnection( $i, $domain, $flags = 0 ) {
 		$domainInstance = DatabaseDomain::newFromId( $domain );
-		$dbName = $domainInstance->getDatabase();
-		$prefix = $domainInstance->getTablePrefix();
 		$autoCommit = ( ( $flags & self::CONN_TRX_AUTOCOMMIT ) == self::CONN_TRX_AUTOCOMMIT );
 
 		if ( $autoCommit ) {
@@ -966,6 +983,9 @@ class LoadBalancer implements ILoadBalancer {
 			$connFreeKey = self::KEY_FOREIGN_FREE;
 			$connInUseKey = self::KEY_FOREIGN_INUSE;
 		}
+
+		/** @var Database $conn */
+		$conn = null;
 
 		if ( isset( $this->conns[$connInUseKey][$i][$domain] ) ) {
 			// Reuse an in-use connection for the same domain
@@ -978,23 +998,36 @@ class LoadBalancer implements ILoadBalancer {
 			$this->conns[$connInUseKey][$i][$domain] = $conn;
 			$this->connLogger->debug( __METHOD__ . ": reusing free connection $i/$domain" );
 		} elseif ( !empty( $this->conns[$connFreeKey][$i] ) ) {
-			// Reuse a free connection from another domain
-			$conn = reset( $this->conns[$connFreeKey][$i] );
-			$oldDomain = key( $this->conns[$connFreeKey][$i] );
-			if ( strlen( $dbName ) && !$conn->selectDB( $dbName ) ) {
-				$this->lastError = "Error selecting database '$dbName' on server " .
-					$conn->getServer() . " from client host {$this->hostname}";
-				$this->errorConnection = $conn;
-				$conn = false;
-			} else {
-				$conn->tablePrefix( $prefix );
+			// Reuse a free connection from another domain if possible
+			foreach ( $this->conns[$connFreeKey][$i] as $oldDomain => $conn ) {
+				if ( $domainInstance->getDatabase() !== null ) {
+					// Check if changing the database will require a new connection.
+					// In that case, leave the connection handle alone and keep looking.
+					// This prevents connections from being closed mid-transaction and can
+					// also avoid overhead if the same database will later be requested.
+					if (
+						$conn->databasesAreIndependent() &&
+						$conn->getDBname() !== $domainInstance->getDatabase()
+					) {
+						continue;
+					}
+					// Select the new database, schema, and prefix
+					$conn->selectDomain( $domainInstance );
+				} else {
+					// Stay on the current database, but update the schema/prefix
+					$conn->dbSchema( $domainInstance->getSchema() );
+					$conn->tablePrefix( $domainInstance->getTablePrefix() );
+				}
 				unset( $this->conns[$connFreeKey][$i][$oldDomain] );
 				// Note that if $domain is an empty string, getDomainID() might not match it
 				$this->conns[$connInUseKey][$i][$conn->getDomainId()] = $conn;
 				$this->connLogger->debug( __METHOD__ .
 					": reusing free connection from $oldDomain for $domain" );
+				break;
 			}
-		} else {
+		}
+
+		if ( !$conn ) {
 			if ( !isset( $this->servers[$i] ) || !is_array( $this->servers[$i] ) ) {
 				throw new InvalidArgumentException( "No server with index '$i'." );
 			}
@@ -1010,15 +1043,19 @@ class LoadBalancer implements ILoadBalancer {
 				$this->errorConnection = $conn;
 				$conn = false;
 			} else {
-				$conn->tablePrefix( $prefix ); // as specified
 				// Note that if $domain is an empty string, getDomainID() might not match it
 				$this->conns[$connInUseKey][$i][$conn->getDomainID()] = $conn;
 				$this->connLogger->debug( __METHOD__ . ": opened new connection for $i/$domain" );
 			}
 		}
 
-		// Increment reference count
 		if ( $conn instanceof IDatabase ) {
+			// Final sanity check to make sure the right domain is selected
+			if ( !$domainInstance->isCompatible( $conn->getDomainID() ) ) {
+				throw new UnexpectedValueException(
+					"Got connection to '{$conn->getDomainID()}', but expected '$domain'." );
+			}
+			// Increment reference count
 			$refCount = $conn->getLBInfo( 'foreignPoolRefCount' );
 			$conn->setLBInfo( 'foreignPoolRefCount', $refCount + 1 );
 		}
@@ -1054,20 +1091,20 @@ class LoadBalancer implements ILoadBalancer {
 	 * Returns a Database object whether or not the connection was successful.
 	 *
 	 * @param array $server
-	 * @param DatabaseDomain $domainOverride Use an unspecified domain to not select any database
+	 * @param DatabaseDomain $domain Domain the connection is for, possibly unspecified
 	 * @return Database
 	 * @throws DBAccessError
 	 * @throws InvalidArgumentException
 	 */
-	protected function reallyOpenConnection( array $server, DatabaseDomain $domainOverride ) {
+	protected function reallyOpenConnection( array $server, DatabaseDomain $domain ) {
 		if ( $this->disabled ) {
 			throw new DBAccessError();
 		}
 
-		// Handle $domainOverride being a specified or an unspecified domain
-		if ( $domainOverride->getDatabase() === null ) {
-			// Normally, an RDBMS requires a DB name specified on connection and the $server
-			// configuration array is assumed to already specify an appropriate DB name.
+		if ( $domain->getDatabase() === null ) {
+			// The database domain does not specify a DB name and some database systems require a
+			// valid DB specified on connection. The $server configuration array contains a default
+			// DB name to use for connections in such cases.
 			if ( $server['type'] === 'mysql' ) {
 				// For MySQL, DATABASE and SCHEMA are synonyms, connections need not specify a DB,
 				// and the DB name in $server might not exist due to legacy reasons (the default
@@ -1075,9 +1112,15 @@ class LoadBalancer implements ILoadBalancer {
 				$server['dbname'] = null;
 			}
 		} else {
-			$server['dbname'] = $domainOverride->getDatabase();
-			$server['schema'] = $domainOverride->getSchema();
+			$server['dbname'] = $domain->getDatabase();
 		}
+
+		if ( $domain->getSchema() !== null ) {
+			$server['schema'] = $domain->getSchema();
+		}
+
+		// It is always possible to connect with any prefix, even the empty string
+		$server['tablePrefix'] = $domain->getTablePrefix();
 
 		// Let the handle know what the cluster master is (e.g. "db1052")
 		$masterName = $this->getServerName( $this->getWriterIndex() );
@@ -1180,23 +1223,13 @@ class LoadBalancer implements ILoadBalancer {
 	}
 
 	public function getServerName( $i ) {
-		if ( isset( $this->servers[$i]['hostName'] ) ) {
-			$name = $this->servers[$i]['hostName'];
-		} elseif ( isset( $this->servers[$i]['host'] ) ) {
-			$name = $this->servers[$i]['host'];
-		} else {
-			$name = '';
-		}
+		$name = $this->servers[$i]['hostName'] ?? $this->servers[$i]['host'] ?? '';
 
 		return ( $name != '' ) ? $name : 'localhost';
 	}
 
 	public function getServerInfo( $i ) {
-		if ( isset( $this->servers[$i] ) ) {
-			return $this->servers[$i];
-		} else {
-			return false;
-		}
+		return $this->servers[$i] ?? false;
 	}
 
 	public function getServerType( $i ) {
@@ -1228,10 +1261,11 @@ class LoadBalancer implements ILoadBalancer {
 	}
 
 	public function closeAll() {
-		$this->forEachOpenConnection( function ( IDatabase $conn ) {
+		$fname = __METHOD__;
+		$this->forEachOpenConnection( function ( IDatabase $conn ) use ( $fname ) {
 			$host = $conn->getServer();
 			$this->connLogger->debug(
-				__METHOD__ . ": closing connection to database '$host'." );
+				$fname . ": closing connection to database '$host'." );
 			$conn->close();
 		} );
 
@@ -1247,6 +1281,11 @@ class LoadBalancer implements ILoadBalancer {
 	}
 
 	public function closeConnection( IDatabase $conn ) {
+		if ( $conn instanceof DBConnRef ) {
+			// Avoid calling close() but still leaving the handle in the pool
+			throw new RuntimeException( __METHOD__ . ': got DBConnRef instance.' );
+		}
+
 		$serverIndex = $conn->getLBInfo( 'serverIndex' );
 		foreach ( $this->conns as $type => $connsByServer ) {
 			if ( !isset( $connsByServer[$serverIndex] ) ) {
@@ -1308,12 +1347,7 @@ class LoadBalancer implements ILoadBalancer {
 			// If atomic sections or explicit transactions are still open, some caller must have
 			// caught an exception but failed to properly rollback any changes. Detect that and
 			// throw and error (causing rollback).
-			if ( $conn->explicitTrxActive() ) {
-				throw new DBTransactionError(
-					$conn,
-					"Explicit transaction still active. A caller may have caught an error."
-				);
-			}
+			$conn->assertNoOpenTransactions();
 			// Assert that the time to replicate the transaction will be sane.
 			// If this fails, then all DB transactions will be rollback back together.
 			$time = $conn->pendingWriteQueryDuration( $conn::ESTIMATE_DB_APPLY );
@@ -1366,7 +1400,7 @@ class LoadBalancer implements ILoadBalancer {
 		$failures = [];
 
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForCommit(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 
 		$restore = ( $this->trxRoundId !== false );
 		$this->trxRoundId = false;
@@ -1419,6 +1453,7 @@ class LoadBalancer implements ILoadBalancer {
 		} );
 
 		$e = null; // first exception
+		$fname = __METHOD__;
 		// Loop until callbacks stop adding callbacks on other connections
 		do {
 			// Run any pending callbacks for each connection...
@@ -1436,13 +1471,13 @@ class LoadBalancer implements ILoadBalancer {
 				}
 			);
 			// Clear out any active transactions left over from callbacks...
-			$this->forEachOpenMasterConnection( function ( Database $conn ) use ( &$e ) {
+			$this->forEachOpenMasterConnection( function ( Database $conn ) use ( &$e, $fname ) {
 				if ( $conn->writesPending() ) {
 					// A callback from another handle wrote to this one and DBO_TRX is set
-					$this->queryLogger->warning( __METHOD__ . ": found writes pending." );
+					$this->queryLogger->warning( $fname . ": found writes pending." );
 					$fnames = implode( ', ', $conn->pendingWriteAndCallbackCallers() );
 					$this->queryLogger->warning(
-						__METHOD__ . ": found writes pending ($fnames).",
+						$fname . ": found writes pending ($fnames).",
 						[
 							'db_server' => $conn->getServer(),
 							'db_name' => $conn->getDBname()
@@ -1451,10 +1486,10 @@ class LoadBalancer implements ILoadBalancer {
 				} elseif ( $conn->trxLevel() ) {
 					// A callback from another handle read from this one and DBO_TRX is set,
 					// which can easily happen if there is only one DB (no replicas)
-					$this->queryLogger->debug( __METHOD__ . ": found empty transaction." );
+					$this->queryLogger->debug( $fname . ": found empty transaction." );
 				}
 				try {
-					$conn->commit( __METHOD__, $conn::FLUSHING_ALL_PEERS );
+					$conn->commit( $fname, $conn::FLUSHING_ALL_PEERS );
 				} catch ( Exception $ex ) {
 					$e = $e ?: $ex;
 				}
@@ -1883,7 +1918,15 @@ class LoadBalancer implements ILoadBalancer {
 		$this->indexAliases = $aliases;
 	}
 
+	/**
+	 * @param string $prefix
+	 * @deprecated Since 1.33
+	 */
 	public function setDomainPrefix( $prefix ) {
+		$this->setLocalDomainPrefix( $prefix );
+	}
+
+	public function setLocalDomainPrefix( $prefix ) {
 		// Find connections to explicit foreign domains still marked as in-use...
 		$domainsInUse = [];
 		$this->forEachOpenConnection( function ( IDatabase $conn ) use ( &$domainsInUse ) {
@@ -1901,18 +1944,24 @@ class LoadBalancer implements ILoadBalancer {
 				"Foreign domain connections are still in use ($domains)." );
 		}
 
-		$oldDomain = $this->localDomain->getId();
 		$this->setLocalDomain( new DatabaseDomain(
 			$this->localDomain->getDatabase(),
 			$this->localDomain->getSchema(),
 			$prefix
 		) );
 
-		$this->forEachOpenConnection( function ( IDatabase $db ) use ( $prefix, $oldDomain ) {
+		// Update the prefix for all local connections...
+		$this->forEachOpenConnection( function ( IDatabase $db ) use ( $prefix ) {
 			if ( !$db->getLBInfo( 'foreign' ) ) {
 				$db->tablePrefix( $prefix );
 			}
 		} );
+	}
+
+	public function redefineLocalDomain( $domain ) {
+		$this->closeAll();
+
+		$this->setLocalDomain( DatabaseDomain::newFromId( $domain ) );
 	}
 
 	/**
@@ -1928,23 +1977,6 @@ class LoadBalancer implements ILoadBalancer {
 		} else {
 			$this->localDomainIdAlias = $this->localDomain->getDatabase();
 		}
-	}
-
-	/**
-	 * Make PHP ignore user aborts/disconnects until the returned
-	 * value leaves scope. This returns null and does nothing in CLI mode.
-	 *
-	 * @return ScopedCallback|null
-	 */
-	final protected function getScopedPHPBehaviorForCommit() {
-		if ( PHP_SAPI != 'cli' ) { // https://bugs.php.net/bug.php?id=47540
-			$old = ignore_user_abort( true ); // avoid half-finished operations
-			return new ScopedCallback( function () use ( $old ) {
-				ignore_user_abort( $old );
-			} );
-		}
-
-		return null;
 	}
 
 	function __destruct() {

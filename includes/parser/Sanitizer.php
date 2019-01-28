@@ -24,6 +24,8 @@
  * @ingroup Parser
  */
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * HTML sanitizer for MediaWiki
  * @ingroup Parser
@@ -347,18 +349,18 @@ class Sanitizer {
 
 	/**
 	 * Regular expression to match HTML/XML attribute pairs within a tag.
-	 * Allows some... latitude. Based on,
-	 * https://www.w3.org/TR/html5/syntax.html#before-attribute-value-state
-	 * Used in Sanitizer::fixTagAttributes and Sanitizer::decodeTagAttributes
+	 * Based on https://www.w3.org/TR/html5/syntax.html#before-attribute-name-state
+	 * Used in Sanitizer::decodeTagAttributes
 	 * @return string
 	 */
 	static function getAttribsRegex() {
 		if ( self::$attribsRegex === null ) {
-			$attribFirst = "[:_\p{L}\p{N}]";
-			$attrib = "[:_\.\-\p{L}\p{N}]";
-			$space = '[\x09\x0a\x0c\x0d\x20]';
+			$spaceChars = '\x09\x0a\x0c\x0d\x20';
+			$space = "[{$spaceChars}]";
+			$attrib = "[^{$spaceChars}\/>=]";
+			$attribFirst = "(?:{$attrib}|=)";
 			self::$attribsRegex =
-				"/(?:^|$space)({$attribFirst}{$attrib}*)
+				"/({$attribFirst}{$attrib}*)
 					($space*=$space*
 					(?:
 						# The attribute value: quoted or alone
@@ -366,9 +368,27 @@ class Sanitizer {
 						| '([^']*)(?:'|\$)
 						| (((?!$space|>).)*)
 					)
-				)?(?=$space|\$)/sxu";
+				)?/sxu";
 		}
 		return self::$attribsRegex;
+	}
+
+	/**
+	 * Lazy-initialised attribute name regex, see getAttribNameRegex()
+	 */
+	private static $attribNameRegex;
+
+	/**
+	 * Used in Sanitizer::decodeTagAttributes to filter attributes.
+	 * @return string
+	 */
+	static function getAttribNameRegex() {
+		if ( self::$attribNameRegex === null ) {
+			$attribFirst = "[:_\p{L}\p{N}]";
+			$attrib = "[:_\.\-\p{L}\p{N}]";
+			self::$attribNameRegex = "/^({$attribFirst}{$attrib}*)$/sxu";
+		}
+		return self::$attribNameRegex;
 	}
 
 	/**
@@ -493,6 +513,7 @@ class Sanitizer {
 		$bits = explode( '<', $text );
 		$text = str_replace( '>', '&gt;', array_shift( $bits ) );
 		if ( !MWTidy::isEnabled() ) {
+			wfDeprecated( 'disabling tidy', '1.33' );
 			$tagstack = $tablestack = [];
 			foreach ( $bits as $x ) {
 				$regs = [];
@@ -1431,18 +1452,24 @@ class Sanitizer {
 			return [];
 		}
 
-		$attribs = [];
 		$pairs = [];
 		if ( !preg_match_all(
 			self::getAttribsRegex(),
 			$text,
 			$pairs,
 			PREG_SET_ORDER ) ) {
-			return $attribs;
+			return [];
 		}
 
+		$attribs = [];
 		foreach ( $pairs as $set ) {
 			$attribute = strtolower( $set[1] );
+
+			// Filter attribute names with unacceptable characters
+			if ( !preg_match( self::getAttribNameRegex(), $attribute ) ) {
+				continue;
+			}
+
 			$value = self::getTagAttributeCallback( $set );
 
 			// Normalize whitespace
@@ -1506,10 +1533,10 @@ class Sanitizer {
 	 * @return string
 	 */
 	private static function normalizeWhitespace( $text ) {
-		return preg_replace(
-			'/\r\n|[\x20\x0d\x0a\x09]/',
+		return trim( preg_replace(
+			'/(?:\r\n|[\x20\x0d\x0a\x09])+/',
 			' ',
-			$text );
+			$text ) );
 	}
 
 	/**
@@ -1657,7 +1684,6 @@ class Sanitizer {
 	 * @return string Still normalized, without entities
 	 */
 	public static function decodeCharReferencesAndNormalize( $text ) {
-		global $wgContLang;
 		$text = preg_replace_callback(
 			self::CHAR_REFS_REGEX,
 			[ self::class, 'decodeCharReferencesCallback' ],
@@ -1667,7 +1693,7 @@ class Sanitizer {
 		);
 
 		if ( $count ) {
-			return $wgContLang->normalize( $text );
+			return MediaWikiServices::getInstance()->getContentLanguage()->normalize( $text );
 		} else {
 			return $text;
 		}

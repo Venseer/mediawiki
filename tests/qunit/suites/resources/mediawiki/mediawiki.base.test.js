@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	QUnit.module( 'mediawiki.base' );
 
 	QUnit.test( 'mw.hook - basic', function ( assert ) {
@@ -123,4 +123,29 @@
 		);
 	} );
 
-}( mediaWiki ) );
+	QUnit.test( 'RLQ.push', function ( assert ) {
+		/* global RLQ */
+		var loaded = 0,
+			called = 0,
+			done = assert.async();
+		mw.loader.testCallback = function () {
+			loaded++;
+			delete mw.loader.testCallback;
+		};
+		mw.loader.implement( 'test.rlq-push', [
+			QUnit.fixurl( mw.config.get( 'wgScriptPath' ) + '/tests/qunit/data/mwLoaderTestCallback.js' )
+		] );
+
+		// Regression test for T208093
+		RLQ.push( function () {
+			called++;
+		} );
+		assert.strictEqual( called, 1, 'Invoke plain callbacks' );
+
+		RLQ.push( [ 'test.rlq-push', function () {
+			assert.strictEqual( loaded, 1, 'Load the required module' );
+			done();
+		} ] );
+	} );
+
+}() );

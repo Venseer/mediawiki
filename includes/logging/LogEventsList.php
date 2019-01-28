@@ -110,8 +110,6 @@ class LogEventsList extends ContextSource {
 	public function showOptions( $types = [], $user = '', $page = '', $pattern = false, $year = 0,
 		$month = 0, $day = 0, $filter = null, $tagFilter = '', $action = null
 	) {
-		$title = SpecialPage::getTitleFor( 'Log' );
-
 		// For B/C, we take strings, but make sure they are converted...
 		$types = ( $types === '' ) ? [] : (array)$types;
 
@@ -120,12 +118,25 @@ class LogEventsList extends ContextSource {
 		// Basic selectors
 		$formDescriptor['type'] = $this->getTypeMenuDesc( $types );
 		$formDescriptor['user'] = $this->getUserInputDesc( $user );
-		$formDescriptor['page'] = $this->getTitleInputDesc( $title );
+		$formDescriptor['page'] = $this->getTitleInputDesc( $page );
 
 		// Add extra inputs if any
+		// This could either be a form descriptor array or a string with raw HTML.
+		// We need it to work in both cases and show a deprecation warning if it
+		// is a string. See T199495.
 		$extraInputsDescriptor = $this->getExtraInputsDesc( $types );
-		if ( !empty( $extraInputsDescriptor ) ) {
+		if (
+			is_array( $extraInputsDescriptor ) &&
+			!empty( $extraInputsDescriptor )
+		) {
 			$formDescriptor[ 'extra' ] = $extraInputsDescriptor;
+		} elseif (
+			is_string( $extraInputsDescriptor ) &&
+			$extraInputsDescriptor !== ''
+		) {
+			// We'll add this to the footer of the form later
+			$extraInputsString = $extraInputsDescriptor;
+			wfDeprecated( '$input in LogEventsListGetExtraInputs hook', '1.32' );
 		}
 
 		// Title pattern, if allowed
@@ -136,7 +147,8 @@ class LogEventsList extends ContextSource {
 		// Date menu
 		$formDescriptor['date'] = [
 			'type' => 'date',
-			'label-message' => 'date'
+			'label-message' => 'date',
+			'default' => $year && $month && $day ? sprintf( "%04d-%02d-%02d", $year, $month, $day ) : '',
 		];
 
 		// Tag filter
@@ -160,10 +172,22 @@ class LogEventsList extends ContextSource {
 			$formDescriptor['subtype'] = $this->getActionSelectorDesc( $types, $action );
 		}
 
-		$htmlForm = new HTMLForm( $formDescriptor, $this->getContext() );
+		$context = new DerivativeContext( $this->getContext() );
+		$context->setTitle( SpecialPage::getTitleFor( 'Log' ) ); // Remove subpage
+		$htmlForm = HTMLForm::factory( 'ooui', $formDescriptor, $context );
 		$htmlForm
 			->setSubmitText( $this->msg( 'logeventslist-submit' )->text() )
+			->setMethod( 'get' )
 			->setWrapperLegendMsg( 'log' );
+
+		// TODO This will should be removed at some point. See T199495.
+		if ( isset( $extraInputsString ) ) {
+			$htmlForm->addFooterText( Html::rawElement(
+				'div',
+				null,
+				$extraInputsString
+			) );
+		}
 
 		$htmlForm->prepareForm()->displayForm( false );
 	}
@@ -176,9 +200,14 @@ class LogEventsList extends ContextSource {
 		$options = [];
 		$default = [];
 		foreach ( $filter as $type => $val ) {
-			$options[ $this->msg( "logeventslist-{$type}-log" )->text() ] = $type;
+			$message = $this->msg( "logeventslist-{$type}-log" );
+			// FIXME: Remove this check once T199657 is fully resolved.
+			if ( !$message->exists() ) {
+				$message = $this->msg( "log-show-hide-{$type}" )->params( $this->msg( 'show' )->text() );
+			}
+			$options[ $message->text() ] = $type;
 
-			if ( $val === 0 ) {
+			if ( $val === false ) {
 				$default[] = $type;
 			}
 		}
@@ -248,6 +277,7 @@ class LogEventsList extends ContextSource {
 			'class' => 'HTMLUserTextField',
 			'label-message' => 'specialloguserlabel',
 			'name' => 'user',
+			'default' => $user,
 		];
 	}
 
@@ -260,7 +290,6 @@ class LogEventsList extends ContextSource {
 			'class' => 'HTMLTitleTextField',
 			'label-message' => 'speciallogtitlelabel',
 			'name' => 'page',
-			'value' => $title,
 			'required' => false
 		];
 	}
@@ -279,27 +308,24 @@ class LogEventsList extends ContextSource {
 
 	/**
 	 * @param array $types
-	 * @return array Form descriptor
+	 * @return array|string Form descriptor or string with HTML
 	 */
 	private function getExtraInputsDesc( $types ) {
 		if ( count( $types ) == 1 ) {
 			if ( $types[0] == 'suppress' ) {
-				$offender = $this->getRequest()->getVal( 'offender' );
-				$user = User::newFromName( $offender, false );
-				if ( !$user || ( $user->getId() == 0 && !IP::isIPAddress( $offender ) ) ) {
-					$offender = ''; // Blank field if invalid
-				}
 				return [
 					'type' => 'text',
 					'label-message' => 'revdelete-offender',
 					'name' => 'offender',
-					'value' => $offender,
 				];
 			} else {
 				// Allow extensions to add their own extra inputs
+				// This could be an array or string. See T199495.
+				$input = ''; // Deprecated
 				$formDescriptor = [];
-				Hooks::run( 'LogEventsListGetExtraInputs', [ $types[0], $this, &$formDescriptor ] );
-				return $formDescriptor;
+				Hooks::run( 'LogEventsListGetExtraInputs', [ $types[0], $this, &$input, &$formDescriptor ] );
+
+				return empty( $formDescriptor ) ? $input : $formDescriptor;
 			}
 		}
 
@@ -402,7 +428,10 @@ class LogEventsList extends ContextSource {
 
 		// Let extensions add data
 		Hooks::run( 'LogEventsListLineEnding', [ $this, &$ret, $entry, &$classes, &$attribs ] );
-		$attribs = wfArrayFilterByKey( $attribs, [ Sanitizer::class, 'isReservedDataAttribute' ] );
+		$attribs = array_filter( $attribs,
+			[ Sanitizer::class, 'isReservedDataAttribute' ],
+			ARRAY_FILTER_USE_KEY
+		);
 		$attribs['class'] = implode( ' ', $classes );
 
 		return Html::rawElement( 'li', $attribs, $ret ) . "\n";

@@ -687,6 +687,8 @@ CREATE TABLE /*_*/slots (
 
   -- The revision ID of the revision that originated the slot's content.
   -- To find revisions that changed slots, look for slot_origin = slot_revision_id.
+  -- TODO: Is that actually true? Rollback seems to violate it by setting
+  --  slot_origin to an older rev_id. Undeletions could result in the same situation.
   slot_origin bigint unsigned NOT NULL,
 
   PRIMARY KEY ( slot_revision_id, slot_role_id )
@@ -928,6 +930,9 @@ CREATE TABLE /*_*/externallinks (
   -- which allows for fast searching for all pages under example.com with the
   -- clause:
   --      WHERE el_index LIKE 'http://com.example.%'
+  --
+  -- Note if you enable or disable PHP's intl extension, you'll need to run
+  -- maintenance/refreshExternallinksIndex.php to refresh this field.
   el_index blob NOT NULL,
 
   -- This is el_index truncated to 60 bytes to allow for sortable queries that
@@ -1089,7 +1094,11 @@ CREATE TABLE /*_*/ipblocks (
   -- Autoblocks set this to the original block
   -- so that the original block being deleted also
   -- deletes the autoblocks
-  ipb_parent_block_id int default NULL
+  ipb_parent_block_id int default NULL,
+
+  -- Block user from editing any page on the site (other than their own user
+  -- talk page).
+  ipb_sitewide bool NOT NULL default 1
 
 ) /*$wgDBTableOptions*/;
 
@@ -1112,6 +1121,26 @@ CREATE INDEX /*i*/ipb_expiry ON /*_*/ipblocks (ipb_expiry);
 -- Index for removing autoblocks when a parent block is removed
 CREATE INDEX /*i*/ipb_parent_block_id ON /*_*/ipblocks (ipb_parent_block_id);
 
+--
+-- Partial Block Restrictions
+--
+CREATE TABLE /*_*/ipblocks_restrictions (
+
+  -- The ipb_id from ipblocks
+  ir_ipb_id int NOT NULL,
+
+  -- The restriction type id.
+  ir_type tinyint(1) NOT NULL,
+
+  -- The restriction id that corrposponds to the type. Typically a Page ID or a
+  -- Namespace ID.
+  ir_value int NOT NULL,
+
+  PRIMARY KEY (ir_ipb_id, ir_type, ir_value)
+) /*$wgDBTableOptions*/;
+
+-- Index to query restrictions by the page or namespace.
+CREATE INDEX /*i*/ir_type_value ON /*_*/ipblocks_restrictions (ir_type, ir_value);
 
 --
 -- Uploaded images and other files.
@@ -1184,23 +1213,6 @@ CREATE INDEX /*i*/img_timestamp ON /*_*/image (img_timestamp);
 CREATE INDEX /*i*/img_sha1 ON /*_*/image (img_sha1(10));
 -- Used to get media of one type
 CREATE INDEX /*i*/img_media_mime ON /*_*/image (img_media_type,img_major_mime,img_minor_mime);
-
---
--- Temporary table to avoid blocking on an alter of image.
---
--- On large wikis like Wikimedia Commons, altering the image table is a
--- months-long process. This table is being created to avoid such an alter, and
--- will be merged back into image in the future.
---
-CREATE TABLE /*_*/image_comment_temp (
-  -- Key to img_name (ugh)
-  imgcomment_name varchar(255) binary NOT NULL,
-  -- Key to comment_id
-  imgcomment_description_id bigint unsigned NOT NULL,
-  PRIMARY KEY (imgcomment_name, imgcomment_description_id)
-) /*$wgDBTableOptions*/;
--- Ensure uniqueness
-CREATE UNIQUE INDEX /*i*/imgcomment_name ON /*_*/image_comment_temp (imgcomment_name);
 
 
 --
@@ -1471,6 +1483,8 @@ CREATE INDEX /*i*/rc_actor ON /*_*/recentchanges (rc_actor, rc_timestamp);
 -- ApiQueryRecentChanges (T140108)
 CREATE INDEX /*i*/rc_name_type_patrolled_timestamp ON /*_*/recentchanges (rc_namespace, rc_type, rc_patrolled, rc_timestamp);
 
+-- Article.php and friends (T139012)
+CREATE INDEX /*i*/rc_this_oldid ON /*_*/recentchanges (rc_this_oldid);
 
 CREATE TABLE /*_*/watchlist (
   wl_id int unsigned NOT NULL PRIMARY KEY AUTO_INCREMENT,
@@ -1578,16 +1592,6 @@ CREATE TABLE /*_*/objectcache (
   exptime datetime
 ) /*$wgDBTableOptions*/;
 CREATE INDEX /*i*/exptime ON /*_*/objectcache (exptime);
-
-
---
--- Cache of interwiki transclusion
---
-CREATE TABLE /*_*/transcache (
-  tc_url varbinary(255) NOT NULL PRIMARY KEY,
-  tc_contents text,
-  tc_time binary(14) NOT NULL
-) /*$wgDBTableOptions*/;
 
 
 CREATE TABLE /*_*/logging (
@@ -1842,43 +1846,19 @@ CREATE TABLE /*_*/change_tag (
   ct_log_id int unsigned NULL,
   -- REVID for the change
   ct_rev_id int unsigned NULL,
-  -- Tag applied, this will go away and be replaced with ct_tag_id
-  ct_tag varchar(255) NOT NULL,
   -- Parameters for the tag; used by some extensions
   ct_params blob NULL,
-  -- Foreign key to change_tag_def row, this will be "NOT NULL" once populated
-  ct_tag_id int unsigned NULL
+  -- Foreign key to change_tag_def row
+  ct_tag_id int unsigned NOT NULL
 ) /*$wgDBTableOptions*/;
 
-CREATE UNIQUE INDEX /*i*/change_tag_rc_tag ON /*_*/change_tag (ct_rc_id,ct_tag);
-CREATE UNIQUE INDEX /*i*/change_tag_log_tag ON /*_*/change_tag (ct_log_id,ct_tag);
-CREATE UNIQUE INDEX /*i*/change_tag_rev_tag ON /*_*/change_tag (ct_rev_id,ct_tag);
+
+CREATE UNIQUE INDEX /*i*/change_tag_rc_tag_id ON /*_*/change_tag (ct_rc_id,ct_tag_id);
+CREATE UNIQUE INDEX /*i*/change_tag_log_tag_id ON /*_*/change_tag (ct_log_id,ct_tag_id);
+CREATE UNIQUE INDEX /*i*/change_tag_rev_tag_id ON /*_*/change_tag (ct_rev_id,ct_tag_id);
 -- Covering index, so we can pull all the info only out of the index.
-CREATE INDEX /*i*/change_tag_tag_id ON /*_*/change_tag (ct_tag,ct_rc_id,ct_rev_id,ct_log_id);
 CREATE INDEX /*i*/change_tag_tag_id_id ON /*_*/change_tag (ct_tag_id,ct_rc_id,ct_rev_id,ct_log_id);
 
--- Rollup table to pull a LIST of tags simply without ugly GROUP_CONCAT
--- that only works on MySQL 4.1+
-CREATE TABLE /*_*/tag_summary (
-  ts_id int unsigned NOT NULL PRIMARY KEY AUTO_INCREMENT,
-  -- RCID for the change
-  ts_rc_id int NULL,
-  -- LOGID for the change
-  ts_log_id int unsigned NULL,
-  -- REVID for the change
-  ts_rev_id int unsigned NULL,
-  -- Comma-separated list of tags
-  ts_tags blob NOT NULL
-) /*$wgDBTableOptions*/;
-
-CREATE UNIQUE INDEX /*i*/tag_summary_rc_id ON /*_*/tag_summary (ts_rc_id);
-CREATE UNIQUE INDEX /*i*/tag_summary_log_id ON /*_*/tag_summary (ts_log_id);
-CREATE UNIQUE INDEX /*i*/tag_summary_rev_id ON /*_*/tag_summary (ts_rev_id);
-
-
-CREATE TABLE /*_*/valid_tag (
-  vt_tag varchar(255) NOT NULL PRIMARY KEY
-) /*$wgDBTableOptions*/;
 
 -- Table for storing localisation data
 CREATE TABLE /*_*/l10n_cache (

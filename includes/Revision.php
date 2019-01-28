@@ -20,15 +20,16 @@
  * @file
  */
 
-use MediaWiki\Storage\MutableRevisionRecord;
-use MediaWiki\Storage\RevisionAccessException;
-use MediaWiki\Storage\RevisionFactory;
-use MediaWiki\Storage\RevisionLookup;
-use MediaWiki\Storage\RevisionRecord;
-use MediaWiki\Storage\RevisionStore;
-use MediaWiki\Storage\RevisionStoreRecord;
-use MediaWiki\Storage\SlotRecord;
+use MediaWiki\Revision\MutableRevisionRecord;
+use MediaWiki\Revision\RevisionAccessException;
+use MediaWiki\Revision\RevisionFactory;
+use MediaWiki\Revision\RevisionLookup;
+use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Revision\RevisionStore;
+use MediaWiki\Revision\RevisionStoreRecord;
+use MediaWiki\Revision\SlotRecord;
 use MediaWiki\Storage\SqlBlobStore;
+use Wikimedia\Assert\Assert;
 use Wikimedia\Rdbms\IDatabase;
 use MediaWiki\Linker\LinkTarget;
 use MediaWiki\MediaWikiServices;
@@ -61,8 +62,13 @@ class Revision implements IDBAccessObject {
 	/**
 	 * @return RevisionStore
 	 */
-	protected static function getRevisionStore() {
-		return MediaWikiServices::getInstance()->getRevisionStore();
+	protected static function getRevisionStore( $wiki = false ) {
+		if ( $wiki ) {
+			return MediaWikiServices::getInstance()->getRevisionStoreFactory()
+				->getRevisionStore( $wiki );
+		} else {
+			return MediaWikiServices::getInstance()->getRevisionStore();
+		}
 	}
 
 	/**
@@ -318,12 +324,13 @@ class Revision implements IDBAccessObject {
 		global $wgActorTableSchemaMigrationStage;
 
 		wfDeprecated( __METHOD__, '1.31' );
-		if ( $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH ) {
+		if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_READ_NEW ) {
 			// If code is using this instead of self::getQueryInfo(), there's
 			// no way the join it's trying to do can work once the old fields
-			// aren't being written anymore.
+			// aren't being used anymore.
 			throw new BadMethodCallException(
-				'Cannot use ' . __METHOD__ . ' when $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH'
+				'Cannot use ' . __METHOD__
+					. ' when $wgActorTableSchemaMigrationStage has SCHEMA_COMPAT_READ_NEW'
 			);
 		}
 
@@ -350,14 +357,28 @@ class Revision implements IDBAccessObject {
 	 */
 	public static function selectFields() {
 		global $wgContentHandlerUseDB, $wgActorTableSchemaMigrationStage;
+		global $wgMultiContentRevisionSchemaMigrationStage;
 
-		if ( $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH ) {
+		if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_READ_NEW ) {
 			// If code is using this instead of self::getQueryInfo(), there's a
 			// decent chance it's going to try to directly access
 			// $row->rev_user or $row->rev_user_text and we can't give it
-			// useful values here once those aren't being written anymore.
+			// useful values here once those aren't being used anymore.
 			throw new BadMethodCallException(
-				'Cannot use ' . __METHOD__ . ' when $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH'
+				'Cannot use ' . __METHOD__
+					. ' when $wgActorTableSchemaMigrationStage has SCHEMA_COMPAT_READ_NEW'
+			);
+		}
+
+		if ( !( $wgMultiContentRevisionSchemaMigrationStage & SCHEMA_COMPAT_WRITE_OLD ) ) {
+			// If code is using this instead of self::getQueryInfo(), there's a
+			// decent chance it's going to try to directly access
+			// $row->rev_text_id or $row->rev_content_model and we can't give it
+			// useful values here once those aren't being written anymore,
+			// and may not exist at all.
+			throw new BadMethodCallException(
+				'Cannot use ' . __METHOD__ . ' when $wgMultiContentRevisionSchemaMigrationStage '
+				. 'does not have SCHEMA_COMPAT_WRITE_OLD set.'
 			);
 		}
 
@@ -396,14 +417,28 @@ class Revision implements IDBAccessObject {
 	 */
 	public static function selectArchiveFields() {
 		global $wgContentHandlerUseDB, $wgActorTableSchemaMigrationStage;
+		global $wgMultiContentRevisionSchemaMigrationStage;
 
-		if ( $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH ) {
+		if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_READ_NEW ) {
 			// If code is using this instead of self::getQueryInfo(), there's a
 			// decent chance it's going to try to directly access
 			// $row->ar_user or $row->ar_user_text and we can't give it
-			// useful values here once those aren't being written anymore.
+			// useful values here once those aren't being used anymore.
 			throw new BadMethodCallException(
-				'Cannot use ' . __METHOD__ . ' when $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH'
+				'Cannot use ' . __METHOD__
+					. ' when $wgActorTableSchemaMigrationStage has SCHEMA_COMPAT_READ_NEW'
+			);
+		}
+
+		if ( !( $wgMultiContentRevisionSchemaMigrationStage & SCHEMA_COMPAT_WRITE_OLD ) ) {
+			// If code is using this instead of self::getQueryInfo(), there's a
+			// decent chance it's going to try to directly access
+			// $row->ar_text_id or $row->ar_content_model and we can't give it
+			// useful values here once those aren't being written anymore,
+			// and may not exist at all.
+			throw new BadMethodCallException(
+				'Cannot use ' . __METHOD__ . ' when $wgMultiContentRevisionSchemaMigrationStage '
+				. 'does not have SCHEMA_COMPAT_WRITE_OLD set.'
 			);
 		}
 
@@ -555,6 +590,8 @@ class Revision implements IDBAccessObject {
 				'$row must be a row object, an associative array, or a RevisionRecord'
 			);
 		}
+
+		Assert::postcondition( $this->mRecord !== null, 'Failed to construct a RevisionRecord' );
 	}
 
 	/**
@@ -665,7 +702,7 @@ class Revision implements IDBAccessObject {
 	 * @return SlotRecord
 	 */
 	private function getMainSlotRaw() {
-		return $this->mRecord->getSlot( 'main', RevisionRecord::RAW );
+		return $this->mRecord->getSlot( SlotRecord::MAIN, RevisionRecord::RAW );
 	}
 
 	/**
@@ -739,7 +776,7 @@ class Revision implements IDBAccessObject {
 	/**
 	 * Set the title of the revision
 	 *
-	 * @deprecated: since 1.31, this is now a noop. Pass the Title to the constructor instead.
+	 * @deprecated since 1.31, this is now a noop. Pass the Title to the constructor instead.
 	 *
 	 * @param Title $title
 	 */
@@ -809,6 +846,7 @@ class Revision implements IDBAccessObject {
 		$user = $this->mRecord->getUser( $audience, $user );
 		return $user ? $user->getName() : '';
 	}
+
 	/**
 	 * Fetch revision comment if it's available to the specified audience.
 	 * If the specified audience does not have access to the comment, an
@@ -900,7 +938,7 @@ class Revision implements IDBAccessObject {
 		}
 
 		try {
-			return $this->mRecord->getContent( 'main', $audience, $user );
+			return $this->mRecord->getContent( SlotRecord::MAIN, $audience, $user );
 		}
 		catch ( RevisionAccessException $e ) {
 			return null;
@@ -927,7 +965,7 @@ class Revision implements IDBAccessObject {
 	 * used to determine the content model to use. If no title is know, CONTENT_MODEL_WIKITEXT
 	 * is used as a last resort.
 	 *
-	 * @todo: drop this, with MCR, there no longer is a single model associated with a revision.
+	 * @todo drop this, with MCR, there no longer is a single model associated with a revision.
 	 *
 	 * @return string The content model id associated with this revision,
 	 *     see the CONTENT_MODEL_XXX constants.
@@ -942,7 +980,7 @@ class Revision implements IDBAccessObject {
 	 * If no content format was stored in the database, the default format for this
 	 * revision's content model is returned.
 	 *
-	 * @todo: drop this, the format is irrelevant to the revision!
+	 * @todo drop this, the format is irrelevant to the revision!
 	 *
 	 * @return string The content format id associated with this revision,
 	 *     see the CONTENT_FORMAT_XXX constants.
@@ -1007,31 +1045,70 @@ class Revision implements IDBAccessObject {
 	/**
 	 * Get revision text associated with an old or archive row
 	 *
-	 * Both the flags and the text field must be included. Including the old_id
+	 * If the text field is not included, this uses RevisionStore to load the appropriate slot
+	 * and return its serialized content. This is the default backwards-compatibility behavior
+	 * when reading from the MCR aware database schema is enabled. For this to work, either
+	 * the revision ID or the page ID must be included in the row.
+	 *
+	 * When using the old text field, the flags field must also be set. Including the old_id
 	 * field will activate cache usage as long as the $wiki parameter is not set.
 	 *
-	 * @param stdClass $row The text data
+	 * @deprecated since 1.32, use RevisionStore::newRevisionFromRow instead.
+	 *
+	 * @param stdClass $row The text data. If a falsy value is passed instead, false is returned.
 	 * @param string $prefix Table prefix (default 'old_')
 	 * @param string|bool $wiki The name of the wiki to load the revision text from
-	 *   (same as the the wiki $row was loaded from) or false to indicate the local
+	 *   (same as the wiki $row was loaded from) or false to indicate the local
 	 *   wiki (this is the default). Otherwise, it must be a symbolic wiki database
 	 *   identifier as understood by the LoadBalancer class.
 	 * @return string|false Text the text requested or false on failure
 	 */
 	public static function getRevisionText( $row, $prefix = 'old_', $wiki = false ) {
+		global $wgMultiContentRevisionSchemaMigrationStage;
+
+		if ( !$row ) {
+			return false;
+		}
+
 		$textField = $prefix . 'text';
 		$flagsField = $prefix . 'flags';
+
+		if ( isset( $row->$textField ) ) {
+			if ( !( $wgMultiContentRevisionSchemaMigrationStage & SCHEMA_COMPAT_WRITE_OLD ) ) {
+				// The text field was read, but it's no longer being populated!
+				// We could gloss over this by using the text when it's there and loading
+				// if when it's not, but it seems preferable to complain loudly about a
+				// query that is no longer guaranteed to work reliably.
+				throw new LogicException(
+					'Cannot use ' . __METHOD__ . ' with the ' . $textField . ' field when'
+					. ' $wgMultiContentRevisionSchemaMigrationStage does not include'
+					. ' SCHEMA_COMPAT_WRITE_OLD. The field may not be populated for all revisions!'
+				);
+			}
+
+			$text = $row->$textField;
+		} else {
+			// Missing text field, we are probably looking at the MCR-enabled DB schema.
+
+			if ( !( $wgMultiContentRevisionSchemaMigrationStage & SCHEMA_COMPAT_WRITE_OLD ) ) {
+				// This method should no longer be used with the new schema. Ideally, we
+				// would already trigger a deprecation warning when SCHEMA_COMPAT_READ_NEW is set.
+				wfDeprecated( __METHOD__ . ' (MCR without SCHEMA_COMPAT_WRITE_OLD)', '1.32' );
+			}
+
+			$store = self::getRevisionStore( $wiki );
+			$rev = $prefix === 'ar_'
+				? $store->newRevisionFromArchiveRow( $row )
+				: $store->newRevisionFromRow( $row );
+
+			$content = $rev->getContent( SlotRecord::MAIN );
+			return $content ? $content->serialize() : false;
+		}
 
 		if ( isset( $row->$flagsField ) ) {
 			$flags = explode( ',', $row->$flagsField );
 		} else {
 			$flags = [];
-		}
-
-		if ( isset( $row->$textField ) ) {
-			$text = $row->$textField;
-		} else {
-			return false;
 		}
 
 		$cacheKey = isset( $row->old_id )
@@ -1107,9 +1184,7 @@ class Revision implements IDBAccessObject {
 		$rec = self::getRevisionStore()->insertRevisionOn( $this->mRecord, $dbw );
 
 		$this->mRecord = $rec;
-
-		// Avoid PHP 7.1 warning of passing $this by reference
-		$revision = $this;
+		Assert::postcondition( $this->mRecord !== null, 'Failed to acquire a RevisionRecord' );
 
 		return $rec->getId();
 	}
@@ -1153,7 +1228,7 @@ class Revision implements IDBAccessObject {
 
 		$rec = self::getRevisionStore()->newNullRevision( $dbw, $title, $comment, $minor, $user );
 
-		return new Revision( $rec );
+		return $rec ? new Revision( $rec ) : null;
 	}
 
 	/**

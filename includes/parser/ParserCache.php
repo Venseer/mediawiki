@@ -294,7 +294,17 @@ class ParserCache {
 	 * @param string|null $cacheTime TS_MW timestamp when the cache was generated
 	 * @param int|null $revId Revision ID that was parsed
 	 */
-	public function save( $parserOutput, $page, $popts, $cacheTime = null, $revId = null ) {
+	public function save(
+		ParserOutput $parserOutput,
+		$page,
+		$popts,
+		$cacheTime = null,
+		$revId = null
+	) {
+		if ( !$parserOutput->hasText() ) {
+			throw new InvalidArgumentException( 'Attempt to cache a ParserOutput with no text set!' );
+		}
+
 		$expire = $parserOutput->getCacheExpiry();
 		if ( $expire > 0 && !$this->mMemc instanceof EmptyBagOStuff ) {
 			$cacheTime = $cacheTime ?: wfTimestampNow();

@@ -1,5 +1,6 @@
 <?php
 use MediaWiki\MediaWikiServices;
+use Wikimedia\TestingAccessWrapper;
 
 /**
  * @group ContentHandler
@@ -8,7 +9,6 @@ use MediaWiki\MediaWikiServices;
 class ContentHandlerTest extends MediaWikiTestCase {
 
 	protected function setUp() {
-		global $wgContLang;
 		parent::setUp();
 
 		$this->setMwGlobals( [
@@ -34,20 +34,12 @@ class ContentHandlerTest extends MediaWikiTestCase {
 			],
 		] );
 
-		// Reset namespace cache
-		MWNamespace::clearCaches();
-		$wgContLang->resetNamespaces();
-		// And LinkCache
+		// Reset LinkCache
 		MediaWikiServices::getInstance()->resetServiceForTesting( 'LinkCache' );
 	}
 
 	protected function tearDown() {
-		global $wgContLang;
-
-		// Reset namespace cache
-		MWNamespace::clearCaches();
-		$wgContLang->resetNamespaces();
-		// And LinkCache
+		// Reset LinkCache
 		MediaWikiServices::getInstance()->resetServiceForTesting( 'LinkCache' );
 
 		parent::tearDown();
@@ -208,7 +200,7 @@ class ContentHandlerTest extends MediaWikiTestCase {
 		$content = new WikitextContent( "hello world" );
 
 		$text = ContentHandler::getContentText( $content );
-		$this->assertEquals( $content->getNativeData(), $text );
+		$this->assertEquals( $content->getText(), $text );
 	}
 
 	/**
@@ -250,9 +242,9 @@ class ContentHandlerTest extends MediaWikiTestCase {
 
 	public static function dataMakeContent() {
 		return [
-			[ 'hallo', 'Help:Test', null, null, CONTENT_MODEL_WIKITEXT, 'hallo', false ],
-			[ 'hallo', 'MediaWiki:Test.js', null, null, CONTENT_MODEL_JAVASCRIPT, 'hallo', false ],
-			[ serialize( 'hallo' ), 'Dummy:Test', null, null, "testing", 'hallo', false ],
+			[ 'hallo', 'Help:Test', null, null, CONTENT_MODEL_WIKITEXT, false ],
+			[ 'hallo', 'MediaWiki:Test.js', null, null, CONTENT_MODEL_JAVASCRIPT, false ],
+			[ serialize( 'hallo' ), 'Dummy:Test', null, null, "testing", false ],
 
 			[
 				'hallo',
@@ -260,7 +252,6 @@ class ContentHandlerTest extends MediaWikiTestCase {
 				null,
 				CONTENT_FORMAT_WIKITEXT,
 				CONTENT_MODEL_WIKITEXT,
-				'hallo',
 				false
 			],
 			[
@@ -269,19 +260,17 @@ class ContentHandlerTest extends MediaWikiTestCase {
 				null,
 				CONTENT_FORMAT_JAVASCRIPT,
 				CONTENT_MODEL_JAVASCRIPT,
-				'hallo',
 				false
 			],
-			[ serialize( 'hallo' ), 'Dummy:Test', null, "testing", "testing", 'hallo', false ],
+			[ serialize( 'hallo' ), 'Dummy:Test', null, "testing", "testing", false ],
 
-			[ 'hallo', 'Help:Test', CONTENT_MODEL_CSS, null, CONTENT_MODEL_CSS, 'hallo', false ],
+			[ 'hallo', 'Help:Test', CONTENT_MODEL_CSS, null, CONTENT_MODEL_CSS, false ],
 			[
 				'hallo',
 				'MediaWiki:Test.js',
 				CONTENT_MODEL_CSS,
 				null,
 				CONTENT_MODEL_CSS,
-				'hallo',
 				false
 			],
 			[
@@ -290,13 +279,12 @@ class ContentHandlerTest extends MediaWikiTestCase {
 				CONTENT_MODEL_CSS,
 				null,
 				CONTENT_MODEL_CSS,
-				serialize( 'hallo' ),
 				false
 			],
 
-			[ 'hallo', 'Help:Test', CONTENT_MODEL_WIKITEXT, "testing", null, null, true ],
-			[ 'hallo', 'MediaWiki:Test.js', CONTENT_MODEL_CSS, "testing", null, null, true ],
-			[ 'hallo', 'Dummy:Test', CONTENT_MODEL_JAVASCRIPT, "testing", null, null, true ],
+			[ 'hallo', 'Help:Test', CONTENT_MODEL_WIKITEXT, "testing", null, true ],
+			[ 'hallo', 'MediaWiki:Test.js', CONTENT_MODEL_CSS, "testing", null, true ],
+			[ 'hallo', 'Dummy:Test', CONTENT_MODEL_JAVASCRIPT, "testing", null, true ],
 		];
 	}
 
@@ -305,7 +293,7 @@ class ContentHandlerTest extends MediaWikiTestCase {
 	 * @covers ContentHandler::makeContent
 	 */
 	public function testMakeContent( $data, $title, $modelId, $format,
-		$expectedModelId, $expectedNativeData, $shouldFail
+		$expectedModelId, $shouldFail
 	) {
 		$title = Title::newFromText( $title );
 		MediaWikiServices::getInstance()->getLinkCache()->addBadLinkObj( $title );
@@ -317,7 +305,7 @@ class ContentHandlerTest extends MediaWikiTestCase {
 			}
 
 			$this->assertEquals( $expectedModelId, $content->getModel(), 'bad model id' );
-			$this->assertEquals( $expectedNativeData, $content->getNativeData(), 'bads native data' );
+			$this->assertEquals( $data, $content->serialize(), 'bad serialized data' );
 		} catch ( MWException $ex ) {
 			if ( !$shouldFail ) {
 				$this->fail( "ContentHandler::makeContent failed unexpectedly: " . $ex->getMessage() );
@@ -335,7 +323,7 @@ class ContentHandlerTest extends MediaWikiTestCase {
 	 * page.
 	 */
 	public function testGetAutosummary() {
-		$this->setMwGlobals( 'wgContLang', Language::factory( 'en' ) );
+		$this->setContentLang( 'en' );
 
 		$content = new DummyContentHandlerForTesting( CONTENT_MODEL_WIKITEXT );
 		$title = Title::newFromText( 'Help:Test' );
@@ -494,4 +482,129 @@ class ContentHandlerTest extends MediaWikiTestCase {
 		} );
 		$this->assertContains( 'Ferrari', ContentHandler::getContentModels() );
 	}
+
+	/**
+	 * @covers ContentHandler::getSlotDiffRenderer
+	 */
+	public function testGetSlotDiffRenderer_default() {
+		$this->mergeMwGlobalArrayValue( 'wgHooks', [
+			'GetSlotDiffRenderer' => [],
+		] );
+
+		// test default renderer
+		$contentHandler = new WikitextContentHandler( CONTENT_MODEL_WIKITEXT );
+		$slotDiffRenderer = $contentHandler->getSlotDiffRenderer( RequestContext::getMain() );
+		$this->assertInstanceOf( TextSlotDiffRenderer::class, $slotDiffRenderer );
+	}
+
+	/**
+	 * @covers ContentHandler::getSlotDiffRenderer
+	 */
+	public function testGetSlotDiffRenderer_bc() {
+		$this->mergeMwGlobalArrayValue( 'wgHooks', [
+			'GetSlotDiffRenderer' => [],
+		] );
+
+		// test B/C renderer
+		$customDifferenceEngine = $this->getMockBuilder( DifferenceEngine::class )
+			->disableOriginalConstructor()
+			->getMock();
+		// hack to track object identity across cloning
+		$customDifferenceEngine->objectId = 12345;
+		$customContentHandler = $this->getMockBuilder( ContentHandler::class )
+			->setConstructorArgs( [ 'foo', [] ] )
+			->setMethods( [ 'createDifferenceEngine' ] )
+			->getMockForAbstractClass();
+		$customContentHandler->expects( $this->any() )
+			->method( 'createDifferenceEngine' )
+			->willReturn( $customDifferenceEngine );
+		/** @var $customContentHandler ContentHandler */
+		$slotDiffRenderer = $customContentHandler->getSlotDiffRenderer( RequestContext::getMain() );
+		$this->assertInstanceOf( DifferenceEngineSlotDiffRenderer::class, $slotDiffRenderer );
+		$this->assertSame(
+			$customDifferenceEngine->objectId,
+			TestingAccessWrapper::newFromObject( $slotDiffRenderer )->differenceEngine->objectId
+		);
+	}
+
+	/**
+	 * @covers ContentHandler::getSlotDiffRenderer
+	 */
+	public function testGetSlotDiffRenderer_nobc() {
+		$this->mergeMwGlobalArrayValue( 'wgHooks', [
+			'GetSlotDiffRenderer' => [],
+		] );
+
+		// test that B/C renderer does not get used when getSlotDiffRendererInternal is overridden
+		$customDifferenceEngine = $this->getMockBuilder( DifferenceEngine::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$customSlotDiffRenderer = $this->getMockBuilder( SlotDiffRenderer::class )
+			->disableOriginalConstructor()
+			->getMockForAbstractClass();
+		$customContentHandler2 = $this->getMockBuilder( ContentHandler::class )
+			->setConstructorArgs( [ 'bar', [] ] )
+			->setMethods( [ 'createDifferenceEngine', 'getSlotDiffRendererInternal' ] )
+			->getMockForAbstractClass();
+		$customContentHandler2->expects( $this->any() )
+			->method( 'createDifferenceEngine' )
+			->willReturn( $customDifferenceEngine );
+		$customContentHandler2->expects( $this->any() )
+			->method( 'getSlotDiffRendererInternal' )
+			->willReturn( $customSlotDiffRenderer );
+		/** @var $customContentHandler2 ContentHandler */
+		$slotDiffRenderer = $customContentHandler2->getSlotDiffRenderer( RequestContext::getMain() );
+		$this->assertSame( $customSlotDiffRenderer, $slotDiffRenderer );
+	}
+
+	/**
+	 * @covers ContentHandler::getSlotDiffRenderer
+	 */
+	public function testGetSlotDiffRenderer_hook() {
+		$this->mergeMwGlobalArrayValue( 'wgHooks', [
+			'GetSlotDiffRenderer' => [],
+		] );
+
+		// test that the hook handler takes precedence
+		$customDifferenceEngine = $this->getMockBuilder( DifferenceEngine::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$customContentHandler = $this->getMockBuilder( ContentHandler::class )
+			->setConstructorArgs( [ 'foo', [] ] )
+			->setMethods( [ 'createDifferenceEngine' ] )
+			->getMockForAbstractClass();
+		$customContentHandler->expects( $this->any() )
+			->method( 'createDifferenceEngine' )
+			->willReturn( $customDifferenceEngine );
+		/** @var $customContentHandler ContentHandler */
+
+		$customSlotDiffRenderer = $this->getMockBuilder( SlotDiffRenderer::class )
+			->disableOriginalConstructor()
+			->getMockForAbstractClass();
+		$customContentHandler2 = $this->getMockBuilder( ContentHandler::class )
+			->setConstructorArgs( [ 'bar', [] ] )
+			->setMethods( [ 'createDifferenceEngine', 'getSlotDiffRendererInternal' ] )
+			->getMockForAbstractClass();
+		$customContentHandler2->expects( $this->any() )
+			->method( 'createDifferenceEngine' )
+			->willReturn( $customDifferenceEngine );
+		$customContentHandler2->expects( $this->any() )
+			->method( 'getSlotDiffRendererInternal' )
+			->willReturn( $customSlotDiffRenderer );
+		/** @var $customContentHandler2 ContentHandler */
+
+		$customSlotDiffRenderer2 = $this->getMockBuilder( SlotDiffRenderer::class )
+			->disableOriginalConstructor()
+			->getMockForAbstractClass();
+		$this->setTemporaryHook( 'GetSlotDiffRenderer',
+			function ( $handler, &$slotDiffRenderer ) use ( $customSlotDiffRenderer2 ) {
+				$slotDiffRenderer = $customSlotDiffRenderer2;
+			} );
+
+		$slotDiffRenderer = $customContentHandler->getSlotDiffRenderer( RequestContext::getMain() );
+		$this->assertSame( $customSlotDiffRenderer2, $slotDiffRenderer );
+		$slotDiffRenderer = $customContentHandler2->getSlotDiffRenderer( RequestContext::getMain() );
+		$this->assertSame( $customSlotDiffRenderer2, $slotDiffRenderer );
+	}
+
 }

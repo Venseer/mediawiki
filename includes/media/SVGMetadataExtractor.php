@@ -74,7 +74,7 @@ class SVGReader {
 
 		if ( $size > $wgSVGMetadataCutoff ) {
 			$this->debug( "SVG is $size bytes, which is bigger than $wgSVGMetadataCutoff. Truncating." );
-			$contents = file_get_contents( $source, false, null, -1, $wgSVGMetadataCutoff );
+			$contents = file_get_contents( $source, false, null, 0, $wgSVGMetadataCutoff );
 			if ( $contents === false ) {
 				throw new MWException( 'Error reading SVG file.' );
 			}
@@ -165,7 +165,7 @@ class SVGReader {
 			} elseif ( $isSVG && $tag == 'desc' ) {
 				$this->readField( $tag, 'description' );
 			} elseif ( $isSVG && $tag == 'metadata' && $type == XMLReader::ELEMENT ) {
-				$this->readXml( $tag, 'metadata' );
+				$this->readXml( 'metadata' );
 			} elseif ( $isSVG && $tag == 'script' ) {
 				// We normally do not allow scripted svgs.
 				// However its possible to configure MW to let them
@@ -325,7 +325,7 @@ class SVGReader {
 
 		if ( $this->reader->getAttribute( 'viewBox' ) ) {
 			// min-x min-y width height
-			$viewBox = preg_split( '/\s+/', trim( $this->reader->getAttribute( 'viewBox' ) ) );
+			$viewBox = preg_split( '/\s*[\s,]\s*/', trim( $this->reader->getAttribute( 'viewBox' ) ) );
 			if ( count( $viewBox ) == 4 ) {
 				$viewWidth = $this->scaleSVGUnit( $viewBox[2] );
 				$viewHeight = $this->scaleSVGUnit( $viewBox[3] );
@@ -380,7 +380,11 @@ class SVGReader {
 			'' => 1.0, // "User units" pixels by default
 		];
 		$matches = [];
-		if ( preg_match( '/^\s*(\d+(?:\.\d+)?)(em|ex|px|pt|pc|cm|mm|in|%|)\s*$/', $length, $matches ) ) {
+		if ( preg_match(
+			'/^\s*([-+]?\d*(?:\.\d+|\d+)(?:[Ee][-+]?\d+)?)\s*(em|ex|px|pt|pc|cm|mm|in|%|)\s*$/',
+			$length,
+			$matches
+		) ) {
 			$length = floatval( $matches[1] );
 			$unit = $matches[2];
 			if ( $unit == '%' ) {

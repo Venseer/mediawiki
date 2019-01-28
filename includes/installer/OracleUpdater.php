@@ -117,7 +117,6 @@ class OracleUpdater extends DatabaseUpdater {
 			[ 'addIndex', 'recentchanges', 'rc_name_type_patrolled_timestamp',
 				'patch-add-rc_name_type_patrolled_timestamp_index.sql' ],
 			[ 'addField', 'change_tag', 'ct_id', 'patch-change_tag-ct_id.sql' ],
-			[ 'addField', 'tag_summary', 'ts_id', 'patch-tag_summary-ts_id.sql' ],
 
 			// 1.29
 			[ 'addField', 'externallinks', 'el_index_60', 'patch-externallinks-el_index_60.sql' ],
@@ -155,6 +154,19 @@ class OracleUpdater extends DatabaseUpdater {
 			[ 'addField', 'change_tag', 'ct_tag_id', 'patch-change_tag-tag_id.sql' ],
 			[ 'addIndex', 'archive', 'ar_revid_uniq', 'patch-archive-ar_rev_id-unique.sql' ],
 			[ 'populateContentTables' ],
+			[ 'addIndex', 'recentchanges', 'rc_this_oldid', 'patch-recentchanges-rc_this_oldid-index.sql' ],
+			[ 'dropTable', 'transcache' ],
+			[ 'runMaintenance', PopulateChangeTagDef::class, 'maintenance/populateChangeTagDef.php' ],
+			[ 'addIndex', 'change_tag', 'change_tag_i03',
+				'patch-change_tag-change_tag_rc_tag_id.sql' ],
+			[ 'addField', 'ipblocks', 'ipb_sitewide', 'patch-ipb_sitewide.sql' ],
+			[ 'addTable', 'ipblocks_restrictions', 'patch-ipblocks_restrictions-table.sql' ],
+			[ 'migrateImageCommentTemp' ],
+
+			// 1.33
+			[ 'dropField', 'change_tag', 'ct_tag', 'patch-drop-ct_tag.sql' ],
+			[ 'dropTable', 'valid_tag' ],
+			[ 'dropTable', 'tag_summary' ],
 
 			// KEEP THIS AT THE BOTTOM!!
 			[ 'doRebuildDuplicateFunction' ],

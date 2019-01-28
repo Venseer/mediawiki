@@ -30,7 +30,6 @@ use MediaWiki\Session\SessionManager;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Shell\Shell;
 use Wikimedia\ScopedCallback;
-use Wikimedia\Rdbms\DBReplicationWaitError;
 use Wikimedia\WrappedString;
 
 /**
@@ -141,7 +140,7 @@ function wfArrayDiff2_cmp( $a, $b ) {
 }
 
 /**
- * Like array_filter with ARRAY_FILTER_USE_BOTH, but works pre-5.6.
+ * @deprecated since 1.32, use array_filter() with ARRAY_FILTER_USE_BOTH directly
  *
  * @param array $arr
  * @param callable $callback Will be called with the array value and key (in that order) and
@@ -149,17 +148,12 @@ function wfArrayDiff2_cmp( $a, $b ) {
  * @return array
  */
 function wfArrayFilter( array $arr, callable $callback ) {
-	if ( defined( 'ARRAY_FILTER_USE_BOTH' ) ) {
-		return array_filter( $arr, $callback, ARRAY_FILTER_USE_BOTH );
-	}
-	$filteredKeys = array_filter( array_keys( $arr ), function ( $key ) use ( $arr, $callback ) {
-		return call_user_func( $callback, $arr[$key], $key );
-	} );
-	return array_intersect_key( $arr, array_fill_keys( $filteredKeys, true ) );
+	wfDeprecated( __FUNCTION__, '1.32' );
+	return array_filter( $arr, $callback, ARRAY_FILTER_USE_BOTH );
 }
 
 /**
- * Like array_filter with ARRAY_FILTER_USE_KEY, but works pre-5.6.
+ * @deprecated since 1.32, use array_filter() with ARRAY_FILTER_USE_KEY directly
  *
  * @param array $arr
  * @param callable $callback Will be called with the array key and should return a bool which
@@ -167,9 +161,8 @@ function wfArrayFilter( array $arr, callable $callback ) {
  * @return array
  */
 function wfArrayFilterByKey( array $arr, callable $callback ) {
-	return wfArrayFilter( $arr, function ( $val, $key ) use ( $callback ) {
-		return call_user_func( $callback, $key );
-	} );
+	wfDeprecated( __FUNCTION__, '1.32' );
+	return array_filter( $arr, $callback, ARRAY_FILTER_USE_KEY );
 }
 
 /**
@@ -206,11 +199,10 @@ function wfAppendToArrayIfNotDefault( $key, $value, $default, &$changed ) {
  *       [ 'y' ]
  *     ]
  *
- * @param array $array1,...
+ * @param array ...$args
  * @return array
  */
-function wfMergeErrorArrays( /*...*/ ) {
-	$args = func_get_args();
+function wfMergeErrorArrays( ...$args ) {
 	$out = [];
 	foreach ( $args as $errors ) {
 		foreach ( $errors as $params ) {
@@ -276,7 +268,7 @@ function wfObjectToArray( $objOrArray, $recursive = true ) {
 }
 
 /**
- * Get a random decimal value between 0 and 1, in a way
+ * Get a random decimal value in the domain of [0, 1), in a way
  * not likely to give duplicate values for any realistic
  * number of articles.
  *
@@ -481,7 +473,7 @@ function wfAppendQuery( $url, $query ) {
 		}
 
 		// Add parameter
-		if ( false === strpos( $url, '?' ) ) {
+		if ( strpos( $url, '?' ) === false ) {
 			$url .= '?';
 		} else {
 			$url .= '&';
@@ -556,16 +548,23 @@ function wfExpandUrl( $url, $defaultProto = PROTO_CURRENT ) {
 	} elseif ( substr( $url, 0, 1 ) == '/' ) {
 		// If $serverUrl is protocol-relative, prepend $defaultProtoWithoutSlashes,
 		// otherwise leave it alone.
-		$url = ( $serverHasProto ? '' : $defaultProtoWithoutSlashes ) . $serverUrl . $url;
+		if ( $serverHasProto ) {
+			$url = $serverUrl . $url;
+		} else {
+			// If an HTTPS URL is synthesized from a protocol-relative $wgServer, allow the
+			// user to override the port number (T67184)
+			if ( $defaultProto === PROTO_HTTPS && $wgHttpsPort != 443 ) {
+				if ( isset( $bits['port'] ) ) {
+					throw new Exception( 'A protocol-relative $wgServer may not contain a port number' );
+				}
+				$url = $defaultProtoWithoutSlashes . $serverUrl . ':' . $wgHttpsPort . $url;
+			} else {
+				$url = $defaultProtoWithoutSlashes . $serverUrl . $url;
+			}
+		}
 	}
 
 	$bits = wfParseUrl( $url );
-
-	// ensure proper port for HTTPS arrives in URL
-	// https://phabricator.wikimedia.org/T67184
-	if ( $defaultProto === PROTO_HTTPS && $wgHttpsPort != 443 ) {
-		$bits['port'] = $wgHttpsPort;
-	}
 
 	if ( $bits && isset( $bits['path'] ) ) {
 		$bits['path'] = wfRemoveDotSegments( $bits['path'] );
@@ -580,6 +579,19 @@ function wfExpandUrl( $url, $defaultProto = PROTO_CURRENT ) {
 
 	# Expanded URL is not valid.
 	return false;
+}
+
+/**
+ * Get the wiki's "server", i.e. the protocol and host part of the URL, with a
+ * protocol specified using a PROTO_* constant as in wfExpandUrl()
+ *
+ * @since 1.32
+ * @param string|int|null $proto One of the PROTO_* constants.
+ * @return string The URL
+ */
+function wfGetServerUrl( $proto ) {
+	$url = wfExpandUrl( '/', $proto );
+	return substr( $url, 0, -1 );
 }
 
 /**
@@ -874,72 +886,23 @@ function wfParseUrl( $url ) {
 function wfExpandIRI( $url ) {
 	return preg_replace_callback(
 		'/((?:%[89A-F][0-9A-F])+)/i',
-		'wfExpandIRI_callback',
+		function ( array $matches ) {
+			return urldecode( $matches[1] );
+		},
 		wfExpandUrl( $url )
 	);
 }
 
 /**
- * Private callback for wfExpandIRI
- * @param array $matches
- * @return string
- */
-function wfExpandIRI_callback( $matches ) {
-	return urldecode( $matches[1] );
-}
-
-/**
  * Make URL indexes, appropriate for the el_index field of externallinks.
  *
+ * @deprecated since 1.33, use LinkFilter::makeIndexes() instead
  * @param string $url
  * @return array
  */
 function wfMakeUrlIndexes( $url ) {
-	$bits = wfParseUrl( $url );
-
-	// Reverse the labels in the hostname, convert to lower case
-	// For emails reverse domainpart only
-	if ( $bits['scheme'] == 'mailto' ) {
-		$mailparts = explode( '@', $bits['host'], 2 );
-		if ( count( $mailparts ) === 2 ) {
-			$domainpart = strtolower( implode( '.', array_reverse( explode( '.', $mailparts[1] ) ) ) );
-		} else {
-			// No domain specified, don't mangle it
-			$domainpart = '';
-		}
-		$reversedHost = $domainpart . '@' . $mailparts[0];
-	} else {
-		$reversedHost = strtolower( implode( '.', array_reverse( explode( '.', $bits['host'] ) ) ) );
-	}
-	// Add an extra dot to the end
-	// Why? Is it in wrong place in mailto links?
-	if ( substr( $reversedHost, -1, 1 ) !== '.' ) {
-		$reversedHost .= '.';
-	}
-	// Reconstruct the pseudo-URL
-	$prot = $bits['scheme'];
-	$index = $prot . $bits['delimiter'] . $reversedHost;
-	// Leave out user and password. Add the port, path, query and fragment
-	if ( isset( $bits['port'] ) ) {
-		$index .= ':' . $bits['port'];
-	}
-	if ( isset( $bits['path'] ) ) {
-		$index .= $bits['path'];
-	} else {
-		$index .= '/';
-	}
-	if ( isset( $bits['query'] ) ) {
-		$index .= '?' . $bits['query'];
-	}
-	if ( isset( $bits['fragment'] ) ) {
-		$index .= '#' . $bits['fragment'];
-	}
-
-	if ( $prot == '' ) {
-		return [ "http:$index", "https:$index" ];
-	} else {
-		return [ $index ];
-	}
+	wfDeprecated( __FUNCTION__, '1.33' );
+	return LinkFilter::makeIndexes( $url );
 }
 
 /**
@@ -1102,15 +1065,14 @@ function wfLogDBError( $text, array $context = [] ) {
 /**
  * Throws a warning that $function is deprecated
  *
- * @param string $function
+ * @param string $function Function that is deprecated.
  * @param string|bool $version Version of MediaWiki that the function
  *    was deprecated in (Added in 1.19).
- * @param string|bool $component Added in 1.19.
+ * @param string|bool $component Component to which the function belongs.
+ *    If false, it is assumed the function is in MediaWiki core (Added in 1.19).
  * @param int $callerOffset How far up the call stack is the original
  *    caller. 2 = function that called the function that called
- *    wfDeprecated (Added in 1.20)
- *
- * @return null
+ *    wfDeprecated (Added in 1.20).
  */
 function wfDeprecated( $function, $version = false, $component = false, $callerOffset = 2 ) {
 	MWDebug::deprecated( $function, $version, $component, $callerOffset + 1 );
@@ -1141,26 +1103,6 @@ function wfWarn( $msg, $callerOffset = 1, $level = E_USER_NOTICE ) {
  */
 function wfLogWarning( $msg, $callerOffset = 1, $level = E_USER_WARNING ) {
 	MWDebug::warning( $msg, $callerOffset + 1, $level, 'production' );
-}
-
-/**
- * Log to a file without getting "file size exceeded" signals.
- *
- * Can also log to TCP or UDP with the syntax udp://host:port/prefix. This will
- * send lines to the specified port, prefixed by the specified prefix and a space.
- * @since 1.25 support for additional context data
- *
- * @param string $text
- * @param string $file Filename
- * @param array $context Additional logging context data
- * @throws MWException
- * @deprecated since 1.25 Use \MediaWiki\Logger\LegacyLogger::emit or UDPTransport
- */
-function wfErrorLog( $text, $file, array $context = [] ) {
-	wfDeprecated( __METHOD__, '1.25' );
-	$logger = LoggerFactory::getInstance( 'wfErrorLog' );
-	$context['destination'] = $file;
-	$logger->info( trim( $text ), $context );
 }
 
 /**
@@ -1303,11 +1245,11 @@ function wfGetLangObj( $langcode = false ) {
 		return $langcode;
 	}
 
-	global $wgContLang, $wgLanguageCode;
+	global $wgLanguageCode;
 	if ( $langcode === true || $langcode === $wgLanguageCode ) {
 		# $langcode is the language code of the wikis content language object.
 		# or it is a boolean and value is true
-		return $wgContLang;
+		return MediaWikiServices::getInstance()->getContentLanguage();
 	}
 
 	global $wgLang;
@@ -1325,7 +1267,7 @@ function wfGetLangObj( $langcode = false ) {
 
 	# $langcode is a string, but not a valid language code; use content language.
 	wfDebug( "Invalid language code passed to wfGetLangObj, falling back to content language.\n" );
-	return $wgContLang;
+	return MediaWikiServices::getInstance()->getContentLanguage();
 }
 
 /**
@@ -2192,13 +2134,13 @@ function wfStringToBool( $val ) {
  * (https://bugs.php.net/bug.php?id=26285) and the locale problems on Linux in
  * PHP 5.2.6+ (bug backported to earlier distro releases of PHP).
  *
- * @param string $args,... strings to escape and glue together,
+ * @param string|string[] ...$args strings to escape and glue together,
  *  or a single array of strings parameter
  * @return string
  * @deprecated since 1.30 use MediaWiki\Shell::escape()
  */
-function wfEscapeShellArg( /*...*/ ) {
-	return Shell::escape( ...func_get_args() );
+function wfEscapeShellArg( ...$args ) {
+	return Shell::escape( ...$args );
 }
 
 /**
@@ -2473,63 +2415,6 @@ function wfDiff( $before, $after, $params = '-u' ) {
 }
 
 /**
- * This function works like "use VERSION" in Perl, the program will die with a
- * backtrace if the current version of PHP is less than the version provided
- *
- * This is useful for extensions which due to their nature are not kept in sync
- * with releases, and might depend on other versions of PHP than the main code
- *
- * Note: PHP might die due to parsing errors in some cases before it ever
- *       manages to call this function, such is life
- *
- * @see perldoc -f use
- *
- * @param string|int|float $req_ver The version to check, can be a string, an integer, or a float
- *
- * @deprecated since 1.30
- *
- * @throws MWException
- */
-function wfUsePHP( $req_ver ) {
-	wfDeprecated( __FUNCTION__, '1.30' );
-	$php_ver = PHP_VERSION;
-
-	if ( version_compare( $php_ver, (string)$req_ver, '<' ) ) {
-		throw new MWException( "PHP $req_ver required--this is only $php_ver" );
-	}
-}
-
-/**
- * This function works like "use VERSION" in Perl except it checks the version
- * of MediaWiki, the program will die with a backtrace if the current version
- * of MediaWiki is less than the version provided.
- *
- * This is useful for extensions which due to their nature are not kept in sync
- * with releases
- *
- * Note: Due to the behavior of PHP's version_compare() which is used in this
- * function, if you want to allow the 'wmf' development versions add a 'c' (or
- * any single letter other than 'a', 'b' or 'p') as a post-fix to your
- * targeted version number. For example if you wanted to allow any variation
- * of 1.22 use `wfUseMW( '1.22c' )`. Using an 'a' or 'b' instead of 'c' will
- * not result in the same comparison due to the internal logic of
- * version_compare().
- *
- * @see perldoc -f use
- *
- * @deprecated since 1.26, use the "requires" property of extension.json
- * @param string|int|float $req_ver The version to check, can be a string, an integer, or a float
- * @throws MWException
- */
-function wfUseMW( $req_ver ) {
-	global $wgVersion;
-
-	if ( version_compare( $wgVersion, (string)$req_ver, '<' ) ) {
-		throw new MWException( "MediaWiki $req_ver required--this is only $wgVersion" );
-	}
-}
-
-/**
  * Return the final portion of a pathname.
  * Reimplemented because PHP5's "basename()" is buggy with multibyte text.
  * https://bugs.php.net/bug.php?id=33898
@@ -2668,36 +2553,14 @@ function wfGetPrecompiledData( $name ) {
 }
 
 /**
- * @since 1.32
- * @param string[] $data Array with string keys/values to export
- * @param string $header
- * @return string PHP code
- */
-function wfMakeStaticArrayFile( array $data, $header = 'Automatically generated' ) {
-	$format = "\t%s => %s,\n";
-	$code = "<?php\n"
-		. "// " . implode( "\n// ", explode( "\n", $header ) ) . "\n"
-		. "return [\n";
-	foreach ( $data as $key => $value ) {
-		$code .= sprintf(
-			$format,
-			var_export( $key, true ),
-			var_export( $value, true )
-		);
-	}
-	$code .= "];\n";
-	return $code;
-}
-
-/**
  * Make a cache key for the local wiki.
  *
  * @deprecated since 1.30 Call makeKey on a BagOStuff instance
- * @param string $args,...
+ * @param string ...$args
  * @return string
  */
-function wfMemcKey( /*...*/ ) {
-	return ObjectCache::getLocalClusterInstance()->makeKey( ...func_get_args() );
+function wfMemcKey( ...$args ) {
+	return ObjectCache::getLocalClusterInstance()->makeKey( ...$args );
 }
 
 /**
@@ -2707,11 +2570,10 @@ function wfMemcKey( /*...*/ ) {
  *
  * @param string $db
  * @param string $prefix
- * @param string $args,...
+ * @param string ...$args
  * @return string
  */
-function wfForeignMemcKey( $db, $prefix /*...*/ ) {
-	$args = array_slice( func_get_args(), 2 );
+function wfForeignMemcKey( $db, $prefix, ...$args ) {
 	$keyspace = $prefix ? "$db-$prefix" : $db;
 	return ObjectCache::getLocalClusterInstance()->makeKeyInternal( $keyspace, $args );
 }
@@ -2725,11 +2587,11 @@ function wfForeignMemcKey( $db, $prefix /*...*/ ) {
  *
  * @deprecated since 1.30 Call makeGlobalKey on a BagOStuff instance
  * @since 1.26
- * @param string $args,...
+ * @param string ...$args
  * @return string
  */
-function wfGlobalCacheKey( /*...*/ ) {
-	return ObjectCache::getLocalClusterInstance()->makeGlobalKey( ...func_get_args() );
+function wfGlobalCacheKey( ...$args ) {
+	return ObjectCache::getLocalClusterInstance()->makeGlobalKey( ...$args );
 }
 
 /**
@@ -2753,6 +2615,7 @@ function wfWikiID() {
  * @param string $wiki
  *
  * @return array
+ * @deprecated 1.32
  */
 function wfSplitWikiID( $wiki ) {
 	$bits = explode( '-', $wiki, 2 );
@@ -2937,38 +2800,35 @@ function wfGetNull() {
  * @param float|null $ifWritesSince Only wait if writes were done since this UNIX timestamp
  * @param string|bool $wiki Wiki identifier accepted by wfGetLB
  * @param string|bool $cluster Cluster name accepted by LBFactory. Default: false.
- * @param int|null $timeout Max wait time. Default: 1 day (cli), ~10 seconds (web)
+ * @param int|null $timeout Max wait time. Default: 60 seconds (cli), 1 second (web)
  * @return bool Success (able to connect and no timeouts reached)
  * @deprecated since 1.27 Use LBFactory::waitForReplication
  */
 function wfWaitForSlaves(
 	$ifWritesSince = null, $wiki = false, $cluster = false, $timeout = null
 ) {
-	if ( $timeout === null ) {
-		$timeout = wfIsCLI() ? 60 : 10;
-	}
+	$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
 
 	if ( $cluster === '*' ) {
 		$cluster = false;
-		$wiki = false;
+		$domain = false;
 	} elseif ( $wiki === false ) {
-		$wiki = wfWikiID();
+		$domain = $lbFactory->getLocalDomainID();
+	} else {
+		$domain = $wiki;
 	}
 
-	try {
-		$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
-		$lbFactory->waitForReplication( [
-			'wiki' => $wiki,
-			'cluster' => $cluster,
-			'timeout' => $timeout,
-			// B/C: first argument used to be "max seconds of lag"; ignore such values
-			'ifWritesSince' => ( $ifWritesSince > 1e9 ) ? $ifWritesSince : null
-		] );
-	} catch ( DBReplicationWaitError $e ) {
-		return false;
+	$opts = [
+		'domain' => $domain,
+		'cluster' => $cluster,
+		// B/C: first argument used to be "max seconds of lag"; ignore such values
+		'ifWritesSince' => ( $ifWritesSince > 1e9 ) ? $ifWritesSince : null
+	];
+	if ( $timeout !== null ) {
+		$opts['timeout'] = $timeout;
 	}
 
-	return true;
+	return $lbFactory->waitForReplication( $opts );
 }
 
 /**
@@ -3112,6 +2972,7 @@ function wfBCP47( $code ) {
 /**
  * Get a specific cache object.
  *
+ * @deprecated since 1.32, use ObjectCache::getInstance() instead
  * @param int|string $cacheType A CACHE_* constants, or other key in $wgObjectCaches
  * @return BagOStuff
  */
@@ -3122,11 +2983,11 @@ function wfGetCache( $cacheType ) {
 /**
  * Get the main cache object
  *
+ * @deprecated since 1.32, use ObjectCache::getLocalClusterInstance() instead
  * @return BagOStuff
  */
 function wfGetMainCache() {
-	global $wgMainCacheType;
-	return ObjectCache::getInstance( $wgMainCacheType );
+	return ObjectCache::getLocalClusterInstance();
 }
 
 /**
@@ -3137,21 +2998,6 @@ function wfGetMainCache() {
 function wfGetMessageCacheStorage() {
 	global $wgMessageCacheType;
 	return ObjectCache::getInstance( $wgMessageCacheType );
-}
-
-/**
- * Call hook functions defined in $wgHooks
- *
- * @param string $event Event name
- * @param array $args Parameters passed to hook functions
- * @param string|null $deprecatedVersion Optionally mark hook as deprecated with version number
- *
- * @return bool True if no handler aborted the hook
- * @deprecated since 1.25 - use Hooks::run
- */
-function wfRunHooks( $event, array $args = [], $deprecatedVersion = null ) {
-	wfDeprecated( __METHOD__, '1.25' );
-	return Hooks::run( $event, $args, $deprecatedVersion );
 }
 
 /**

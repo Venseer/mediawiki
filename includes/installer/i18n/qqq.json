@@ -20,7 +20,9 @@
 			"Jdforrester",
 			"Liuxinyu970226",
 			"Metalhead64",
-			"Tacsipacsi"
+			"Tacsipacsi",
+			"Zoranzoki21",
+			"BadDog"
 		]
 	},
 	"config-desc": "Short description of the installer.",
@@ -165,6 +167,7 @@
 	"config-sqlite-cant-create-db": "Used as SQLite error message. Parameters:\n* $1 - filename",
 	"config-sqlite-fts3-downgrade": "Status message in the MediaWiki installer when SQLite is used without the FTS3 module. The FTS3 feature allows users to create special tables with a built-in full-text index.",
 	"config-can-upgrade": "Parameters:\n* $1 - Version or Revision indicator.",
+	"config-upgrade-error": "Used as error message. See also {{msg-mw|Config-continue}}",
 	"config-upgrade-done": "Used as success message. Parameters:\n* $1 - full URL of index.php\nSee also:\n* {{msg-mw|config-upgrade-done-no-regenerate}}",
 	"config-upgrade-done-no-regenerate": "Used as success message. Parameters:\n* $1 - full URL of index.php\nSee also:\n* {{msg-mw|config-upgrade-done}}",
 	"config-regenerate": "This message appears in a button after LocalSettings.php is generated and downloaded at the end of the MediaWiki installation process.",
@@ -172,8 +175,8 @@
 	"config-unknown-collation": "Warning messages in the MediaWiki installer for the database type MySQL when an unrecognised collation is used.",
 	"config-db-web-account": "Fieldset legend in MediaWiki installer",
 	"config-db-web-help": "Help text in MediaWiki installer.",
-	"config-db-web-account-same": "checkbox label",
-	"config-db-web-create": "checkbox label",
+	"config-db-web-account-same": "Checkbox label about setting of database account for web access.",
+	"config-db-web-create": "Checkbox label about creating of new database account.",
 	"config-db-web-no-create-privs": "Error message in the MediaWiki installer.",
 	"config-mysql-engine": "Field label for MySQL storage engine in the MediaWiki installer.",
 	"config-mysql-innodb": "Option for the MySQL storage engine in the MediaWiki installer.",
@@ -329,6 +332,8 @@
 	"config-skins-screenshot": "Radio button text, $1 is the skin name, and $2 is a link to a screenshot of that skin, where the link text is {{msg-mw|config-screenshot}}.",
 	"config-extensions-requires": "Radio button text, $1 is the extension name, and $2 are links to other extensions that this one requires.\n{{Identical|Require}}",
 	"config-screenshot": "Link text for the link in {{msg-mw|config-skins-screenshot}}\n{{Identical|Screenshot}}",
+	"config-extension-not-found": "An error shown when an extension or skin named by the user could not be found.\n* $1 is the extension name",
+	"config-extension-dependency": "Used as error message shown if an extension could not be loaded due to it depending on the wrong version of MediaWiki or an uninstallable extension.\n\nParameters:\n* $1 — extension name\n* $2 — more detailed explanation, in English",
 	"mainpagetext": "Along with {{msg-mw|mainpagedocfooter}}, the text you will see on the Main Page when your wiki is installed.",
 	"mainpagedocfooter": "Along with {{msg-mw|mainpagetext}}, the text you will see on the Main Page when your wiki is installed.\nThis might be a good place to put information about <nowiki>{{GRAMMAR:}}</nowiki>. See [[{{NAMESPACE}}:{{BASEPAGENAME}}/fi]] for an example. For languages having grammatical distinctions and not having an appropriate <nowiki>{{GRAMMAR:}}</nowiki> software available, a suggestion to check and possibly amend the messages having <nowiki>{{SITENAME}}</nowiki> may be valuable. See [[{{NAMESPACE}}:{{BASEPAGENAME}}/ksh]] for an example."
 }

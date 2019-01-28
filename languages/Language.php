@@ -34,12 +34,31 @@ use CLDRPluralRuleParser\Evaluator;
  */
 class Language {
 	/**
+	 * Return autonyms in fetchLanguageName(s).
+	 * @since 1.32
+	 */
+	const AS_AUTONYMS = null;
+
+	/**
+	 * Return all known languages in fetchLanguageName(s).
+	 * @since 1.32
+	 */
+	const ALL = 'all';
+
+	/**
+	 * Return in fetchLanguageName(s) only the languages for which we have at
+	 * least some localisation.
+	 * @since 1.32
+	 */
+	const SUPPORTED = 'mwfile';
+
+	/**
 	 * @var LanguageConverter
 	 */
 	public $mConverter;
 
 	public $mVariants, $mCode, $mLoaded = false;
-	public $mMagicExtensions = [], $mMagicHookDone = false;
+	public $mMagicExtensions = [];
 	private $mHtmlCode = null, $mParentLanguage = false;
 
 	public $dateFormatStrings = [];
@@ -60,6 +79,18 @@ class Language {
 	static public $dataCache;
 
 	static public $mLangObjCache = [];
+
+	/**
+	 * Return a fallback chain for messages in getFallbacksFor
+	 * @since 1.32
+	 */
+	const MESSAGES_FALLBACKS = 0;
+
+	/**
+	 * Return a strict fallback chain in getFallbacksFor
+	 * @since 1.32
+	 */
+	const STRICT_FALLBACKS = 1;
 
 	static public $mWeekdayMsgs = [
 		'sunday', 'monday', 'tuesday', 'wednesday', 'thursday',
@@ -242,6 +273,24 @@ class Language {
 		}
 
 		throw new MWException( "Invalid fallback sequence for language '$code'" );
+	}
+
+	/**
+	 * Intended for tests that may change configuration in a way that invalidates caches.
+	 *
+	 * @since 1.32
+	 */
+	public static function clearCaches() {
+		if ( !defined( 'MW_PHPUNIT_TEST' ) ) {
+			throw new MWException( __METHOD__ . ' must not be used outside tests' );
+		}
+		self::$dataCache = null;
+		// Reinitialize $dataCache, since it's expected to always be available
+		self::getLocalisationCache();
+		self::$mLangObjCache = [];
+		self::$fallbackLanguageCache = [];
+		self::$grammarTransformations = null;
+		self::$languageNameCache = null;
 	}
 
 	/**
@@ -532,7 +581,7 @@ class Language {
 	 * Get a namespace value by key
 	 *
 	 * <code>
-	 * $mw_ns = $wgContLang->getNsText( NS_MEDIAWIKI );
+	 * $mw_ns = $lang->getNsText( NS_MEDIAWIKI );
 	 * echo $mw_ns; // prints 'MediaWiki'
 	 * </code>
 	 *
@@ -550,7 +599,7 @@ class Language {
 	 * producing output.
 	 *
 	 * <code>
-	 * $mw_ns = $wgContLang->getFormattedNsText( NS_MEDIAWIKI_TALK );
+	 * $mw_ns = $lang->getFormattedNsText( NS_MEDIAWIKI_TALK );
 	 * echo $mw_ns; // prints 'MediaWiki talk'
 	 * </code>
 	 *
@@ -654,6 +703,14 @@ class Language {
 			}
 
 			$this->namespaceAliases = $aliases + $convertedNames;
+
+			# Filter out aliases to namespaces that don't exist, e.g. from extensions
+			# that aren't loaded here but are included in the l10n cache.
+			# (array_intersect preserves keys from its first argument)
+			$this->namespaceAliases = array_intersect(
+				$this->namespaceAliases,
+				array_keys( $this->getNamespaces() )
+			);
 		}
 
 		return $this->namespaceAliases;
@@ -758,22 +815,6 @@ class Language {
 	}
 
 	/**
-	 * @param string $image
-	 * @return array|null
-	 */
-	function getImageFile( $image ) {
-		return self::$dataCache->getSubitem( $this->mCode, 'imageFiles', $image );
-	}
-
-	/**
-	 * @return array
-	 * @since 1.24
-	 */
-	public function getImageFiles() {
-		return self::$dataCache->getItem( $this->mCode, 'imageFiles' );
-	}
-
-	/**
 	 * @return array
 	 */
 	public function getExtraUserToggles() {
@@ -791,16 +832,16 @@ class Language {
 	/**
 	 * Get an array of language names, indexed by code.
 	 * @param null|string $inLanguage Code of language in which to return the names
-	 * 		Use null for autonyms (native names)
+	 * 		Use self::AS_AUTONYMS for autonyms (native names)
 	 * @param string $include One of:
-	 * 		'all' all available languages
+	 * 		self::ALL all available languages
 	 * 		'mw' only if the language is defined in MediaWiki or wgExtraLanguageNames (default)
-	 * 		'mwfile' only if the language is in 'mw' *and* has a message file
+	 * 		self::SUPPORTED only if the language is in 'mw' *and* has a message file
 	 * @return array Language code => language name (sorted by key)
 	 * @since 1.20
 	 */
-	public static function fetchLanguageNames( $inLanguage = null, $include = 'mw' ) {
-		$cacheKey = $inLanguage === null ? 'null' : $inLanguage;
+	public static function fetchLanguageNames( $inLanguage = self::AS_AUTONYMS, $include = 'mw' ) {
+		$cacheKey = $inLanguage === self::AS_AUTONYMS ? 'null' : $inLanguage;
 		$cacheKey .= ":$include";
 		if ( self::$languageNameCache === null ) {
 			self::$languageNameCache = new HashBagOStuff( [ 'maxKeys' => 20 ] );
@@ -817,18 +858,21 @@ class Language {
 	/**
 	 * Uncached helper for fetchLanguageNames
 	 * @param null|string $inLanguage Code of language in which to return the names
-	 *		Use null for autonyms (native names)
+	 *		Use self::AS_AUTONYMS for autonyms (native names)
 	 * @param string $include One of:
-	 *		'all' all available languages
+	 *		self::ALL all available languages
 	 *		'mw' only if the language is defined in MediaWiki or wgExtraLanguageNames (default)
-	 *		'mwfile' only if the language is in 'mw' *and* has a message file
+	 *		self::SUPPORTED only if the language is in 'mw' *and* has a message file
 	 * @return array Language code => language name (sorted by key)
 	 */
-	private static function fetchLanguageNamesUncached( $inLanguage = null, $include = 'mw' ) {
+	private static function fetchLanguageNamesUncached(
+		$inLanguage = self::AS_AUTONYMS,
+		$include = 'mw'
+	) {
 		global $wgExtraLanguageNames, $wgUsePigLatinVariant;
 
 		// If passed an invalid language code to use, fallback to en
-		if ( $inLanguage !== null && !self::isValidCode( $inLanguage ) ) {
+		if ( $inLanguage !== self::AS_AUTONYMS && !self::isValidCode( $inLanguage ) ) {
 			$inLanguage = 'en';
 		}
 
@@ -853,7 +897,7 @@ class Language {
 			}
 		}
 
-		if ( $include === 'all' ) {
+		if ( $include === self::ALL ) {
 			ksort( $names );
 			return $names;
 		}
@@ -864,7 +908,7 @@ class Language {
 			$returnMw[$coreCode] = $names[$coreCode];
 		}
 
-		if ( $include === 'mwfile' ) {
+		if ( $include === self::SUPPORTED ) {
 			$namesMwFile = [];
 			# We do this using a foreach over the codes instead of a directory
 			# loop so that messages files in extensions will work correctly.
@@ -887,12 +931,17 @@ class Language {
 
 	/**
 	 * @param string $code The code of the language for which to get the name
-	 * @param null|string $inLanguage Code of language in which to return the name (null for autonyms)
-	 * @param string $include 'all', 'mw' or 'mwfile'; see fetchLanguageNames()
+	 * @param null|string $inLanguage Code of language in which to return the name
+	 *   (SELF::AS_AUTONYMS for autonyms)
+	 * @param string $include See fetchLanguageNames()
 	 * @return string Language name or empty
 	 * @since 1.20
 	 */
-	public static function fetchLanguageName( $code, $inLanguage = null, $include = 'all' ) {
+	public static function fetchLanguageName(
+		$code,
+		$inLanguage = self::AS_AUTONYMS,
+		$include = self::ALL
+	) {
 		$code = strtolower( $code );
 		$array = self::fetchLanguageNames( $inLanguage, $include );
 		return !array_key_exists( $code, $array ) ? '' : $array[$code];
@@ -1372,7 +1421,7 @@ class Language {
 				case 'g':
 					$usedHour = true;
 					$h = substr( $ts, 8, 2 );
-					$num = $h % 12 ? $h % 12 : 12;
+					$num = $h % 12 ?: 12;
 					break;
 				case 'G':
 					$usedHour = true;
@@ -1381,7 +1430,7 @@ class Language {
 				case 'h':
 					$usedHour = true;
 					$h = substr( $ts, 8, 2 );
-					$num = sprintf( '%02d', $h % 12 ? $h % 12 : 12 );
+					$num = sprintf( '%02d', $h % 12 ?: 12 );
 					break;
 				case 'H':
 					$usedHour = true;
@@ -1784,22 +1833,19 @@ class Language {
 		while ( $hebrewMonth <= 12 ) {
 			# Calculate days in this month
 			if ( $isLeap && $hebrewMonth == 6 ) {
-				# Adar in a leap year
-				if ( $isLeap ) {
-					# Leap year - has Adar I, with 30 days, and Adar II, with 29 days
-					$days = 30;
+				# Leap year - has Adar I, with 30 days, and Adar II, with 29 days
+				$days = 30;
+				if ( $hebrewDay <= $days ) {
+					# Day in Adar I
+					$hebrewMonth = 13;
+				} else {
+					# Subtract the days of Adar I
+					$hebrewDay -= $days;
+					# Try Adar II
+					$days = 29;
 					if ( $hebrewDay <= $days ) {
-						# Day in Adar I
-						$hebrewMonth = 13;
-					} else {
-						# Subtract the days of Adar I
-						$hebrewDay -= $days;
-						# Try Adar II
-						$days = 29;
-						if ( $hebrewDay <= $days ) {
-							# Day in Adar II
-							$hebrewMonth = 14;
-						}
+						# Day in Adar II
+						$hebrewMonth = 14;
 					}
 				}
 			} elseif ( $hebrewMonth == 2 && $yearPattern == 2 ) {
@@ -2143,7 +2189,7 @@ class Language {
 		}
 
 		# No difference ? Return time unchanged
-		if ( 0 == $minDiff ) {
+		if ( $minDiff == 0 ) {
 			return $ts;
 		}
 
@@ -2996,7 +3042,7 @@ class Language {
 	 *
 	 * @return string
 	 */
-	function normalize( $s ) {
+	public function normalize( $s ) {
 		global $wgAllUnicodeFixes;
 		$s = UtfNormal\Validator::cleanUp( $s );
 		if ( $wgAllUnicodeFixes ) {
@@ -3157,33 +3203,13 @@ class Language {
 	}
 
 	/**
-	 * Run the LanguageGetMagic hook once.
-	 */
-	protected function doMagicHook() {
-		if ( $this->mMagicHookDone ) {
-			return;
-		}
-		$this->mMagicHookDone = true;
-		Hooks::run( 'LanguageGetMagic', [ &$this->mMagicExtensions, $this->getCode() ], '1.16' );
-	}
-
-	/**
 	 * Fill a MagicWord object with data from here
 	 *
 	 * @param MagicWord $mw
 	 */
 	function getMagic( $mw ) {
-		// Saves a function call
-		if ( !$this->mMagicHookDone ) {
-			$this->doMagicHook();
-		}
-
-		if ( isset( $this->mMagicExtensions[$mw->mId] ) ) {
-			$rawEntry = $this->mMagicExtensions[$mw->mId];
-		} else {
-			$rawEntry = self::$dataCache->getSubitem(
-				$this->mCode, 'magicWords', $mw->mId );
-		}
+		$rawEntry = $this->mMagicExtensions[$mw->mId] ??
+			self::$dataCache->getSubitem( $this->mCode, 'magicWords', $mw->mId );
 
 		if ( !is_array( $rawEntry ) ) {
 			wfWarn( "\"$rawEntry\" is not a valid magic word for \"$mw->mId\"" );
@@ -3219,8 +3245,6 @@ class Language {
 			// Initialise array
 			$this->mExtendedSpecialPageAliases =
 				self::$dataCache->getItem( $this->mCode, 'specialPageAliases' );
-			Hooks::run( 'LanguageGetSpecialPageAliases',
-				[ &$this->mExtendedSpecialPageAliases, $this->getCode() ], '1.16' );
 		}
 
 		return $this->mExtendedSpecialPageAliases;
@@ -3413,32 +3437,26 @@ class Language {
 	 * Take a list of strings and build a locale-friendly comma-separated
 	 * list, using the local comma-separator message.
 	 * The last two strings are chained with an "and".
-	 * NOTE: This function will only work with standard numeric array keys (0, 1, 2…)
 	 *
-	 * @param string[] $l
+	 * @param string[] $list
 	 * @return string
 	 */
-	function listToText( array $l ) {
-		$m = count( $l ) - 1;
-		if ( $m < 0 ) {
+	public function listToText( array $list ) {
+		$itemCount = count( $list );
+		if ( $itemCount < 1 ) {
 			return '';
 		}
-		if ( $m > 0 ) {
+		$text = array_pop( $list );
+		if ( $itemCount > 1 ) {
 			$and = $this->msg( 'and' )->escaped();
 			$space = $this->msg( 'word-separator' )->escaped();
-			if ( $m > 1 ) {
+			$comma = '';
+			if ( $itemCount > 2 ) {
 				$comma = $this->msg( 'comma-separator' )->escaped();
 			}
+			$text = implode( $comma, $list ) . $and . $space . $text;
 		}
-		$s = $l[$m];
-		for ( $i = $m - 1; $i >= 0; $i-- ) {
-			if ( $i == $m - 1 ) {
-				$s = $l[$i] . $and . $space . $s;
-			} else {
-				$s = $l[$i] . $comma . $s;
-			}
-		}
-		return $s;
+		return $text;
 	}
 
 	/**
@@ -3477,28 +3495,6 @@ class Language {
 			wfMessage( 'pipe-separator' )->inLanguage( $this )->escaped(),
 			$list
 		);
-	}
-
-	/**
-	 * This method is deprecated since 1.31 and kept as alias for truncateForDatabase, which
-	 * has replaced it. This method provides truncation suitable for DB.
-	 *
-	 * The database offers limited byte lengths for some columns in the database;
-	 * multi-byte character sets mean we need to ensure that only whole characters
-	 * are included, otherwise broken characters can be passed to the user.
-	 *
-	 * @deprecated since 1.31, use truncateForDatabase or truncateForVisual as appropriate.
-	 *
-	 * @param string $string String to truncate
-	 * @param int $length Maximum length (including ellipsis)
-	 * @param string $ellipsis String to append to the truncated text
-	 * @param bool $adjustLength Subtract length of ellipsis from $length.
-	 * 	$adjustLength was introduced in 1.18, before that behaved as if false.
-	 * @return string
-	 */
-	function truncate( $string, $length, $ellipsis = '...', $adjustLength = true ) {
-		wfDeprecated( __METHOD__, '1.31' );
-		return $this->truncateForDatabase( $string, $length, $ellipsis, $adjustLength );
 	}
 
 	/**
@@ -4182,8 +4178,13 @@ class Language {
 	/**
 	 * convert text to different variants of a language.
 	 *
-	 * @param string $text
-	 * @return string
+	 * @warning Glossary state is maintained between calls. This means
+	 *  if you pass unescaped text to this method it can cause an XSS
+	 *  in later calls to this method, even if the later calls have properly
+	 *  escaped the input. Never feed this method user controlled text that
+	 *  is not properly escaped!
+	 * @param string $text Content that has been already escaped for use in HTML
+	 * @return string HTML
 	 */
 	public function convert( $text ) {
 		return $this->mConverter->convert( $text );
@@ -4221,25 +4222,27 @@ class Language {
 	}
 
 	/**
-	 * Check if the language has the specific variant
+	 * Strict check if the language has the specific variant.
+	 *
+	 * Compare to LanguageConverter::validateVariant() which does a more
+	 * lenient check and attempts to coerce the given code to a valid one.
 	 *
 	 * @since 1.19
 	 * @param string $variant
 	 * @return bool
 	 */
 	public function hasVariant( $variant ) {
-		return (bool)$this->mConverter->validateVariant( $variant );
+		return $variant && ( $variant === $this->mConverter->validateVariant( $variant ) );
 	}
 
 	/**
 	 * Perform output conversion on a string, and encode for safe HTML output.
 	 * @param string $text Text to be converted
-	 * @param bool $isTitle Whether this conversion is for the article title
 	 * @return string
 	 * @todo this should get integrated somewhere sane
 	 */
-	public function convertHtml( $text, $isTitle = false ) {
-		return htmlspecialchars( $this->convert( $text, $isTitle ) );
+	public function convertHtml( $text ) {
+		return htmlspecialchars( $this->convert( $text ) );
 	}
 
 	/**
@@ -4443,6 +4446,7 @@ class Language {
 
 	/**
 	 * @param string $code
+	 * @deprecated since 1.32, use Language::factory to create a new object instead.
 	 */
 	public function setCode( $code ) {
 		$this->mCode = $code;
@@ -4544,15 +4548,29 @@ class Language {
 	 *
 	 * @since 1.19
 	 * @param string $code Language code
-	 * @return array Non-empty array, ending in "en"
+	 * @param int $mode Fallback mode, either MESSAGES_FALLBACKS (which always falls back to 'en'),
+	 * or STRICT_FALLBACKS (whic honly falls back to 'en' when explicitly defined)
+	 * @throws MWException
+	 * @return array List of language codes
 	 */
-	public static function getFallbacksFor( $code ) {
+	public static function getFallbacksFor( $code, $mode = self::MESSAGES_FALLBACKS ) {
 		if ( $code === 'en' || !self::isValidBuiltInCode( $code ) ) {
 			return [];
 		}
-		// For unknown languages, fallbackSequence returns an empty array,
-		// hardcode fallback to 'en' in that case.
-		return self::getLocalisationCache()->getItem( $code, 'fallbackSequence' ) ?: [ 'en' ];
+		switch ( $mode ) {
+			case self::MESSAGES_FALLBACKS:
+				// For unknown languages, fallbackSequence returns an empty array,
+				// hardcode fallback to 'en' in that case as English messages are
+				// always defined.
+				return self::getLocalisationCache()->getItem( $code, 'fallbackSequence' ) ?: [ 'en' ];
+			case self::STRICT_FALLBACKS:
+				// Use this mode when you don't want to fallback to English unless
+				// explicitly defined, for example when you have language-variant icons
+				// and an international language-independent fallback.
+				return self::getLocalisationCache()->getItem( $code, 'originalFallbackSequence' );
+			default:
+				throw new MWException( "Invalid fallback mode \"$mode\"" );
+		}
 	}
 
 	/**
@@ -5019,10 +5037,6 @@ class Language {
 	public function getPluralRuleType( $number ) {
 		$index = $this->getPluralRuleIndexNumber( $number );
 		$pluralRuleTypes = $this->getPluralRuleTypes();
-		if ( isset( $pluralRuleTypes[$index] ) ) {
-			return $pluralRuleTypes[$index];
-		} else {
-			return 'other';
-		}
+		return $pluralRuleTypes[$index] ?? 'other';
 	}
 }

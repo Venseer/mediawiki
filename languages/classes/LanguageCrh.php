@@ -63,10 +63,11 @@ class CrhConverter extends LanguageConverter {
 	 * @param array $variantfallbacks
 	 * @param array $flags
 	 */
-	function __construct( $langobj, $maincode,
-								$variants = [],
-								$variantfallbacks = [],
-								$flags = [] ) {
+	function __construct( Language $langobj, $maincode,
+		$variants = [],
+		$variantfallbacks = [],
+		$flags = []
+	) {
 		parent::__construct( $langobj, $maincode,
 			$variants, $variantfallbacks, $flags );
 

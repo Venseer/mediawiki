@@ -26,6 +26,7 @@ use MediaWiki\Logger\LoggerFactory;
 use MWHttpRequest;
 use PhpHttpRequest;
 use Profiler;
+use GuzzleHttpRequest;
 
 /**
  * Factory creating MWHttpRequest objects.
@@ -54,6 +55,8 @@ class HttpRequestFactory {
 		}
 
 		switch ( Http::$httpEngine ) {
+			case 'guzzle':
+				return new GuzzleHttpRequest( $url, $options, $caller, Profiler::instance() );
 			case 'curl':
 				return new CurlHttpRequest( $url, $options, $caller, Profiler::instance() );
 			case 'php':

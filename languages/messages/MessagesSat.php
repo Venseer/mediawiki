@@ -1,5 +1,5 @@
 <?php
-/** Santali (sat)
+/** ᱥᱟᱱᱛᱟᱲᱤ (Santali)
  *
  * To improve a translation please visit https://translatewiki.net
  *
@@ -7,8 +7,6 @@
  * @file
  *
  */
-
-$fallback = 'bn';
 
 $namespaceNames = [
 	NS_MEDIA            => 'ᱢᱤᱰᱤᱭᱟ',
@@ -28,4 +26,17 @@ $namespaceNames = [
 	NS_HELP_TALK        => 'ᱜᱚᱸᱲᱚᱸ_ᱜᱟᱞᱢᱟᱨᱟᱣ',
 	NS_CATEGORY         => 'ᱛᱷᱚᱠ',
 	NS_CATEGORY_TALK    => 'ᱛᱷᱚᱠ_ᱜᱟᱞᱢᱟᱨᱟᱣ',
+];
+
+$digitTransformTable = [
+	'0' => '᱐',
+	'1' => '᱑',
+	'2' => '᱒',
+	'3' => '᱓',
+	'4' => '᱔',
+	'5' => '᱕',
+	'6' => '᱖',
+	'7' => '᱗',
+	'8' => '᱘',
+	'9' => '᱙',
 ];

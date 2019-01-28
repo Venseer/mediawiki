@@ -32,7 +32,7 @@ class NewPagesPager extends ReverseChronologicalPager {
 	 */
 	protected $mForm;
 
-	function __construct( $form, FormOptions $opts ) {
+	public function __construct( $form, FormOptions $opts ) {
 		parent::__construct( $form->getContext() );
 		$this->mForm = $form;
 		$this->opts = $opts;
@@ -58,8 +58,6 @@ class NewPagesPager extends ReverseChronologicalPager {
 				$conds[] = 'page_len >= ' . $size;
 			}
 		}
-
-		$rcIndexes = [];
 
 		if ( $namespace !== false ) {
 			if ( $this->opts->getValue( 'invert' ) ) {
@@ -105,17 +103,11 @@ class NewPagesPager extends ReverseChronologicalPager {
 		Hooks::run( 'SpecialNewpagesConditions',
 			[ &$pager, $this->opts, &$conds, &$tables, &$fields, &$join_conds ] );
 
-		$options = [];
-
-		if ( $rcIndexes ) {
-			$options = [ 'USE INDEX' => [ 'recentchanges' => $rcIndexes ] ];
-		}
-
 		$info = [
 			'tables' => $tables,
 			'fields' => $fields,
 			'conds' => $conds,
-			'options' => $options,
+			'options' => [],
 			'join_conds' => $join_conds
 		];
 
@@ -140,7 +132,7 @@ class NewPagesPager extends ReverseChronologicalPager {
 		return $this->mForm->formatRow( $row );
 	}
 
-	function getStartBody() {
+	protected function getStartBody() {
 		# Do a batch existence check on pages
 		$linkBatch = new LinkBatch();
 		foreach ( $this->mResult as $row ) {
@@ -153,7 +145,7 @@ class NewPagesPager extends ReverseChronologicalPager {
 		return '<ul>';
 	}
 
-	function getEndBody() {
+	protected function getEndBody() {
 		return '</ul>';
 	}
 }

@@ -37,13 +37,10 @@ use Wikimedia\WrappedString;
  */
 class ResourceLoader implements LoggerAwareInterface {
 	/** @var int */
-	protected static $filterCacheVersion = 7;
+	const CACHE_VERSION = 8;
 
 	/** @var bool */
 	protected static $debugMode = null;
-
-	/** @var array */
-	private $lessVars = null;
 
 	/**
 	 * Module name/ResourceLoaderModule object pairs
@@ -138,7 +135,7 @@ class ResourceLoader implements LoggerAwareInterface {
 			$module = $this->getModule( $row->md_module );
 			if ( $module ) {
 				$module->setFileDependencies( $context, ResourceLoaderModule::expandRelativePaths(
-					FormatJson::decode( $row->md_deps, true )
+					json_decode( $row->md_deps, true )
 				) );
 				$modulesWithDeps[] = $row->md_module;
 			}
@@ -202,7 +199,8 @@ class ResourceLoader implements LoggerAwareInterface {
 			'resourceloader',
 			'filter',
 			$filter,
-			self::$filterCacheVersion, md5( $data )
+			self::CACHE_VERSION,
+			md5( $data )
 		);
 
 		$result = $cache->get( $key );
@@ -552,11 +550,7 @@ class ResourceLoader implements LoggerAwareInterface {
 				$object->setConfig( $this->getConfig() );
 				$object->setLogger( $this->logger );
 			} else {
-				if ( !isset( $info['class'] ) ) {
-					$class = ResourceLoaderFileModule::class;
-				} else {
-					$class = $info['class'];
-				}
+				$class = $info['class'] ?? ResourceLoaderFileModule::class;
 				/** @var ResourceLoaderModule $object */
 				$object = new $class( $info );
 				$object->setConfig( $this->getConfig() );
@@ -630,14 +624,13 @@ class ResourceLoader implements LoggerAwareInterface {
 	/**
 	 * Add an error to the 'errors' array and log it.
 	 *
-	 * Should only be called from within respond().
-	 *
+	 * @private For internal use by ResourceLoader and ResourceLoaderStartUpModule.
 	 * @since 1.29
 	 * @param Exception $e
 	 * @param string $msg
 	 * @param array $context
 	 */
-	protected function outputErrorAndLog( Exception $e, $msg, array $context = [] ) {
+	public function outputErrorAndLog( Exception $e, $msg, array $context = [] ) {
 		MWExceptionHandler::logException( $e );
 		$this->logger->warning(
 			$msg,
@@ -662,9 +655,8 @@ class ResourceLoader implements LoggerAwareInterface {
 			try {
 				return $this->getModule( $module )->getVersionHash( $context );
 			} catch ( Exception $e ) {
-				// If modules fail to compute a version, do still consider the versions
-				// of other modules - don't set an empty string E-Tag for the whole request.
-				// See also T152266 and StartupModule::getModuleRegistrations().
+				// If modules fail to compute a version, don't fail the request (T152266)
+				// and still compute versions of other modules.
 				$this->outputErrorAndLog( $e,
 					'Calculating version for "{module}" failed: {exception}',
 					[
@@ -789,7 +781,7 @@ class ResourceLoader implements LoggerAwareInterface {
 		}
 
 		// Save response to file cache unless there are errors
-		if ( isset( $fileCache ) && !$this->errors && !count( $missing ) ) {
+		if ( isset( $fileCache ) && !$this->errors && $missing === [] ) {
 			// Cache single modules and images...and other requests if there are enough hits
 			if ( ResourceFileCache::useFileCache( $context ) ) {
 				if ( $fileCache->isCacheWorthy() ) {
@@ -1044,7 +1036,7 @@ class ResourceLoader implements LoggerAwareInterface {
 		$out = '';
 		$states = [];
 
-		if ( !count( $modules ) && !count( $missing ) ) {
+		if ( $modules === [] && $missing === [] ) {
 			return <<<MESSAGE
 /* This file is the Web entry point for MediaWiki's ResourceLoader:
    <https://www.mediawiki.org/wiki/ResourceLoader>. In this request,
@@ -1095,7 +1087,7 @@ MESSAGE;
 						break;
 					case 'styles':
 						$styles = $content['styles'];
-						// We no longer seperate into media, they are all combined now with
+						// We no longer separate into media, they are all combined now with
 						// custom media type groups into @media .. {} sections as part of the css string.
 						// Module returns either an empty array or a numerical array with css strings.
 						$strContent = isset( $styles['css'] ) ? implode( '', $styles['css'] ) : '';
@@ -1166,9 +1158,9 @@ MESSAGE;
 				$out = $this->ensureNewline( $out ) . $stateScript;
 			}
 		} else {
-			if ( count( $states ) ) {
-				$this->errors[] = 'Problematic modules: ' .
-					FormatJson::encode( $states, self::inDebugMode() );
+			if ( $states ) {
+				$this->errors[] = 'Problematic modules: '
+					. self::encodeJsonForScript( $states );
 			}
 		}
 
@@ -1228,7 +1220,7 @@ MESSAGE;
 			if ( self::inDebugMode() ) {
 				$scripts = new XmlJsCode( "function ( $, jQuery, require, module ) {\n{$scripts->value}\n}" );
 			} else {
-				$scripts = new XmlJsCode( 'function($,jQuery,require,module){'. $scripts->value . '}' );
+				$scripts = new XmlJsCode( 'function($,jQuery,require,module){' . $scripts->value . '}' );
 			}
 		} elseif ( !is_string( $scripts ) && !is_array( $scripts ) ) {
 			throw new MWException( 'Invalid scripts error. Array of URLs or string of code expected.' );
@@ -1298,8 +1290,37 @@ MESSAGE;
 	}
 
 	/**
-	 * Returns a JS call to mw.loader.state, which sets the state of a
-	 * module or modules to a given value. Has two calling conventions:
+	 * Wrapper around json_encode that avoids needless escapes,
+	 * and pretty-prints in debug mode.
+	 *
+	 * @internal
+	 * @since 1.32
+	 * @param bool|string|array $data
+	 * @return string JSON
+	 */
+	public static function encodeJsonForScript( $data ) {
+		// Keep output as small as possible by disabling needless escape modes
+		// that PHP uses by default.
+		// However, while most module scripts are only served on HTTP responses
+		// for JavaScript, some modules can also be embedded in the HTML as inline
+		// scripts. This, and the fact that we sometimes need to export strings
+		// containing user-generated content and labels that may genuinely contain
+		// a sequences like "</script>", we need to encode either '/' or '<'.
+		// By default PHP escapes '/'. Let's escape '<' instead which is less common
+		// and allows URLs to mostly remain readable.
+		$jsonFlags = JSON_UNESCAPED_SLASHES |
+			JSON_UNESCAPED_UNICODE |
+			JSON_HEX_TAG |
+			JSON_HEX_AMP;
+		if ( self::inDebugMode() ) {
+			$jsonFlags |= JSON_PRETTY_PRINT;
+		}
+		return json_encode( $data, $jsonFlags );
+	}
+
+	/**
+	 * Returns a JS call to mw.loader.state, which sets the state of one
+	 * ore more modules to a given value. Has two calling conventions:
 	 *
 	 *    - ResourceLoader::makeLoaderStateScript( $name, $state ):
 	 *         Set the state of a single module called $name to $state
@@ -1307,47 +1328,17 @@ MESSAGE;
 	 *    - ResourceLoader::makeLoaderStateScript( [ $name => $state, ... ] ):
 	 *         Set the state of modules with the given names to the given states
 	 *
-	 * @param string $name
+	 * @param array|string $states
 	 * @param string|null $state
 	 * @return string JavaScript code
 	 */
-	public static function makeLoaderStateScript( $name, $state = null ) {
-		if ( is_array( $name ) ) {
-			return Xml::encodeJsCall(
-				'mw.loader.state',
-				[ $name ],
-				self::inDebugMode()
-			);
-		} else {
-			return Xml::encodeJsCall(
-				'mw.loader.state',
-				[ $name, $state ],
-				self::inDebugMode()
-			);
+	public static function makeLoaderStateScript( $states, $state = null ) {
+		if ( !is_array( $states ) ) {
+			$states = [ $states => $state ];
 		}
-	}
-
-	/**
-	 * Returns JS code which calls the script given by $script. The script will
-	 * be called with local variables name, version, dependencies and group,
-	 * which will have values corresponding to $name, $version, $dependencies
-	 * and $group as supplied.
-	 *
-	 * @param string $name Module name
-	 * @param string $version Module version hash
-	 * @param array $dependencies List of module names on which this module depends
-	 * @param string $group Group which the module is in.
-	 * @param string $source Source of the module, or 'local' if not foreign.
-	 * @param string $script JavaScript code
-	 * @return string JavaScript code
-	 */
-	public static function makeCustomLoaderScript( $name, $version, $dependencies,
-		$group, $source, $script
-	) {
-		$script = str_replace( "\n", "\n\t", trim( $script ) );
 		return Xml::encodeJsCall(
-			"( function ( name, version, dependencies, group, source ) {\n\t$script\n} )",
-			[ $name, $version, $dependencies, $group, $source ],
+			'mw.loader.state',
+			[ $states ],
 			self::inDebugMode()
 		);
 	}
@@ -1369,7 +1360,7 @@ MESSAGE;
 	 * - new XmlJsCode( '{}' )
 	 * - new stdClass() // (object) []
 	 *
-	 * @param Array $array
+	 * @param array $array
 	 */
 	private static function trimArray( array &$array ) {
 		$i = count( $array );
@@ -1388,69 +1379,56 @@ MESSAGE;
 
 	/**
 	 * Returns JS code which calls mw.loader.register with the given
-	 * parameters. Has three calling conventions:
+	 * parameter.
 	 *
-	 *   - ResourceLoader::makeLoaderRegisterScript( $name, $version,
-	 *        $dependencies, $group, $source, $skip
-	 *     ):
-	 *        Register a single module.
+	 * @par Example
+	 * @code
 	 *
-	 *   - ResourceLoader::makeLoaderRegisterScript( [ $name1, $name2 ] ):
-	 *        Register modules with the given names.
-	 *
-	 *   - ResourceLoader::makeLoaderRegisterScript( [
+	 *     ResourceLoader::makeLoaderRegisterScript( [
 	 *        [ $name1, $version1, $dependencies1, $group1, $source1, $skip1 ],
 	 *        [ $name2, $version2, $dependencies1, $group2, $source2, $skip2 ],
 	 *        ...
 	 *     ] ):
-	 *        Registers modules with the given names and parameters.
+	 * @endcode
 	 *
-	 * @param string $name Module name
-	 * @param string|null $version Module version hash
-	 * @param array|null $dependencies List of module names on which this module depends
-	 * @param string|null $group Group which the module is in
-	 * @param string|null $source Source of the module, or 'local' if not foreign
-	 * @param string|null $skip Script body of the skip function
+	 * @internal
+	 * @since 1.32
+	 * @param array $modules Array of module registration arrays, each containing
+	 *  - string: module name
+	 *  - string: module version
+	 *  - array|null: List of dependencies (optional)
+	 *  - string|null: Module group (optional)
+	 *  - string|null: Name of foreign module source, or 'local' (optional)
+	 *  - string|null: Script body of a skip function (optional)
 	 * @return string JavaScript code
 	 */
-	public static function makeLoaderRegisterScript( $name, $version = null,
-		$dependencies = null, $group = null, $source = null, $skip = null
-	) {
-		if ( is_array( $name ) ) {
+	public static function makeLoaderRegisterScript( array $modules ) {
+		// Optimisation: Transform dependency names into indexes when possible
+		// to produce smaller output. They are expanded by mw.loader.register on
+		// the other end using resolveIndexedDependencies().
+		$index = [];
+		foreach ( $modules as $i => &$module ) {
 			// Build module name index
-			$index = [];
-			foreach ( $name as $i => &$module ) {
-				$index[$module[0]] = $i;
-			}
-
-			// Transform dependency names into indexes when possible, they will be resolved by
-			// mw.loader.register on the other end
-			foreach ( $name as &$module ) {
-				if ( isset( $module[2] ) ) {
-					foreach ( $module[2] as &$dependency ) {
-						if ( isset( $index[$dependency] ) ) {
-							$dependency = $index[$dependency];
-						}
+			$index[$module[0]] = $i;
+		}
+		foreach ( $modules as &$module ) {
+			if ( isset( $module[2] ) ) {
+				foreach ( $module[2] as &$dependency ) {
+					if ( isset( $index[$dependency] ) ) {
+						// Replace module name in dependency list with index
+						$dependency = $index[$dependency];
 					}
 				}
 			}
-
-			array_walk( $name, [ 'self', 'trimArray' ] );
-
-			return Xml::encodeJsCall(
-				'mw.loader.register',
-				[ $name ],
-				self::inDebugMode()
-			);
-		} else {
-			$registration = [ $name, $version, $dependencies, $group, $source, $skip ];
-			self::trimArray( $registration );
-			return Xml::encodeJsCall(
-				'mw.loader.register',
-				$registration,
-				self::inDebugMode()
-			);
 		}
+
+		array_walk( $modules, [ 'self', 'trimArray' ] );
+
+		return Xml::encodeJsCall(
+			'mw.loader.register',
+			[ $modules ],
+			self::inDebugMode()
+		);
 	}
 
 	/**
@@ -1463,35 +1441,47 @@ MESSAGE;
 	 *   - ResourceLoader::makeLoaderSourcesScript( [ $id1 => $loadUrl, $id2 => $loadUrl, ... ] );
 	 *       Register sources with the given IDs and properties.
 	 *
-	 * @param string $id Source ID
+	 * @param string|array $sources Source ID
 	 * @param string|null $loadUrl load.php url
 	 * @return string JavaScript code
 	 */
-	public static function makeLoaderSourcesScript( $id, $loadUrl = null ) {
-		if ( is_array( $id ) ) {
-			return Xml::encodeJsCall(
-				'mw.loader.addSource',
-				[ $id ],
-				self::inDebugMode()
-			);
-		} else {
-			return Xml::encodeJsCall(
-				'mw.loader.addSource',
-				[ $id, $loadUrl ],
-				self::inDebugMode()
-			);
+	public static function makeLoaderSourcesScript( $sources, $loadUrl = null ) {
+		if ( !is_array( $sources ) ) {
+			$sources = [ $sources => $loadUrl ];
 		}
+		return Xml::encodeJsCall(
+			'mw.loader.addSource',
+			[ $sources ],
+			self::inDebugMode()
+		);
 	}
 
 	/**
-	 * Wraps JavaScript code to run after startup and base modules.
+	 * Wraps JavaScript code to run after the startup module.
 	 *
 	 * @param string $script JavaScript code
 	 * @return string JavaScript code
 	 */
 	public static function makeLoaderConditionalScript( $script ) {
+		// Adds a function to lazy-created RLQ
 		return '(window.RLQ=window.RLQ||[]).push(function(){' .
 			trim( $script ) . '});';
+	}
+
+	/**
+	 * Wraps JavaScript code to run after a required module.
+	 *
+	 * @since 1.32
+	 * @param string|string[] $modules Module name(s)
+	 * @param string $script JavaScript code
+	 * @return string JavaScript code
+	 */
+	public static function makeInlineCodeWithModule( $modules, $script ) {
+		// Adds an array to lazy-created RLQ
+		return '(window.RLQ=window.RLQ||[]).push(['
+			. self::encodeJsonForScript( $modules ) . ','
+			. 'function(){' . trim( $script ) . '}'
+			. ']);';
 	}
 
 	/**
@@ -1530,13 +1520,23 @@ MESSAGE;
 	 *
 	 * @param array $configuration List of configuration values keyed by variable name
 	 * @return string JavaScript code
+	 * @throws Exception
 	 */
 	public static function makeConfigSetScript( array $configuration ) {
-		return Xml::encodeJsCall(
+		$js = Xml::encodeJsCall(
 			'mw.config.set',
 			[ $configuration ],
 			self::inDebugMode()
 		);
+		if ( $js === false ) {
+			$e = new Exception(
+				'JSON serialization of config data failed. ' .
+				'This usually means the config data is not valid UTF-8.'
+			);
+			MWExceptionHandler::logException( $e );
+			$js = Xml::encodeJsCall( 'mw.log.error', [ $e->__toString() ] );
+		}
+		return $js;
 	}
 
 	/**
@@ -1590,6 +1590,9 @@ MESSAGE;
 	 * Global state and $wgRequest are evil, but we're using it right
 	 * now and sometimes we need to be able to force ResourceLoader to
 	 * re-evaluate the context because it has changed (e.g. in the test suite).
+	 *
+	 * @internal For use by unit tests
+	 * @codeCoverageIgnore
 	 */
 	public static function clearCache() {
 		self::$debugMode = null;
@@ -1732,12 +1735,10 @@ MESSAGE;
 	 * Get global LESS variables.
 	 *
 	 * @since 1.27
+	 * @deprecated since 1.32 Use ResourceLoderModule::getLessVars() instead.
 	 * @return array Map of variable names to string CSS values.
 	 */
 	public function getLessVars() {
-		if ( $this->lessVars === null ) {
-			$this->lessVars = $this->config->get( 'ResourceLoaderLESSVars' );
-		}
-		return $this->lessVars;
+		return [];
 	}
 }

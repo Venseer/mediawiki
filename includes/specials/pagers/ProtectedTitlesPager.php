@@ -26,7 +26,7 @@ class ProtectedTitlesPager extends AlphabeticPager {
 
 	public $mForm, $mConds;
 
-	function __construct( $form, $conds, $type, $level, $namespace,
+	public function __construct( $form, $conds, $type, $level, $namespace,
 		$sizetype = '', $size = 0
 	) {
 		$this->mForm = $form;
@@ -37,7 +37,7 @@ class ProtectedTitlesPager extends AlphabeticPager {
 		parent::__construct( $form->getContext() );
 	}
 
-	function getStartBody() {
+	protected function getStartBody() {
 		# Do a link batch query
 		$this->mResult->seek( 0 );
 		$lb = new LinkBatch;

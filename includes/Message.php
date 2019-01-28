@@ -20,6 +20,7 @@
  * @file
  * @author Niklas Laxström
  */
+use MediaWiki\MediaWikiServices;
 
 /**
  * The Message class provides methods which fulfil two basic services:
@@ -288,7 +289,7 @@ class Message implements MessageSpecifier, Serializable {
 			'parameters' => $this->parameters,
 			'format' => $this->format,
 			'useDatabase' => $this->useDatabase,
-			'title' => $this->title,
+			'titlestr' => $this->title ? $this->title->getFullText() : null,
 		] );
 	}
 
@@ -299,6 +300,10 @@ class Message implements MessageSpecifier, Serializable {
 	 */
 	public function unserialize( $serialized ) {
 		$data = unserialize( $serialized );
+		if ( !is_array( $data ) ) {
+			throw new InvalidArgumentException( __METHOD__ . ': Invalid serialized data' );
+		}
+
 		$this->interface = $data['interface'];
 		$this->key = $data['key'];
 		$this->keysToTry = $data['keysToTry'];
@@ -306,7 +311,15 @@ class Message implements MessageSpecifier, Serializable {
 		$this->format = $data['format'];
 		$this->useDatabase = $data['useDatabase'];
 		$this->language = $data['language'] ? Language::factory( $data['language'] ) : false;
-		$this->title = $data['title'];
+
+		if ( isset( $data['titlestr'] ) ) {
+			$this->title = Title::newFromText( $data['titlestr'] );
+		} elseif ( isset( $data['title'] ) && $data['title'] instanceof Title ) {
+			// Old serializations from before December 2018
+			$this->title = $data['title'];
+		} else {
+			$this->title = null; // Explicit for sanity
+		}
 	}
 
 	/**
@@ -469,18 +482,20 @@ class Message implements MessageSpecifier, Serializable {
 	 * @since 1.26
 	 */
 	public function getTitle() {
-		global $wgContLang, $wgForceUIMsgAsContentMsg;
+		global $wgForceUIMsgAsContentMsg;
 
+		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
+		$lang = $this->getLanguage();
 		$title = $this->key;
 		if (
-			!$this->language->equals( $wgContLang )
+			!$lang->equals( $contLang )
 			&& in_array( $this->key, (array)$wgForceUIMsgAsContentMsg )
 		) {
-			$code = $this->language->getCode();
-			$title .= '/' . $code;
+			$title .= '/' . $lang->getCode();
 		}
 
-		return Title::makeTitle( NS_MEDIAWIKI, $wgContLang->ucfirst( strtr( $title, ' ', '_' ) ) );
+		return Title::makeTitle(
+			NS_MEDIAWIKI, $contLang->ucfirst( strtr( $title, ' ', '_' ) ) );
 	}
 
 	/**
@@ -766,8 +781,7 @@ class Message implements MessageSpecifier, Serializable {
 			return $this;
 		}
 
-		global $wgContLang;
-		$this->inLanguage( $wgContLang );
+		$this->inLanguage( MediaWikiServices::getInstance()->getContentLanguage() );
 		return $this;
 	}
 

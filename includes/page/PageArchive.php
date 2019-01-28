@@ -19,8 +19,8 @@
  */
 
 use MediaWiki\MediaWikiServices;
-use MediaWiki\Storage\RevisionRecord;
-use MediaWiki\Storage\RevisionStore;
+use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Revision\RevisionStore;
 use MediaWiki\Storage\SqlBlobStore;
 use Wikimedia\Assert\Assert;
 use Wikimedia\Rdbms\IResultWrapper;
@@ -767,7 +767,7 @@ class PageArchive {
 					0,
 					$this->title,
 					[
-						'page' => $pageId,
+						'page_id' => $pageId,
 						'deleted' => $unsuppress ? 0 : $row->ar_deleted
 					]
 				);

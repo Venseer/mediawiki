@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	/**
 	 * List of changes
 	 *
@@ -197,7 +197,7 @@
 	 * Map a reason for having no results to its message key
 	 *
 	 * @param {string} reason One of the NO_RESULTS_* "constant" that represent
-	 * 	a reason for having no results
+	 *   a reason for having no results
 	 * @return {string} Key for the message that explains why there is no results in this case
 	 */
 	mw.rcfilters.ui.ChangesListWrapperWidget.prototype.getMsgKeyForNoResults = function ( reason ) {
@@ -247,6 +247,8 @@
 			$firstNew.after( $indicator );
 		}
 
+		// FIXME: Use CSS transition
+		// eslint-disable-next-line jquery/no-fade
 		$newChanges
 			.hide()
 			.fadeIn( 1000 );
@@ -380,4 +382,4 @@
 		// Turn off highlights
 		this.$element.removeClass( 'mw-rcfilters-ui-changesListWrapperWidget-highlighted' );
 	};
-}( mediaWiki ) );
+}() );

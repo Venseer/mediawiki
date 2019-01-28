@@ -270,8 +270,8 @@ class CacheHelper implements ICacheHelper {
 			$value = null;
 
 			if ( is_null( $key ) ) {
-				$itemKey = array_keys( array_slice( $this->cachedChunks, 0, 1 ) );
-				$itemKey = array_shift( $itemKey );
+				reset( $this->cachedChunks );
+				$itemKey = key( $this->cachedChunks );
 
 				if ( !is_int( $itemKey ) ) {
 					wfWarn( "Attempted to get item with non-numeric key while " .
@@ -350,7 +350,7 @@ class CacheHelper implements ICacheHelper {
 			throw new MWException( 'No cache key set, so cannot obtain or save the CacheHelper values.' );
 		}
 
-		return wfMemcKey( ...$this->cacheKey );
+		return wfMemcKey( ...array_values( $this->cacheKey ) );
 	}
 
 	/**

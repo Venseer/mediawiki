@@ -47,7 +47,7 @@ class ActiveUsersPager extends UsersPager {
 	 * @param IContextSource|null $context
 	 * @param FormOptions $opts
 	 */
-	function __construct( IContextSource $context = null, FormOptions $opts ) {
+	public function __construct( IContextSource $context = null, FormOptions $opts ) {
 		parent::__construct( $context );
 
 		$this->RCMaxAge = $this->getConfig()->get( 'ActiveUserDays' );
@@ -83,13 +83,14 @@ class ActiveUsersPager extends UsersPager {
 
 		$activeUserSeconds = $this->getConfig()->get( 'ActiveUserDays' ) * 86400;
 		$timestamp = $dbr->timestamp( wfTimestamp( TS_UNIX ) - $activeUserSeconds );
-		$tables = [ 'querycachetwo', 'user', 'recentchanges' ] + $rcQuery['tables'];
-		$jconds = $rcQuery['joins'];
+		$tables = [ 'querycachetwo', 'user', 'rc' => [ 'recentchanges' ] + $rcQuery['tables'] ];
+		$jconds = [
+			'user' => [ 'JOIN', 'user_name = qcc_title' ],
+			'rc' => [ 'JOIN', $rcQuery['fields']['rc_user_text'] . ' = qcc_title' ],
+		] + $rcQuery['joins'];
 		$conds = [
 			'qcc_type' => 'activeusers',
 			'qcc_namespace' => NS_USER,
-			'user_name = qcc_title',
-			$rcQuery['fields']['rc_user_text'] . ' = qcc_title',
 			'rc_type != ' . $dbr->addQuotes( RC_EXTERNAL ), // Don't count wikidata.
 			'rc_type != ' . $dbr->addQuotes( RC_CATEGORIZE ), // Don't count categorization changes.
 			'rc_log_type IS NULL OR rc_log_type != ' . $dbr->addQuotes( 'newusers' ),
@@ -100,7 +101,7 @@ class ActiveUsersPager extends UsersPager {
 		}
 		if ( $this->groups !== [] ) {
 			$tables[] = 'user_groups';
-			$conds[] = 'ug_user = user_id';
+			$jconds['user_groups'] = [ 'JOIN', [ 'ug_user = user_id' ] ];
 			$conds['ug_group'] = $this->groups;
 			$conds[] = 'ug_expiry IS NULL OR ug_expiry >= ' . $dbr->addQuotes( $dbr->timestamp() );
 		}
@@ -135,7 +136,7 @@ class ActiveUsersPager extends UsersPager {
 		];
 	}
 
-	function doBatchLookups() {
+	protected function doBatchLookups() {
 		parent::doBatchLookups();
 
 		$uids = [];
@@ -148,14 +149,17 @@ class ActiveUsersPager extends UsersPager {
 		// is done in two queries to avoid huge quicksorts and to make COUNT(*) correct.
 		$dbr = $this->getDatabase();
 		$res = $dbr->select( 'ipblocks',
-			[ 'ipb_user', 'MAX(ipb_deleted) AS block_status' ],
+			[ 'ipb_user', 'MAX(ipb_deleted) AS deleted, MAX(ipb_sitewide) AS sitewide' ],
 			[ 'ipb_user' => $uids ],
 			__METHOD__,
 			[ 'GROUP BY' => [ 'ipb_user' ] ]
 		);
 		$this->blockStatusByUid = [];
 		foreach ( $res as $row ) {
-			$this->blockStatusByUid[$row->ipb_user] = $row->block_status; // 0 or 1
+			$this->blockStatusByUid[$row->ipb_user] = [
+				'deleted' => $row->deleted,
+				'sitewide' => $row->sitewide,
+			];
 		}
 		$this->mResult->seek( 0 );
 	}
@@ -180,13 +184,20 @@ class ActiveUsersPager extends UsersPager {
 
 		$item = $lang->specialList( $ulinks, $groups );
 
+		// If there is a block, 'deleted' and 'sitewide' are both set on
+		// $this->blockStatusByUid[$row->user_id].
+		$blocked = '';
 		$isBlocked = isset( $this->blockStatusByUid[$row->user_id] );
-		if ( $isBlocked && $this->blockStatusByUid[$row->user_id] == 1 ) {
-			$item = "<span class=\"deleted\">$item</span>";
+		if ( $isBlocked ) {
+			if ( $this->blockStatusByUid[$row->user_id]['deleted'] == 1 ) {
+				$item = "<span class=\"deleted\">$item</span>";
+			}
+			if ( $this->blockStatusByUid[$row->user_id]['sitewide'] == 1 ) {
+				$blocked = ' ' . $this->msg( 'listusers-blocked', $userName )->escaped();
+			}
 		}
 		$count = $this->msg( 'activeusers-count' )->numParams( $row->recentedits )
 			->params( $userName )->numParams( $this->RCMaxAge )->escaped();
-		$blocked = $isBlocked ? ' ' . $this->msg( 'listusers-blocked', $userName )->escaped() : '';
 
 		return Html::rawElement( 'li', [], "{$item} [{$count}]{$blocked}" );
 	}

@@ -32,7 +32,7 @@ use stdClass;
 /**
  * Basic database interface for live and lazy-loaded relation database handles
  *
- * @note: IDatabase and DBConnRef should be updated to reflect any changes
+ * @note IDatabase and DBConnRef should be updated to reflect any changes
  * @ingroup Database
  */
 interface IDatabase {
@@ -165,16 +165,24 @@ interface IDatabase {
 	public function explicitTrxActive();
 
 	/**
+	 * Assert that all explicit transactions or atomic sections have been closed.
+	 * @throws DBTransactionError
+	 * @since 1.32
+	 */
+	public function assertNoOpenTransactions();
+
+	/**
 	 * Get/set the table prefix.
 	 * @param string|null $prefix The table prefix to set, or omitted to leave it unchanged.
-	 * @return string The previous table prefix.
+	 * @return string The previous table prefix
+	 * @throws DBUnexpectedError
 	 */
 	public function tablePrefix( $prefix = null );
 
 	/**
 	 * Get/set the db schema.
 	 * @param string|null $schema The database schema to set, or omitted to leave it unchanged.
-	 * @return string The previous db schema.
+	 * @return string The previous db schema
 	 */
 	public function dbSchema( $schema = null );
 
@@ -351,6 +359,10 @@ interface IDatabase {
 	public function getFlag( $flag );
 
 	/**
+	 * Return the currently selected domain ID
+	 *
+	 * Null components (database/schema) might change once a connection is established
+	 *
 	 * @return string
 	 */
 	public function getDomainID();
@@ -369,18 +381,6 @@ interface IDatabase {
 	 * @return string
 	 */
 	public function getType();
-
-	/**
-	 * Open a new connection to the database (closing any existing one)
-	 *
-	 * @param string $server Database server host
-	 * @param string $user Database user name
-	 * @param string $password Database user password
-	 * @param string $dbName Database name
-	 * @return bool
-	 * @throws DBConnectionError
-	 */
-	public function open( $server, $user, $password, $dbName );
 
 	/**
 	 * Fetch the next row from the given result object, in object form.
@@ -406,7 +406,8 @@ interface IDatabase {
 	public function fetchRow( $res );
 
 	/**
-	 * Get the number of rows in a result object
+	 * Get the number of rows in a query result. If the query did not return
+	 * any rows (for example, if it was a write query), this returns zero.
 	 *
 	 * @param mixed $res A SQL result
 	 * @return int
@@ -498,8 +499,8 @@ interface IDatabase {
 	 * Close the database connection
 	 *
 	 * This should only be called after any transactions have been resolved,
-	 * aside from read-only transactions (assuming no callbacks are registered).
-	 * If a transaction is still open anyway, it will be committed if possible.
+	 * aside from read-only automatic transactions (assuming no callbacks are registered).
+	 * If a transaction is still open anyway, it will be rolled back.
 	 *
 	 * @throws DBError
 	 * @return bool Operation success. true if already closed.
@@ -594,15 +595,7 @@ interface IDatabase {
 	 * Execute a SELECT query constructed using the various parameters provided.
 	 * See below for full details of the parameters.
 	 *
-	 * @param string|array $table Table name
-	 * @param string|array $vars Field names
-	 * @param string|array $conds Conditions
-	 * @param string $fname Caller function name
-	 * @param array $options Query options
-	 * @param array $join_conds Join conditions
-	 *
-	 *
-	 * @param string|array $table
+	 * @param string|array $table Table name(s)
 	 *
 	 * May be either an array of table names, or a single string holding a table
 	 * name. If an array is given, table aliases can be specified, for example:
@@ -637,7 +630,7 @@ interface IDatabase {
 	 * Do not use untrusted user input as a table name. Alias names should
 	 * not have characters outside of the Basic multilingual plane.
 	 *
-	 * @param string|array $vars
+	 * @param string|array $vars Field name(s)
 	 *
 	 * May be either a field name or an array of field names. The field names
 	 * can be complete fragments of SQL, for direct inclusion into the SELECT
@@ -682,7 +675,11 @@ interface IDatabase {
 	 * Escaping of untrusted input used in values of numeric keys should be done via
 	 * IDatabase::addQuotes()
 	 *
-	 * @param string|array $options
+	 * Use an empty array, string, or '*' to update all rows.
+	 *
+	 * @param string $fname Caller function name
+	 *
+	 * @param string|array $options Query options
 	 *
 	 * Optional: Array of query options. Boolean options are specified by
 	 * including them in the array as a string value with a numeric key, for
@@ -738,7 +735,7 @@ interface IDatabase {
 	 *    - SQL_NO_CACHE
 	 *
 	 *
-	 * @param string|array $join_conds
+	 * @param string|array $join_conds Join conditions
 	 *
 	 * Optional associative array of table-specific join conditions. In the
 	 * most common case, this is unnecessary, since the join condition can be
@@ -927,8 +924,7 @@ interface IDatabase {
 	 * @param array $a Array of rows to insert
 	 * @param string $fname Calling function name (use __METHOD__) for logs/profiling
 	 * @param array $options Array of options
-	 *
-	 * @return bool
+	 * @return bool Return true if no exception was thrown (deprecated since 1.33)
 	 * @throws DBError
 	 */
 	public function insert( $table, $a, $fname = __METHOD__, $options = [] );
@@ -951,7 +947,7 @@ interface IDatabase {
 	 * @param array $options An array of UPDATE options, can be:
 	 *   - IGNORE: Ignore unique key conflicts
 	 *   - LOW_PRIORITY: MySQL-specific, see MySQL manual.
-	 * @return bool
+	 * @return bool Return true if no exception was thrown (deprecated since 1.33)
 	 * @throws DBError
 	 */
 	public function update( $table, $values, $conds, $fname = __METHOD__, $options = [] );
@@ -1116,15 +1112,32 @@ interface IDatabase {
 	/**
 	 * Change the current database
 	 *
+	 * This should not be called outside LoadBalancer for connections managed by a LoadBalancer
+	 *
 	 * @param string $db
-	 * @return bool Success or failure
+	 * @return bool True unless an exception was thrown
 	 * @throws DBConnectionError If databasesAreIndependent() is true and an error occurs
+	 * @throws DBError
+	 * @deprecated Since 1.32 Use selectDomain() instead
 	 */
 	public function selectDB( $db );
 
 	/**
+	 * Set the current domain (database, schema, and table prefix)
+	 *
+	 * This will throw an error for some database types if the database unspecified
+	 *
+	 * This should not be called outside LoadBalancer for connections managed by a LoadBalancer
+	 *
+	 * @param string|DatabaseDomain $domain
+	 * @since 1.32
+	 * @throws DBConnectionError
+	 */
+	public function selectDomain( $domain );
+
+	/**
 	 * Get the current DB name
-	 * @return string
+	 * @return string|null
 	 */
 	public function getDBname();
 
@@ -1208,10 +1221,10 @@ interface IDatabase {
 	 * errors which wouldn't have occurred in MySQL.
 	 *
 	 * @param string $table The table to replace the row(s) in.
-	 * @param array $uniqueIndexes Is an array of indexes. Each element may be either
-	 *    a field name or an array of field names
+	 * @param array $uniqueIndexes Either a list of fields that define a unique index or
+	 *   an array of such lists if there are multiple unique indexes defined in the schema
 	 * @param array $rows Can be either a single row to insert, or multiple rows,
-	 *    in the same format as for IDatabase::insert()
+	 *   in the same format as for IDatabase::insert()
 	 * @param string $fname Calling function name (use __METHOD__) for logs/profiling
 	 * @throws DBError
 	 */
@@ -1243,7 +1256,8 @@ interface IDatabase {
 	 *
 	 * @param string $table Table name. This will be passed through Database::tableName().
 	 * @param array $rows A single row or list of rows to insert
-	 * @param array $uniqueIndexes List of single field names or field name tuples
+	 * @param array $uniqueIndexes Either a list of fields that define a unique index or
+	 *   an array of such lists if there are multiple unique indexes defined in the schema
 	 * @param array $set An array of values to SET. For each array element, the
 	 *   key gives the field name, and the value gives the data to set that
 	 *   field to. The data will be quoted by IDatabase::addQuotes().
@@ -1251,7 +1265,7 @@ interface IDatabase {
 	 *   things like "field = field + 1" or similar computed values.
 	 * @param string $fname Calling function name (use __METHOD__) for logs/profiling
 	 * @throws DBError
-	 * @return bool
+	 * @return bool Return true if no exception was thrown (deprecated since 1.33)
 	 */
 	public function upsert(
 		$table, array $rows, array $uniqueIndexes, array $set, $fname = __METHOD__
@@ -1289,7 +1303,7 @@ interface IDatabase {
 	 *   for the format. Use $conds == "*" to delete all rows
 	 * @param string $fname Name of the calling function
 	 * @throws DBUnexpectedError
-	 * @return bool|IResultWrapper
+	 * @return bool Return true if no exception was thrown (deprecated since 1.33)
 	 * @throws DBError
 	 */
 	public function delete( $table, $conds, $fname = __METHOD__ );
@@ -1327,7 +1341,7 @@ interface IDatabase {
 	 * @param array $selectJoinConds Join conditions for the SELECT part of the query, see
 	 *    IDatabase::select() for details.
 	 *
-	 * @return bool
+	 * @return bool Return true if no exception was thrown (deprecated since 1.33)
 	 * @throws DBError
 	 */
 	public function insertSelect( $destTable, $srcTable, $varMap, $conds,
@@ -1461,6 +1475,10 @@ interface IDatabase {
 	/**
 	 * Wait for the replica DB to catch up to a given master position
 	 *
+	 * Note that this does not start any new transactions. If any existing transaction
+	 * is flushed, and this is called, then queries will reflect the point the DB was synced
+	 * up to (on success) without interference from REPEATABLE-READ snapshots.
+	 *
 	 * @param DBMasterPos $pos
 	 * @param int $timeout The maximum number of seconds to wait for synchronisation
 	 * @return int|null Zero if the replica DB was past that position already,
@@ -1500,7 +1518,7 @@ interface IDatabase {
 	 *
 	 * This is useful for combining cooperative locks and DB transactions.
 	 *
-	 * @note: do not assume that *other* IDatabase instances will be AUTOCOMMIT mode
+	 * @note do not assume that *other* IDatabase instances will be AUTOCOMMIT mode
 	 *
 	 * The callback takes the following arguments:
 	 *   - How the transaction ended (IDatabase::TRIGGER_COMMIT or IDatabase::TRIGGER_ROLLBACK)
@@ -1535,7 +1553,7 @@ interface IDatabase {
 	 *
 	 * Updates will execute in the order they were enqueued.
 	 *
-	 * @note: do not assume that *other* IDatabase instances will be AUTOCOMMIT mode
+	 * @note do not assume that *other* IDatabase instances will be AUTOCOMMIT mode
 	 *
 	 * The callback takes the following arguments:
 	 *   - How the transaction ended (IDatabase::TRIGGER_COMMIT or IDatabase::TRIGGER_IDLE)
@@ -1584,7 +1602,7 @@ interface IDatabase {
 	public function onTransactionPreCommitOrIdle( callable $callback, $fname = __METHOD__ );
 
 	/**
-	 * Run a callback each time any transaction commits or rolls back
+	 * Run a callback after each time any transaction commits or rolls back
 	 *
 	 * The callback takes two arguments:
 	 *   - IDatabase::TRIGGER_COMMIT or IDatabase::TRIGGER_ROLLBACK
@@ -1623,7 +1641,7 @@ interface IDatabase {
 	 *   - The failures are from contention solvable via onTransactionPreCommitOrIdle()
 	 *   - The failures are deadlocks; the RDBMs usually discard the whole transaction
 	 *
-	 * @note: callers must use additional measures for situations involving two or more
+	 * @note callers must use additional measures for situations involving two or more
 	 *   (peer) transactions (e.g. updating two database servers at once). The transaction
 	 *   and savepoint logic of this method only applies to this specific IDatabase instance.
 	 *
@@ -1702,7 +1720,7 @@ interface IDatabase {
 	 * corresponding startAtomic() implicitly started a transaction, that
 	 * transaction is rolled back.
 	 *
-	 * @note: callers must use additional measures for situations involving two or more
+	 * @note callers must use additional measures for situations involving two or more
 	 *   (peer) transactions (e.g. updating two database servers at once). The transaction
 	 *   and savepoint logic of startAtomic() are bound to specific IDatabase instances.
 	 *

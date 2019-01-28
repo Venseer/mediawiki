@@ -1,7 +1,7 @@
 /*!
  * JavaScript for Special:MovePage
  */
-( function ( mw, $ ) {
+( function () {
 	$( function () {
 		var summaryCodePointLimit = mw.config.get( 'wgCommentCodePointLimit' ),
 			summaryByteLimit = mw.config.get( 'wgCommentByteLimit' ),
@@ -15,9 +15,5 @@
 		} else if ( summaryByteLimit ) {
 			mw.widgets.visibleByteLimit( wpReason, summaryByteLimit );
 		}
-		// Infuse for nicer "help" popup
-		if ( $( '#wpMovetalk-field' ).length ) {
-			OO.ui.infuse( $( '#wpMovetalk-field' ) );
-		}
 	} );
-}( mediaWiki, jQuery ) );
+}() );

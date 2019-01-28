@@ -1,7 +1,7 @@
 /*!
  * JavaScript for Special:RecentChanges
  */
-( function ( mw, $ ) {
+( function () {
 	var rcfilters = {
 		/**
 		 * @member mw.rcfilters
@@ -52,7 +52,7 @@
 							filters: [
 								{
 									name: 'target',
-									'default': ''
+									default: ''
 								}
 							]
 						},
@@ -65,7 +65,7 @@
 							filters: [
 								{
 									name: 'showlinkedto',
-									'default': false
+									default: false
 								}
 							]
 						}
@@ -145,6 +145,9 @@
 		}
 	};
 
+	// Import i18n messages from config
+	mw.messages.set( mw.config.get( 'wgStructuredChangeFiltersMessages' ) );
+
 	// Early execute of init
 	if ( document.readyState === 'interactive' || document.readyState === 'complete' ) {
 		rcfilters.init();
@@ -154,4 +157,4 @@
 
 	module.exports = rcfilters;
 
-}( mediaWiki, jQuery ) );
+}() );

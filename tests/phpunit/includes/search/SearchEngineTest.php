@@ -32,7 +32,11 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 
 		$searchType = SearchEngineFactory::getSearchEngineClass( $this->db );
 		$this->setMwGlobals( [
-			'wgSearchType' => $searchType
+			'wgSearchType' => $searchType,
+			'wgCapitalLinks' => true,
+			'wgCapitalLinkOverrides' => [
+				NS_CATEGORY => false // for testCompletionSearchMustRespectCapitalLinkOverrides
+			]
 		] );
 
 		$this->search = new $searchType( $this->db );
@@ -52,7 +56,13 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 
 		// Reset the search type back to default - some extensions may have
 		// overridden it.
-		$this->setMwGlobals( [ 'wgSearchType' => null ] );
+		$this->setMwGlobals( [
+			'wgSearchType' => null,
+			'wgCapitalLinks' => true,
+			'wgCapitalLinkOverrides' => [
+				NS_CATEGORY => false // for testCompletionSearchMustRespectCapitalLinkOverrides
+			]
+		] );
 
 		$this->insertPage( 'Not_Main_Page', 'This is not a main page' );
 		$this->insertPage(
@@ -74,6 +84,9 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 		$this->insertPage( 'HalfNumbers', '1234567890' );
 		$this->insertPage( 'FullNumbers', '１２３４５６７８９０' );
 		$this->insertPage( 'DomainName', 'example.com' );
+		$this->insertPage( 'DomainName', 'example.com' );
+		$this->insertPage( 'Category:search is not Search', '' );
+		$this->insertPage( 'Category:Search is not search', '' );
 	}
 
 	protected function fetchIds( $results ) {
@@ -211,6 +224,48 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 			"Title power search" );
 	}
 
+	public function provideCompletionSearchMustRespectCapitalLinkOverrides() {
+		return [
+			'Searching for "smithee" finds Smithee on NS_MAIN' => [
+				'smithee',
+				'Smithee',
+				[ NS_MAIN ],
+			],
+			'Searching for "search is" will finds "search is not Search" on NS_CATEGORY' => [
+				'search is',
+				'Category:search is not Search',
+				[ NS_CATEGORY ],
+			],
+			'Searching for "Search is" will finds "search is not Search" on NS_CATEGORY' => [
+				'Search is',
+				'Category:Search is not search',
+				[ NS_CATEGORY ],
+			],
+		];
+	}
+
+	/**
+	 * Test that the search query is not munged using wrong CapitalLinks setup
+	 * (in other test that the default search backend can benefit from wgCapitalLinksOverride)
+	 * Guard against regressions like T208255
+	 * @dataProvider provideCompletionSearchMustRespectCapitalLinkOverrides
+	 * @covers SearchEngine::completionSearch
+	 * @covers PrefixSearch::defaultSearchBackend
+	 * @param string $search
+	 * @param string $expectedSuggestion
+	 * @param int[] $namespaces
+	 */
+	public function testCompletionSearchMustRespectCapitalLinkOverrides(
+		$search,
+		$expectedSuggestion,
+		array $namespaces
+	) {
+		$this->search->setNamespaces( $namespaces );
+		$results = $this->search->completionSearch( $search );
+		$this->assertEquals( 1, $results->getSize() );
+		$this->assertEquals( $expectedSuggestion, $results->getSuggestions()[0]->getText() );
+	}
+
 	/**
 	 * @covers SearchEngine::getSearchIndexFields
 	 */
@@ -315,7 +370,7 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 			$availableResults[] = $title;
 			// pages not created must be filtered
 			if ( $i % 2 == 0 ) {
-				$this->editPage( $title );
+				$this->editSearchResultPage( $title );
 			}
 		}
 		MockCompletionSearchEngine::addMockResults( 'foo', $availableResults );
@@ -332,12 +387,128 @@ class SearchEngineTest extends MediaWikiLangTestCase {
 		$this->assertFalse( $results->hasMoreResults() );
 	}
 
-	private function editPage( $title ) {
+	private function editSearchResultPage( $title ) {
 		$page = WikiPage::factory( Title::newFromText( $title ) );
 		$page->doEditContent(
 			new WikitextContent( 'UTContent' ),
 			'UTPageSummary',
 			EDIT_NEW | EDIT_SUPPRESS_RC
 		);
+	}
+
+	public function provideDataForParseNamespacePrefix() {
+		return [
+			'noop' => [
+				[
+					'query' => 'foo',
+				],
+				false
+			],
+			'empty' => [
+				[
+					'query' => '',
+				],
+				false,
+			],
+			'namespace prefix' => [
+				[
+					'query' => 'help:test',
+				],
+				[ 'test', [ NS_HELP ] ],
+			],
+			'accented namespace prefix with hook' => [
+				[
+					'query' => 'hélp:test',
+					'withHook' => true,
+				],
+				[ 'test', [ NS_HELP ] ],
+			],
+			'accented namespace prefix without hook' => [
+				[
+					'query' => 'hélp:test',
+					'withHook' => false,
+				],
+				false,
+			],
+			'all with all keyword allowed' => [
+				[
+					'query' => 'all:test',
+					'withAll' => true,
+				],
+				[ 'test', null ],
+			],
+			'all with all keyword disallowed' => [
+				[
+					'query' => 'all:test',
+					'withAll' => false,
+				],
+				false
+			],
+			'ns only' => [
+				[
+					'query' => 'help:',
+				],
+				[ '', [ NS_HELP ] ]
+			],
+			'all only' => [
+				[
+					'query' => 'all:',
+					'withAll' => true,
+				],
+				[ '', null ]
+			],
+			'all wins over namespace when first' => [
+				[
+					'query' => 'all:help:test',
+					'withAll' => true,
+				],
+				[ 'help:test', null ]
+			],
+			'ns wins over all when first' => [
+				[
+					'query' => 'help:all:test',
+					'withAll' => true,
+				],
+				[ 'all:test', [ NS_HELP ] ]
+			],
+		];
+	}
+
+	/**
+	 * @dataProvider provideDataForParseNamespacePrefix
+	 * @param array $params
+	 * @param  array|false $expected
+	 * @throws FatalError
+	 * @throws MWException
+	 */
+	public function testParseNamespacePrefix( array $params, $expected ) {
+		$this->setTemporaryHook( 'PrefixSearchExtractNamespace', function ( &$namespaces, &$query ) {
+			if ( strpos( $query, 'hélp:' ) === 0 ) {
+				$namespaces = [ NS_HELP ];
+				$query = substr( $query, strlen( 'hélp:' ) );
+			}
+			return false;
+		} );
+		$testSet = [];
+		if ( isset( $params['withAll'] ) && isset( $params['withHook'] ) ) {
+			$testSet[] = $params;
+		} elseif ( isset( $params['withAll'] ) ) {
+			$testSet[] = $params + [ 'withHook' => true ];
+			$testSet[] = $params + [ 'withHook' => false ];
+		} elseif ( isset( $params['withHook'] ) ) {
+			$testSet[] = $params + [ 'withAll' => true ];
+			$testSet[] = $params + [ 'withAll' => false ];
+		} else {
+			$testSet[] = $params + [ 'withAll' => true, 'withHook' => true ];
+			$testSet[] = $params + [ 'withAll' => true, 'withHook' => false ];
+			$testSet[] = $params + [ 'withAll' => false, 'withHook' => false ];
+			$testSet[] = $params + [ 'withAll' => true, 'withHook' => false ];
+		}
+
+		foreach ( $testSet as $test ) {
+			$actual = SearchEngine::parseNamespacePrefixes( $test['query'],
+				$test['withAll'], $test['withHook'] );
+			$this->assertEquals( $expected, $actual, 'with params: ' . print_r( $test, true ) );
+		}
 	}
 }

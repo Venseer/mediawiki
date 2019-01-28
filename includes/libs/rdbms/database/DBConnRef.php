@@ -69,6 +69,10 @@ class DBConnRef implements IDatabase {
 		return $this->__call( __FUNCTION__, func_get_args() );
 	}
 
+	public function assertNoOpenTransactions() {
+		return $this->__call( __FUNCTION__, func_get_args() );
+	}
+
 	public function tablePrefix( $prefix = null ) {
 		return $this->__call( __FUNCTION__, func_get_args() );
 	}
@@ -175,10 +179,6 @@ class DBConnRef implements IDatabase {
 	}
 
 	public function getType() {
-		return $this->__call( __FUNCTION__, func_get_args() );
-	}
-
-	public function open( $server, $user, $password, $dbName ) {
 		return $this->__call( __FUNCTION__, func_get_args() );
 	}
 
@@ -371,7 +371,13 @@ class DBConnRef implements IDatabase {
 	}
 
 	public function selectDB( $db ) {
-		return $this->__call( __FUNCTION__, func_get_args() );
+		// Disallow things that might confuse the LoadBalancer tracking
+		throw new DBUnexpectedError( $this, "Database selection is disallowed to enable reuse." );
+	}
+
+	public function selectDomain( $domain ) {
+		// Disallow things that might confuse the LoadBalancer tracking
+		throw new DBUnexpectedError( $this, "Database selection is disallowed to enable reuse." );
 	}
 
 	public function getDBname() {

@@ -29,13 +29,6 @@ use Wikimedia\Rdbms\IDatabase;
  * @since 1.29
  */
 class ChangesListBooleanFilter extends ChangesListFilter {
-	// This can sometimes be different on Special:RecentChanges
-	// and Special:Watchlist, due to the double-legacy hooks
-	// (SpecialRecentChangesFilters and SpecialWatchlistFilters)
-
-	// but there will be separate sets of ChangesListFilterGroup and ChangesListFilter instances
-	// for those pages (it should work even if they're both loaded
-	// at once, but that can't happen).
 	/**
 	 * Main unstructured UI i18n key
 	 *
@@ -119,11 +112,7 @@ class ChangesListBooleanFilter extends ChangesListFilter {
 			$this->showHide = $filterDefinition['showHide'];
 		}
 
-		if ( isset( $filterDefinition['isReplacedInStructuredUi'] ) ) {
-			$this->isReplacedInStructuredUi = $filterDefinition['isReplacedInStructuredUi'];
-		} else {
-			$this->isReplacedInStructuredUi = false;
-		}
+		$this->isReplacedInStructuredUi = $filterDefinition['isReplacedInStructuredUi'] ?? false;
 
 		if ( isset( $filterDefinition['default'] ) ) {
 			$this->setDefault( $filterDefinition['default'] );
@@ -135,11 +124,7 @@ class ChangesListBooleanFilter extends ChangesListFilter {
 			$this->queryCallable = $filterDefinition['queryCallable'];
 		}
 
-		if ( isset( $filterDefinition['activeValue'] ) ) {
-			$this->activeValue = $filterDefinition['activeValue'];
-		} else {
-			$this->activeValue = true;
-		}
+		$this->activeValue = $filterDefinition['activeValue'] ?? true;
 	}
 
 	/**

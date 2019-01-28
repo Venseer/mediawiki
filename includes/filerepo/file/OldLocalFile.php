@@ -115,13 +115,14 @@ class OldLocalFile extends LocalFile {
 		global $wgActorTableSchemaMigrationStage;
 
 		wfDeprecated( __METHOD__, '1.31' );
-		if ( $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH ) {
+		if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_READ_NEW ) {
 			// If code is using this instead of self::getQueryInfo(), there's a
 			// decent chance it's going to try to directly access
 			// $row->oi_user or $row->oi_user_text and we can't give it
-			// useful values here once those aren't being written anymore.
+			// useful values here once those aren't being used anymore.
 			throw new BadMethodCallException(
-				'Cannot use ' . __METHOD__ . ' when $wgActorTableSchemaMigrationStage > MIGRATION_WRITE_BOTH'
+				'Cannot use ' . __METHOD__
+					. ' when $wgActorTableSchemaMigrationStage has SCHEMA_COMPAT_READ_NEW'
 			);
 		}
 
@@ -138,7 +139,7 @@ class OldLocalFile extends LocalFile {
 			'oi_minor_mime',
 			'oi_user',
 			'oi_user_text',
-			'oi_actor' => $wgActorTableSchemaMigrationStage > MIGRATION_OLD ? 'oi_actor' : 'NULL',
+			'oi_actor' => 'NULL',
 			'oi_timestamp',
 			'oi_deleted',
 			'oi_sha1',
@@ -324,14 +325,14 @@ class OldLocalFile extends LocalFile {
 	 * @return string
 	 */
 	function getRel() {
-		return 'archive/' . $this->getHashPath() . $this->getArchiveName();
+		return $this->getArchiveRel( $this->getArchiveName() );
 	}
 
 	/**
 	 * @return string
 	 */
 	function getUrlRel() {
-		return 'archive/' . $this->getHashPath() . rawurlencode( $this->getArchiveName() );
+		return $this->getArchiveRel( rawurlencode( $this->getArchiveName() ) );
 	}
 
 	function upgradeRow() {
@@ -405,17 +406,16 @@ class OldLocalFile extends LocalFile {
 	 * Upload a file directly into archive. Generally for Special:Import.
 	 *
 	 * @param string $srcPath File system path of the source file
-	 * @param string $archiveName Full archive name of the file, in the form
-	 *   $timestamp!$filename, where $filename must match $this->getName()
 	 * @param string $timestamp
 	 * @param string $comment
 	 * @param User $user
 	 * @return Status
 	 */
-	function uploadOld( $srcPath, $archiveName, $timestamp, $comment, $user ) {
+	public function uploadOld( $srcPath, $timestamp, $comment, $user ) {
 		$this->lock();
 
-		$dstRel = 'archive/' . $this->getHashPath() . $archiveName;
+		$archiveName = $this->getArchiveName();
+		$dstRel = $this->getArchiveRel( $archiveName );
 		$status = $this->publishTo( $srcPath, $dstRel );
 
 		if ( $status->isGood() ) {

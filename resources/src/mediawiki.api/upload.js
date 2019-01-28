@@ -4,7 +4,7 @@
  * @class mw.Api.plugin.upload
  * @singleton
  */
-( function ( mw, $ ) {
+( function () {
 	var nonce = 0,
 		fieldsAllowed = {
 			stash: true,
@@ -221,7 +221,7 @@
 					}
 				} );
 				tokenPromise.done( function () {
-					$form.submit();
+					$form.trigger( 'submit' );
 				} );
 			} );
 
@@ -233,6 +233,7 @@
 
 			file.name = 'file';
 
+			// eslint-disable-next-line jquery/no-each-util
 			$.each( data, function ( key, val ) {
 				$form.append( getHiddenInput( key, val ) );
 			} );
@@ -663,4 +664,4 @@
 	 * @class mw.Api
 	 * @mixins mw.Api.plugin.upload
 	 */
-}( mediaWiki, jQuery ) );
+}() );

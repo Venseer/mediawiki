@@ -21,6 +21,8 @@
  * @ingroup Parser
  */
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * Date formatter, recognises dates in plain text and formats them according to user preferences.
  * @todo preferences, OutputPage
@@ -131,9 +133,9 @@ class DateFormatter {
 	 * @return DateFormatter
 	 */
 	public static function getInstance( Language $lang = null ) {
-		global $wgContLang, $wgMainCacheType;
+		global $wgMainCacheType;
 
-		$lang = $lang ?: $wgContLang;
+		$lang = $lang ?? MediaWikiServices::getInstance()->getContentLanguage();
 		$cache = ObjectCache::getLocalServerInstance( $wgMainCacheType );
 
 		static $dateFormatter = false;
@@ -211,10 +213,7 @@ class DateFormatter {
 	 */
 	private function replace( $matches ) {
 		# Extract information from $matches
-		$linked = true;
-		if ( isset( $this->mLinked ) ) {
-			$linked = $this->mLinked;
-		}
+		$linked = $this->mLinked ?? true;
 
 		$bits = [];
 		$key = $this->keys[$this->mSource];

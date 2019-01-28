@@ -17,11 +17,25 @@ sudo: false
 # - Required for non-buggy xml library for XmlTypeCheck/UploadBaseTest (T75176).
 dist: trusty
 
+git:
+  depth: 3
+  quiet: true
+
+# Cache NPM and Composer directories
+# <https://docs.travis-ci.com/user/caching/>
+cache:
+  npm: true
+  directories:
+  # Composer doesn't have a dedicated cache setting in Travis CI config, so set the directory path instead.
+  - vendor
+
 matrix:
   fast_finish: true
   include:
     # On Trusty, mysql user 'travis' doesn't have create database rights
     # Postgres has no user called 'root'.
+    - env: dbtype=mysql dbuser=root
+      php: 7.3
     - env: dbtype=mysql dbuser=root
       php: 7.2
     - env: dbtype=mysql dbuser=root
@@ -32,17 +46,10 @@ matrix:
       php: 7
     # https://docs.travis-ci.com/user/languages/php#HHVM-versions
     - env: dbtype=mysql dbuser=root
-      php: hhvm-3.24
-    - env: dbtype=mysql dbuser=root
-      php: hhvm-3.21
-    - env: dbtype=mysql dbuser=root
       php: hhvm-3.18
   allow_failures:
-    - php: 7.2
-    - env: dbtype=postgres dbuser=travis
+    - php: 7.3
     - php: hhvm-3.18
-    - php: hhvm-3.21
-    - php: hhvm-3.24
 
 services:
   - mysql

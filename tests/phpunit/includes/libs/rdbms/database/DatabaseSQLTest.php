@@ -674,9 +674,9 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 				"INSERT INTO insert_table " .
 					"(field_insert,field) " .
 					"SELECT field_select,field2 " .
-					"FROM select_table WHERE *",
+					"FROM select_table",
 				"SELECT field_select AS field_insert,field2 AS field " .
-				"FROM select_table WHERE *   FOR UPDATE",
+				"FROM select_table      FOR UPDATE",
 				"INSERT INTO insert_table (field_insert,field) VALUES ('0','1')"
 			],
 			[
@@ -755,7 +755,7 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 			__METHOD__
 		);
 		$this->assertLastSqlDb( implode( '; ', [
-			'SELECT field2 AS field FROM select_table WHERE *   FOR UPDATE',
+			'SELECT field2 AS field FROM select_table      FOR UPDATE',
 			'BEGIN',
 			"INSERT INTO insert_table (field) VALUES ('" . implode( "'),('", range( 0, 9999 ) ) . "')",
 			"INSERT INTO insert_table (field) VALUES ('" . implode( "'),('", range( 10000, 19999 ) ) . "')",
@@ -2057,11 +2057,22 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 		$this->database->onTransactionCommitOrIdle( function () use ( $fname ) {
 			$this->database->query( 'SELECT 1', $fname );
 		} );
+		$this->database->onTransactionResolution( function () use ( $fname ) {
+			$this->database->query( 'SELECT 2', $fname );
+		} );
 		$this->database->delete( 'x', [ 'field' => 3 ], __METHOD__ );
-		$this->database->close();
+		try {
+			$this->database->close();
+			$this->fail( 'Expected exception not thrown' );
+		} catch ( DBUnexpectedError $ex ) {
+			$this->assertSame(
+				"Wikimedia\Rdbms\Database::close: transaction is still open (from $fname).",
+				$ex->getMessage()
+			);
+		}
 
 		$this->assertFalse( $this->database->isOpen() );
-		$this->assertLastSql( 'BEGIN; DELETE FROM x WHERE field = \'3\'; COMMIT; SELECT 1' );
+		$this->assertLastSql( 'BEGIN; DELETE FROM x WHERE field = \'3\'; ROLLBACK; SELECT 2' );
 		$this->assertEquals( 0, $this->database->trxLevel() );
 	}
 
@@ -2125,7 +2136,24 @@ class DatabaseSQLTest extends PHPUnit\Framework\TestCase {
 		$this->database->clearFlag( IDatabase::DBO_TRX );
 
 		$this->assertFalse( $this->database->isOpen() );
-		$this->assertLastSql( 'BEGIN; SELECT 1; COMMIT' );
+		$this->assertLastSql( 'BEGIN; SELECT 1; ROLLBACK' );
 		$this->assertEquals( 0, $this->database->trxLevel() );
+	}
+
+	/**
+	 * @covers Wikimedia\Rdbms\Database::selectFieldValues()
+	 */
+	public function testSelectFieldValues() {
+		$this->database->forceNextResult( [
+			(object)[ 'value' => 'row1' ],
+			(object)[ 'value' => 'row2' ],
+			(object)[ 'value' => 'row3' ],
+		] );
+
+		$this->assertSame(
+			[ 'row1', 'row2', 'row3' ],
+			$this->database->selectFieldValues( 'table', 'table.field', 'conds', __METHOD__ )
+		);
+		$this->assertLastSql( 'SELECT table.field AS value FROM table WHERE conds' );
 	}
 }

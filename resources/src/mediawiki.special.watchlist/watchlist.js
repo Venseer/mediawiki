@@ -1,14 +1,14 @@
 /*!
  * JavaScript for Special:Watchlist
  */
-( function ( mw, $, OO ) {
+( function () {
 	$( function () {
 		var api = new mw.Api(), $progressBar, $resetForm = $( '#mw-watchlist-resetbutton' );
 
 		// If the user wants to reset their watchlist, use an API call to do so (no reload required)
 		// Adapted from a user script by User:NQ of English Wikipedia
 		// (User:NQ/WatchlistResetConfirm.js)
-		$resetForm.submit( function ( event ) {
+		$resetForm.on( 'submit', function ( event ) {
 			var $button = $resetForm.find( 'input[name=mw-watchlist-reset-submit]' );
 
 			event.preventDefault();
@@ -41,7 +41,7 @@
 			} ).fail( function () {
 				// On error, fall back to server-side reset
 				// First remove this submit listener and then re-submit the form
-				$resetForm.off( 'submit' ).submit();
+				$resetForm.off( 'submit' ).trigger( 'submit' );
 			} );
 		} );
 
@@ -50,7 +50,7 @@
 			// add a listener on all form elements in the header form
 			$( '#mw-watchlist-form input, #mw-watchlist-form select' ).on( 'change', function () {
 				// submit the form when one of the input fields is modified
-				$( '#mw-watchlist-form' ).submit();
+				$( '#mw-watchlist-form' ).trigger( 'submit' );
 			} );
 		}
 
@@ -64,17 +64,15 @@
 					$watchlistLine = $unwatchLink.closest( 'li, table' )
 						.find( '[data-target-page]' ),
 					pageTitle = $watchlistLine.data( 'targetPage' ),
-					isTalk = mw.Title.newFromText( pageTitle ).getNamespaceId() % 2 === 1;
+					isTalk = mw.Title.newFromText( pageTitle ).isTalkPage();
 
 				// Utility function for looping through each watchlist line that matches
 				// a certain page or its associated page (e.g. Talk)
 				function forEachMatchingTitle( title, callback ) {
 
 					var titleObj = mw.Title.newFromText( title ),
-						pageNamespaceId = titleObj.getNamespaceId(),
-						isTalk = pageNamespaceId % 2 === 1,
-						associatedTitle = mw.Title.makeTitle( isTalk ? pageNamespaceId - 1 : pageNamespaceId + 1,
-							titleObj.getMainText() ).getPrefixedText();
+						associatedTitleObj = titleObj.isTalkPage() ? titleObj.getSubjectPage() : titleObj.getTalkPage(),
+						associatedTitle = associatedTitleObj.getPrefixedText();
 					$( '.mw-changeslist-line' ).each( function () {
 						var $this = $( this ), $row, $unwatchLink;
 
@@ -149,10 +147,9 @@
 
 				event.preventDefault();
 				event.stopPropagation();
-				$unwatchLink.blur();
+				$unwatchLink.trigger( 'blur' );
 			} );
 		}
 	} );
 
-}( mediaWiki, jQuery, OO )
-);
+}() );

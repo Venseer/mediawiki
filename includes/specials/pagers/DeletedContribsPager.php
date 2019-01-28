@@ -29,10 +29,29 @@ use Wikimedia\Rdbms\FakeResultWrapper;
 
 class DeletedContribsPager extends IndexPager {
 
+	/**
+	 * @var bool Default direction for pager
+	 */
 	public $mDefaultDirection = IndexPager::DIR_DESCENDING;
+
+	/**
+	 * @var string[] Local cache for escaped messages
+	 */
 	public $messages;
+
+	/**
+	 * @var string User name, or a string describing an IP address range
+	 */
 	public $target;
+
+	/**
+	 * @var string|int A single namespace number, or an empty string for all namespaces
+	 */
 	public $namespace = '';
+
+	/**
+	 * @var \Wikimedia\Rdbms\Database
+	 */
 	public $mDb;
 
 	/**
@@ -40,7 +59,7 @@ class DeletedContribsPager extends IndexPager {
 	 */
 	protected $mNavigationBar;
 
-	function __construct( IContextSource $context, $target, $namespace = false ) {
+	public function __construct( IContextSource $context, $target, $namespace = false ) {
 		parent::__construct( $context );
 		$msgs = [ 'deletionlog', 'undeleteviewlink', 'diff' ];
 		foreach ( $msgs as $msg ) {
@@ -139,11 +158,25 @@ class DeletedContribsPager extends IndexPager {
 		return 'ar_timestamp';
 	}
 
-	function getStartBody() {
+	/**
+	 * @return string
+	 */
+	public function getTarget() {
+		return $this->target;
+	}
+
+	/**
+	 * @return int|string
+	 */
+	public function getNamespace() {
+		return $this->namespace;
+	}
+
+	protected function getStartBody() {
 		return "<ul>\n";
 	}
 
-	function getEndBody() {
+	protected function getEndBody() {
 		return "</ul>\n";
 	}
 
@@ -221,7 +254,10 @@ class DeletedContribsPager extends IndexPager {
 
 		// Let extensions add data
 		Hooks::run( 'DeletedContributionsLineEnding', [ $this, &$ret, $row, &$classes, &$attribs ] );
-		$attribs = wfArrayFilterByKey( $attribs, [ Sanitizer::class, 'isReservedDataAttribute' ] );
+		$attribs = array_filter( $attribs,
+			[ Sanitizer::class, 'isReservedDataAttribute' ],
+			ARRAY_FILTER_USE_KEY
+		);
 
 		if ( $classes === [] && $attribs === [] && $ret === '' ) {
 			wfDebug( "Dropping Special:DeletedContribution row that could not be formatted\n" );

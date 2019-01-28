@@ -122,7 +122,7 @@ class MovePageForm extends UnlistedSpecialPage {
 		$this->moveOverShared = $request->getBool( 'wpMoveOverSharedFile' );
 		$this->watch = $request->getCheck( 'wpWatch' ) && $user->isLoggedIn();
 
-		if ( 'submit' == $request->getVal( 'action' ) && $request->wasPosted()
+		if ( $request->getVal( 'action' ) == 'submit' && $request->wasPosted()
 			&& $user->matchEditToken( $request->getVal( 'wpEditToken' ) )
 		) {
 			$this->doSubmit();
@@ -137,8 +137,9 @@ class MovePageForm extends UnlistedSpecialPage {
 	 * @param array $err Error messages. Each item is an error message.
 	 *    It may either be a string message name or array message name and
 	 *    parameters, like the second argument to OutputPage::wrapWikiMsg().
+	 * @param bool $isPermError Whether the error message is about user permissions.
 	 */
-	function showForm( $err ) {
+	function showForm( $err, $isPermError = false ) {
 		$this->getSkin()->setRelevantTitle( $this->oldTitle );
 
 		$out = $this->getOutput();
@@ -235,9 +236,13 @@ class MovePageForm extends UnlistedSpecialPage {
 		}
 
 		if ( count( $err ) ) {
-			$action_desc = $this->msg( 'action-move' )->plain();
-			$errMsgHtml = $this->msg( 'permissionserrorstext-withaction',
-				count( $err ), $action_desc )->parseAsBlock();
+			if ( $isPermError ) {
+				$action_desc = $this->msg( 'action-move' )->plain();
+				$errMsgHtml = $this->msg( 'permissionserrorstext-withaction',
+					count( $err ), $action_desc )->parseAsBlock();
+			} else {
+				$errMsgHtml = $this->msg( 'cannotmove', count( $err ) )->parseAsBlock();
+			}
 
 			if ( count( $err ) == 1 ) {
 				$errMsg = $err[0];
@@ -356,8 +361,8 @@ class MovePageForm extends UnlistedSpecialPage {
 				[
 					'label' => $this->msg( 'movetalk' )->text(),
 					'help' => new OOUI\HtmlSnippet( $this->msg( 'movepagetalktext' )->parseAsBlock() ),
+					'helpInline' => true,
 					'align' => 'inline',
-					'infusable' => true,
 					'id' => 'wpMovetalk-field',
 				]
 			);
@@ -542,7 +547,16 @@ class MovePageForm extends UnlistedSpecialPage {
 			$permErrors = $nt->getUserPermissionsErrors( 'delete', $user );
 			if ( count( $permErrors ) ) {
 				# Only show the first error
-				$this->showForm( $permErrors );
+				$this->showForm( $permErrors, true );
+
+				return;
+			}
+
+			$page = WikiPage::factory( $nt );
+
+			// Small safety margin to guard against concurrent edits
+			if ( $page->isBatchedDelete( 5 ) ) {
+				$this->showForm( [ [ 'movepage-delete-first' ] ] );
 
 				return;
 			}
@@ -559,7 +573,6 @@ class MovePageForm extends UnlistedSpecialPage {
 			}
 
 			$error = ''; // passed by ref
-			$page = WikiPage::factory( $nt );
 			$deleteStatus = $page->doDeleteArticleReal( $reason, false, 0, true, $error, $user );
 			if ( !$deleteStatus->isGood() ) {
 				$this->showForm( $deleteStatus->getErrorsArray() );
@@ -588,7 +601,7 @@ class MovePageForm extends UnlistedSpecialPage {
 
 		$permStatus = $mp->checkPermissions( $user, $this->reason );
 		if ( !$permStatus->isOK() ) {
-			$this->showForm( $permStatus->getErrorsArray() );
+			$this->showForm( $permStatus->getErrorsArray(), true );
 			return;
 		}
 
@@ -781,12 +794,6 @@ class MovePageForm extends UnlistedSpecialPage {
 		# Deal with watches (we don't watch subpages)
 		WatchAction::doWatchOrUnwatch( $this->watch, $ot, $user );
 		WatchAction::doWatchOrUnwatch( $this->watch, $nt, $user );
-
-		/**
-		 * T163966
-		 * Increment user_editcount during page moves
-		 */
-		$user->incEditCount();
 	}
 
 	function showLogFragment( $title ) {

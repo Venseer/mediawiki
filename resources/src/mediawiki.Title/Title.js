@@ -4,7 +4,7 @@
  * @since 1.18
  */
 
-( function ( mw, $ ) {
+( function () {
 	/**
 	 * Parse titles into an object structure. Note that when using the constructor
 	 * directly, passing invalid titles will result in an exception. Use #newFromText to use the
@@ -365,11 +365,7 @@
 		 * @return {string}
 		 */
 		text = function ( s ) {
-			if ( s !== null && s !== undefined ) {
-				return s.replace( /_/g, ' ' );
-			} else {
-				return '';
-			}
+			return s.replace( /_/g, ' ' );
 		},
 
 		/**
@@ -499,8 +495,10 @@
 	 *
 	 * @static
 	 * @param {string} title
-	 * @param {number} [defaultNamespace=NS_MAIN]
+	 * @param {number|Object} [defaultNamespaceOrOptions=NS_MAIN]
 	 *  If given, will used as default namespace for the given title.
+	 *  This method can also be called with two arguments, in which case
+	 *  this becomes options (see below).
 	 * @param {Object} [options] additional options
 	 * @param {boolean} [options.forUploading=true]
 	 *  Makes sure that a file is uploadable under the title returned.
@@ -508,13 +506,15 @@
 	 *  Automatically assumed if the title is created in the Media namespace.
 	 * @return {mw.Title|null} A valid Title object or null if the input cannot be turned into a valid title
 	 */
-	Title.newFromUserInput = function ( title, defaultNamespace, options ) {
-		var namespace, m, id, ext, parts;
+	Title.newFromUserInput = function ( title, defaultNamespaceOrOptions, options ) {
+		var namespace, m, id, ext, parts,
+			defaultNamespace;
 
 		// defaultNamespace is optional; check whether options moves up
-		if ( arguments.length < 3 && $.type( defaultNamespace ) === 'object' ) {
-			options = defaultNamespace;
-			defaultNamespace = undefined;
+		if ( arguments.length < 3 && typeof defaultNamespace === 'object' ) {
+			options = defaultNamespaceOrOptions;
+		} else {
+			defaultNamespace = defaultNamespaceOrOptions;
 		}
 
 		// merge options into defaults
@@ -667,11 +667,37 @@
 	};
 
 	/**
+	 * Check if a given namespace is a talk namespace
+	 *
+	 * See MWNamespace::isTalk in PHP
+	 *
+	 * @param {number} namespaceId Namespace ID
+	 * @return {boolean} Namespace is a talk namespace
+	 */
+	Title.isTalkNamespace = function ( namespaceId ) {
+		return !!( namespaceId > NS_MAIN && namespaceId % 2 );
+	};
+
+	/**
+	 * Check if signature buttons should be shown in a given namespace
+	 *
+	 * See MWNamespace::wantSignatures in PHP
+	 *
+	 * @param {number} namespaceId Namespace ID
+	 * @return {boolean} Namespace is a signature namespace
+	 */
+	Title.wantSignaturesNamespace = function ( namespaceId ) {
+		return this.isTalkNamespace( namespaceId ) ||
+			mw.config.get( 'wgExtraSignatureNamespaces' ).indexOf( namespaceId ) !== -1;
+	};
+
+	/**
 	 * Whether this title exists on the wiki.
 	 *
 	 * @static
 	 * @param {string|mw.Title} title prefixed db-key name (string) or instance of Title
 	 * @return {boolean|null} Boolean if the information is available, otherwise null
+	 * @throws {Error} If title is not a string or mw.Title
 	 */
 	Title.exists = function ( title ) {
 		var match,
@@ -796,7 +822,7 @@
 		 */
 		getName: function () {
 			if (
-				$.inArray( this.namespace, mw.config.get( 'wgCaseSensitiveNamespaces' ) ) !== -1 ||
+				mw.config.get( 'wgCaseSensitiveNamespaces' ).indexOf( this.namespace ) !== -1 ||
 				!this.title.length
 			) {
 				return this.title;
@@ -936,6 +962,49 @@
 		},
 
 		/**
+		 * Check if the title is in a talk namespace
+		 *
+		 * @return {boolean} The title is in a talk namespace
+		 */
+		isTalkPage: function () {
+			return Title.isTalkNamespace( this.getNamespaceId() );
+		},
+
+		/**
+		 * Get the title for the associated talk page
+		 *
+		 * @return {mw.Title|null} The title for the associated talk page, null if not available
+		 */
+		getTalkPage: function () {
+			if ( !this.canHaveTalkPage() ) {
+				return null;
+			}
+			return this.isTalkPage() ?
+				this :
+				Title.makeTitle( this.getNamespaceId() + 1, this.getMainText() );
+		},
+
+		/**
+		 * Get the title for the subject page of a talk page
+		 *
+		 * @return {mw.Title|null} The title for the subject page of a talk page, null if not available
+		 */
+		getSubjectPage: function () {
+			return this.isTalkPage() ?
+				Title.makeTitle( this.getNamespaceId() - 1, this.getMainText() ) :
+				this;
+		},
+
+		/**
+		 * Check the the title can have an associated talk page
+		 *
+		 * @return {boolean} The title can have an associated talk page
+		 */
+		canHaveTalkPage: function () {
+			return this.getNamespaceId() >= NS_MAIN;
+		},
+
+		/**
 		 * Whether this title exists on the wiki.
 		 *
 		 * @see #static-method-exists
@@ -961,4 +1030,4 @@
 	// Expose
 	mw.Title = Title;
 
-}( mediaWiki, jQuery ) );
+}() );

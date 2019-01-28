@@ -20,6 +20,9 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Storage\NameTableAccessException;
+
 /**
  * Query module to enumerate all deleted revisions.
  *
@@ -128,11 +131,7 @@ class ApiQueryDeletedrevs extends ApiQueryBase {
 		}
 
 		if ( $fld_tags ) {
-			$this->addTables( 'tag_summary' );
-			$this->addJoinConds(
-				[ 'tag_summary' => [ 'LEFT JOIN', [ 'ar_rev_id=ts_rev_id' ] ] ]
-			);
-			$this->addFields( 'ts_tags' );
+			$this->addFields( [ 'ts_tags' => ChangeTags::makeTagSummarySubquery( 'archive' ) ] );
 		}
 
 		if ( !is_null( $params['tag'] ) ) {
@@ -140,7 +139,13 @@ class ApiQueryDeletedrevs extends ApiQueryBase {
 			$this->addJoinConds(
 				[ 'change_tag' => [ 'INNER JOIN', [ 'ar_rev_id=ct_rev_id' ] ] ]
 			);
-			$this->addWhereFld( 'ct_tag', $params['tag'] );
+			$changeTagDefStore = MediaWikiServices::getInstance()->getChangeTagDefStore();
+			try {
+				$this->addWhereFld( 'ct_tag_id', $changeTagDefStore->getId( $params['tag'] ) );
+			} catch ( NameTableAccessException $exception ) {
+				// Return nothing.
+				$this->addWhere( '1=0' );
+			}
 		}
 
 		if ( $fld_content ) {

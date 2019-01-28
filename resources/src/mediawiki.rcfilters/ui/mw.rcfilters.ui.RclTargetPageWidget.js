@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	/**
 	 * Widget to select and display target page on Special:RecentChangesLinked (AKA Related Changes)
 	 *
@@ -57,7 +57,7 @@
 	 * Respond to the user choosing a title
 	 */
 	mw.rcfilters.ui.RclTargetPageWidget.prototype.onLookupMenuItemChoose = function () {
-		this.titleSearch.$input.blur();
+		this.titleSearch.$input.trigger( 'blur' );
 	};
 
 	/**
@@ -76,4 +76,4 @@
 		this.titleSearch.setValue( text );
 		this.titleSearch.setTitle( text );
 	};
-}( mediaWiki ) );
+}() );

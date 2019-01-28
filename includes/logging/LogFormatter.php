@@ -51,13 +51,7 @@ class LogFormatter {
 		global $wgLogActionsHandlers;
 		$fulltype = $entry->getFullType();
 		$wildcard = $entry->getType() . '/*';
-		$handler = '';
-
-		if ( isset( $wgLogActionsHandlers[$fulltype] ) ) {
-			$handler = $wgLogActionsHandlers[$fulltype];
-		} elseif ( isset( $wgLogActionsHandlers[$wildcard] ) ) {
-			$handler = $wgLogActionsHandlers[$wildcard];
-		}
+		$handler = $wgLogActionsHandlers[$fulltype] ?? $wgLogActionsHandlers[$wildcard] ?? '';
 
 		if ( $handler !== '' && is_string( $handler ) && class_exists( $handler ) ) {
 			return new $handler( $entry );
@@ -189,6 +183,7 @@ class LogFormatter {
 	 * to avoid formatting for any particular user.
 	 * @see getActionText()
 	 * @return string Plain text
+	 * @return-taint tainted
 	 */
 	public function getPlainActionText() {
 		$this->plaintext = true;
@@ -226,8 +221,6 @@ class LogFormatter {
 	 * @return string Text
 	 */
 	public function getIRCActionText() {
-		global $wgContLang;
-
 		$this->plaintext = true;
 		$this->irctext = true;
 
@@ -237,6 +230,7 @@ class LogFormatter {
 		// Text of title the action is aimed at.
 		$target = $entry->getTarget()->getPrefixedText();
 		$text = null;
+		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
 		switch ( $entry->getType() ) {
 			case 'move':
 				switch ( $entry->getSubtype() ) {
@@ -382,12 +376,12 @@ class LogFormatter {
 							$rawDuration = $parameters['5::duration'];
 							$rawFlags = $parameters['6::flags'];
 						}
-						$duration = $wgContLang->translateBlockExpiry(
+						$duration = $contLang->translateBlockExpiry(
 							$rawDuration,
 							null,
 							wfTimestamp( TS_UNIX, $entry->getTimestamp() )
 						);
-						$flags = BlockLogFormatter::formatBlockFlags( $rawFlags, $wgContLang );
+						$flags = BlockLogFormatter::formatBlockFlags( $rawFlags, $contLang );
 						$text = wfMessage( 'blocklogentry' )
 							->rawParams( $target, $duration, $flags )->inContentLanguage()->escaped();
 						break;
@@ -396,12 +390,13 @@ class LogFormatter {
 							->rawParams( $target )->inContentLanguage()->escaped();
 						break;
 					case 'reblock':
-						$duration = $wgContLang->translateBlockExpiry(
+						$duration = $contLang->translateBlockExpiry(
 							$parameters['5::duration'],
 							null,
 							wfTimestamp( TS_UNIX, $entry->getTimestamp() )
 						);
-						$flags = BlockLogFormatter::formatBlockFlags( $parameters['6::flags'], $wgContLang );
+						$flags = BlockLogFormatter::formatBlockFlags( $parameters['6::flags'],
+							$contLang );
 						$text = wfMessage( 'reblock-logentry' )
 							->rawParams( $target, $duration, $flags )->inContentLanguage()->escaped();
 						break;
@@ -436,6 +431,8 @@ class LogFormatter {
 	/**
 	 * Gets the log action, including username.
 	 * @return string HTML
+	 * phan-taint-check gets very confused by $this->plaintext, so disable.
+	 * @return-taint onlysafefor_html
 	 */
 	public function getActionText() {
 		if ( $this->canView( LogPage::DELETED_ACTION ) ) {
@@ -642,18 +639,23 @@ class LogFormatter {
 	 * @param Title|null $title The page
 	 * @param array $parameters Query parameters
 	 * @param string|null $html Linktext of the link as raw html
-	 * @throws MWException
 	 * @return string
 	 */
 	protected function makePageLink( Title $title = null, $parameters = [], $html = null ) {
 		if ( !$title instanceof Title ) {
-			throw new MWException( 'Expected title, got null' );
+			$msg = $this->msg( 'invalidtitle' )->text();
+			if ( $this->plaintext ) {
+				return $msg;
+			} else {
+				return Html::element( 'span', [ 'class' => 'mw-invalidtitle' ], $msg );
+			}
 		}
-		if ( !$this->plaintext ) {
+
+		if ( $this->plaintext ) {
+			$link = '[[' . $title->getPrefixedText() . ']]';
+		} else {
 			$html = $html !== null ? new HtmlArmor( $html ) : $html;
 			$link = $this->getLinkRenderer()->makeLink( $title, $html, [], $parameters );
-		} else {
-			$link = '[[' . $title->getPrefixedText() . ']]';
 		}
 
 		return $link;
@@ -702,6 +704,7 @@ class LogFormatter {
 	 * Helper method for displaying restricted element.
 	 * @param string $message
 	 * @return string HTML or wiki text
+	 * @return-taint onlysafefor_html
 	 */
 	protected function getRestrictedElement( $message ) {
 		if ( $this->plaintext ) {
@@ -737,6 +740,12 @@ class LogFormatter {
 		return $this->context->msg( $key );
 	}
 
+	/**
+	 * @param User $user
+	 * @param int $toolFlags Combination of Linker::TOOL_LINKS_* flags
+	 * @return string wikitext or html
+	 * @return-taint onlysafefor_html
+	 */
 	protected function makeUserLink( User $user, $toolFlags = 0 ) {
 		if ( $this->plaintext ) {
 			$element = $user->getName();
@@ -938,6 +947,10 @@ class LegacyLogFormatter extends LogFormatter {
 		return $this->comment;
 	}
 
+	/**
+	 * @return string
+	 * @return-taint onlysafefor_html
+	 */
 	protected function getActionMessage() {
 		$entry = $this->entry;
 		$action = LogPage::actionText(

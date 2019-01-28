@@ -193,7 +193,7 @@ interface WatchedItemStoreInterface {
 	public function addWatchBatchForUser( User $user, array $targets );
 
 	/**
-	 * Removes the an entry for the User watching the LinkTarget
+	 * Removes an entry for the User watching the LinkTarget
 	 * Must be called separately for Subject & Talk namespaces
 	 *
 	 * @since 1.31
@@ -315,5 +315,15 @@ interface WatchedItemStoreInterface {
 	 * @param User $user
 	 */
 	public function clearUserWatchedItemsUsingJobQueue( User $user );
+
+	/**
+	 * @since 1.32
+	 *
+	 * @param User $user
+	 * @param LinkTarget[] $targets
+	 *
+	 * @return bool success
+	 */
+	public function removeWatchBatchForUser( User $user, array $targets );
 
 }

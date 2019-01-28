@@ -214,14 +214,14 @@ class JobQueueDB extends JobQueue {
 	 * @return void
 	 */
 	public function doBatchPushInternal( IDatabase $dbw, array $jobs, $flags, $method ) {
-		if ( !count( $jobs ) ) {
+		if ( $jobs === [] ) {
 			return;
 		}
 
 		$rowSet = []; // (sha1 => job) map for jobs that are de-duplicated
 		$rowList = []; // list of jobs for jobs that are not de-duplicated
 		foreach ( $jobs as $job ) {
-			$row = $this->insertFields( $job );
+			$row = $this->insertFields( $job, $dbw );
 			if ( $job->ignoreDuplicates() ) {
 				$rowSet[$row['job_sha1']] = $row;
 			} else {
@@ -264,8 +264,6 @@ class JobQueueDB extends JobQueue {
 		if ( $flags & self::QOS_ATOMIC ) {
 			$dbw->endAtomic( $method );
 		}
-
-		return;
 	}
 
 	/**
@@ -300,7 +298,7 @@ class JobQueueDB extends JobQueue {
 				// Get the job object from the row...
 				$title = Title::makeTitle( $row->job_namespace, $row->job_title );
 				$job = Job::factory( $row->job_cmd, $title,
-					self::extractBlob( $row->job_params ), $row->job_id );
+					self::extractBlob( $row->job_params ) );
 				$job->metadata['id'] = $row->job_id;
 				$job->metadata['timestamp'] = $row->job_timestamp;
 				break; // done
@@ -544,7 +542,8 @@ class JobQueueDB extends JobQueue {
 	 */
 	protected function doWaitForBackups() {
 		$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
-		$lbFactory->waitForReplication( [ 'wiki' => $this->wiki, 'cluster' => $this->cluster ] );
+		$lbFactory->waitForReplication(
+			[ 'domain' => $this->domain, 'cluster' => $this->cluster ] );
 	}
 
 	/**
@@ -600,8 +599,8 @@ class JobQueueDB extends JobQueue {
 
 	public function getCoalesceLocationInternal() {
 		return $this->cluster
-			? "DBCluster:{$this->cluster}:{$this->wiki}"
-			: "LBFactory:{$this->wiki}";
+			? "DBCluster:{$this->cluster}:{$this->domain}"
+			: "LBFactory:{$this->domain}";
 	}
 
 	protected function doGetSiblingQueuesWithJobs( array $types ) {
@@ -683,7 +682,7 @@ class JobQueueDB extends JobQueue {
 					$affected = $dbw->affectedRows();
 					$count += $affected;
 					JobQueue::incrStats( 'recycles', $this->type, $affected );
-					$this->aggr->notifyQueueNonEmpty( $this->wiki, $this->type );
+					$this->aggr->notifyQueueNonEmpty( $this->domain, $this->type );
 				}
 			}
 
@@ -722,11 +721,10 @@ class JobQueueDB extends JobQueue {
 
 	/**
 	 * @param IJobSpecification $job
+	 * @param IDatabase $db
 	 * @return array
 	 */
-	protected function insertFields( IJobSpecification $job ) {
-		$dbw = $this->getMasterDB();
-
+	protected function insertFields( IJobSpecification $job, IDatabase $db ) {
 		return [
 			// Fields that describe the nature of the job
 			'job_cmd' => $job->getType(),
@@ -734,7 +732,7 @@ class JobQueueDB extends JobQueue {
 			'job_title' => $job->getTitle()->getDBkey(),
 			'job_params' => self::makeBlob( $job->getParams() ),
 			// Additional job metadata
-			'job_timestamp' => $dbw->timestamp(),
+			'job_timestamp' => $db->timestamp(),
 			'job_sha1' => Wikimedia\base_convert(
 				sha1( serialize( $job->getDeduplicationInfo() ) ),
 				16, 36, 31
@@ -775,14 +773,14 @@ class JobQueueDB extends JobQueue {
 		$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
 		$lb = ( $this->cluster !== false )
 			? $lbFactory->getExternalLB( $this->cluster )
-			: $lbFactory->getMainLB( $this->wiki );
+			: $lbFactory->getMainLB( $this->domain );
 
 		return ( $lb->getServerType( $lb->getWriterIndex() ) !== 'sqlite' )
 			// Keep a separate connection to avoid contention and deadlocks;
 			// However, SQLite has the opposite behavior due to DB-level locking.
-			? $lb->getConnectionRef( $index, [], $this->wiki, $lb::CONN_TRX_AUTOCOMMIT )
+			? $lb->getConnectionRef( $index, [], $this->domain, $lb::CONN_TRX_AUTOCOMMIT )
 			// Jobs insertion will be defered until the PRESEND stage to reduce contention.
-			: $lb->getConnectionRef( $index, [], $this->wiki );
+			: $lb->getConnectionRef( $index, [], $this->domain );
 	}
 
 	/**
@@ -790,10 +788,15 @@ class JobQueueDB extends JobQueue {
 	 * @return string
 	 */
 	private function getCacheKey( $property ) {
-		list( $db, $prefix ) = wfSplitWikiID( $this->wiki );
 		$cluster = is_string( $this->cluster ) ? $this->cluster : 'main';
 
-		return wfForeignMemcKey( $db, $prefix, 'jobqueue', $cluster, $this->type, $property );
+		return $this->cache->makeGlobalKey(
+			'jobqueue',
+			$this->domain,
+			$cluster,
+			$this->type,
+			$property
+		);
 	}
 
 	/**

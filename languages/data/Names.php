@@ -193,7 +193,7 @@ class Names {
 		'he' => 'עברית', # Hebrew
 		'hi' => 'हिन्दी', # Hindi
 		'hif' => 'Fiji Hindi', # Fijian Hindi (multiple scripts - defaults to Latin)
-		'hif-latn' => 'Fiji Hindi', # Fiji Hindi (latin)
+		'hif-latn' => 'Fiji Hindi', # Fiji Hindi (Latin script)
 		'hil' => 'Ilonggo', # Hiligaynon
 		'ho' => 'Hiri Motu', # Hiri Motu
 		'hr' => 'hrvatski', # Croatian
@@ -202,7 +202,8 @@ class Names {
 		'ht' => 'Kreyòl ayisyen', # Haitian Creole French
 		'hu' => 'magyar', # Hungarian
 		'hu-formal' => "magyar (formal)\u{200E}", # Hungarian formal address
-		'hy' => 'Հայերեն', # Armenian
+		'hy' => 'հայերեն', # Armenian, T202611
+		'hyw' => 'արեւմտահայերէն', # Western Armenian, T201276
 		'hz' => 'Otsiherero', # Herero
 		'ia' => 'interlingua', # Interlingua (IALA)
 		'id' => 'Bahasa Indonesia', # Indonesian
@@ -234,6 +235,7 @@ class Names {
 		'ki' => 'Gĩkũyũ', # Gikuyu
 		'kiu' => 'Kırmancki', # Kirmanjki
 		'kj' => 'Kwanyama', # Kwanyama
+		'kjp' => 'ဖၠုံလိက်', # Eastern Pwo (multiple scripts - defaults to Burmese script)
 		'kk' => 'қазақша', # Kazakh (multiple scripts - defaults to Cyrillic)
 		'kk-arab' => "قازاقشا (تٴوتە)\u{200F}", # Kazakh Arabic
 		'kk-cyrl' => "қазақша (кирил)\u{200E}", # Kazakh Cyrillic
@@ -298,7 +300,8 @@ class Names {
 		'ml' => 'മലയാളം', # Malayalam
 		'mn' => 'монгол', # Halh Mongolian (Cyrillic) (ISO 639-3: khk)
 		'mni' => 'মেইতেই লোন্', # Manipuri/Meitei
-		'mo' => 'молдовеняскэ', # Moldovan, deprecated (ISO 639-2: ro-MD)
+		'mnw' => 'ဘာသာ မန်', # Mon, T201583
+		'mo' => 'молдовеняскэ', # Moldovan, deprecated (ISO 639-2: ro-Cyrl-MD)
 		'mr' => 'मराठी', # Marathi
 		'mrj' => 'кырык мары', # Hill Mari
 		'ms' => 'Bahasa Melayu', # Malay
@@ -372,7 +375,7 @@ class Names {
 		'rw' => 'Kinyarwanda', # Kinyarwanda, should possibly be Kinyarwandi
 		'sa' => 'संस्कृतम्', # Sanskrit
 		'sah' => 'саха тыла', # Sakha
-		'sat' => 'Santali', # Santali
+		'sat' => 'ᱥᱟᱱᱛᱟᱲᱤ', # Santali
 		'sc' => 'sardu', # Sardinian
 		'scn' => 'sicilianu', # Sicilian
 		'sco' => 'Scots', # Scots

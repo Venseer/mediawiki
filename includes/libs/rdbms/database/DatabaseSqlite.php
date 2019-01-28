@@ -25,6 +25,7 @@ namespace Wikimedia\Rdbms;
 
 use PDO;
 use PDOException;
+use Exception;
 use LockManager;
 use FSLockManager;
 use InvalidArgumentException;
@@ -71,6 +72,10 @@ class DatabaseSqlite extends Database {
 		if ( isset( $p['dbFilePath'] ) ) {
 			$this->dbPath = $p['dbFilePath'];
 			$lockDomain = md5( $this->dbPath );
+			// Use "X" for things like X.sqlite and ":memory:" for RAM-only DBs
+			if ( !isset( $p['dbname'] ) || !strlen( $p['dbname'] ) ) {
+				$p['dbname'] = preg_replace( '/\.sqlite\d?$/', '', basename( $this->dbPath ) );
+			}
 		} elseif ( isset( $p['dbDirectory'] ) ) {
 			$this->dbDir = $p['dbDirectory'];
 			$lockDomain = $p['dbname'];
@@ -109,7 +114,7 @@ class DatabaseSqlite extends Database {
 	 */
 	public static function newStandaloneInstance( $filename, array $p = [] ) {
 		$p['dbFilePath'] = $filename;
-		$p['schema'] = false;
+		$p['schema'] = null;
 		$p['tablePrefix'] = '';
 		/** @var DatabaseSqlite $db */
 		$db = Database::factory( 'sqlite', $p );
@@ -120,7 +125,11 @@ class DatabaseSqlite extends Database {
 	protected function doInitConnection() {
 		if ( $this->dbPath !== null ) {
 			// Standalone .sqlite file mode.
-			$this->openFile( $this->dbPath, $this->connectionParams['dbname'] );
+			$this->openFile(
+				$this->dbPath,
+				$this->connectionParams['dbname'],
+				$this->connectionParams['tablePrefix']
+			);
 		} elseif ( $this->dbDir !== null ) {
 			// Stock wiki mode using standard file names per DB
 			if ( strlen( $this->connectionParams['dbname'] ) ) {
@@ -128,7 +137,9 @@ class DatabaseSqlite extends Database {
 					$this->connectionParams['host'],
 					$this->connectionParams['user'],
 					$this->connectionParams['password'],
-					$this->connectionParams['dbname']
+					$this->connectionParams['dbname'],
+					$this->connectionParams['schema'],
+					$this->connectionParams['tablePrefix']
 				);
 			} else {
 				// Caller will manually call open() later?
@@ -155,25 +166,15 @@ class DatabaseSqlite extends Database {
 		return false;
 	}
 
-	/** Open an SQLite database and return a resource handle to it
-	 *  NOTE: only $dbName is used, the other parameters are irrelevant for SQLite databases
-	 *
-	 * @param string $server
-	 * @param string $user Unused
-	 * @param string $pass
-	 * @param string $dbName
-	 *
-	 * @throws DBConnectionError
-	 * @return bool
-	 */
-	function open( $server, $user, $pass, $dbName ) {
+	protected function open( $server, $user, $pass, $dbName, $schema, $tablePrefix ) {
 		$this->close();
 		$fileName = self::generateFileName( $this->dbDir, $dbName );
 		if ( !is_readable( $fileName ) ) {
 			$this->conn = false;
 			throw new DBConnectionError( $this, "SQLite database not accessible" );
 		}
-		$this->openFile( $fileName, $dbName );
+		// Only $dbName is used, the other parameters are irrelevant for SQLite databases
+		$this->openFile( $fileName, $dbName, $tablePrefix );
 
 		return (bool)$this->conn;
 	}
@@ -183,10 +184,11 @@ class DatabaseSqlite extends Database {
 	 *
 	 * @param string $fileName
 	 * @param string $dbName
+	 * @param string $tablePrefix
 	 * @throws DBConnectionError
 	 * @return PDO|bool SQL connection or false if failed
 	 */
-	protected function openFile( $fileName, $dbName ) {
+	protected function openFile( $fileName, $dbName, $tablePrefix ) {
 		$err = false;
 
 		$this->dbPath = $fileName;
@@ -208,7 +210,7 @@ class DatabaseSqlite extends Database {
 
 		$this->opened = is_object( $this->conn );
 		if ( $this->opened ) {
-			$this->dbName = $dbName;
+			$this->currentDomain = new DatabaseDomain( $dbName, null, $tablePrefix );
 			# Set error codes only, don't raise exceptions
 			$this->conn->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT );
 			# Enforce LIKE to be case sensitive, just like MySQL
@@ -218,10 +220,6 @@ class DatabaseSqlite extends Database {
 		}
 
 		return false;
-	}
-
-	public function selectDB( $db ) {
-		return false; // doesn't make sense
 	}
 
 	/**
@@ -311,7 +309,7 @@ class DatabaseSqlite extends Database {
 		return $this->query( "ATTACH DATABASE $file AS $name", $fname );
 	}
 
-	function isWriteQuery( $sql ) {
+	protected function isWriteQuery( $sql ) {
 		return parent::isWriteQuery( $sql ) && !preg_match( '/^(ATTACH|PRAGMA)\b/i', $sql );
 	}
 
@@ -403,13 +401,14 @@ class DatabaseSqlite extends Database {
 	/**
 	 * The PDO::Statement class implements the array interface so count() will work
 	 *
-	 * @param ResultWrapper|array $res
+	 * @param ResultWrapper|array|false $res
 	 * @return int
 	 */
 	function numRows( $res ) {
+		// false does not implement Countable
 		$r = $res instanceof ResultWrapper ? $res->result : $res;
 
-		return count( $r );
+		return is_array( $r ) ? count( $r ) : 0;
 	}
 
 	/**
@@ -419,7 +418,7 @@ class DatabaseSqlite extends Database {
 	function numFields( $res ) {
 		$r = $res instanceof ResultWrapper ? $res->result : $res;
 		if ( is_array( $r ) && count( $r ) > 0 ) {
-			// The size of the result array is twice the number of fields. (Bug: 65578)
+			// The size of the result array is twice the number of fields. (T67578)
 			return count( $r[0] ) / 2;
 		} else {
 			// If the result is empty return 0
@@ -650,17 +649,24 @@ class DatabaseSqlite extends Database {
 
 		# SQLite can't handle multi-row inserts, so divide up into multiple single-row inserts
 		if ( isset( $a[0] ) && is_array( $a[0] ) ) {
-			$ret = true;
-			foreach ( $a as $v ) {
-				if ( !parent::insert( $table, $v, "$fname/multi-row", $options ) ) {
-					$ret = false;
+			$affectedRowCount = 0;
+			try {
+				$this->startAtomic( $fname, self::ATOMIC_CANCELABLE );
+				foreach ( $a as $v ) {
+					parent::insert( $table, $v, "$fname/multi-row", $options );
+					$affectedRowCount += $this->affectedRows();
 				}
+				$this->endAtomic( $fname );
+			} catch ( Exception $e ) {
+				$this->cancelAtomic( $fname );
+				throw $e;
 			}
+			$this->affectedRowCount = $affectedRowCount;
 		} else {
-			$ret = parent::insert( $table, $a, "$fname/single-row", $options );
+			parent::insert( $table, $a, "$fname/single-row", $options );
 		}
 
-		return $ret;
+		return true;
 	}
 
 	/**
@@ -668,26 +674,30 @@ class DatabaseSqlite extends Database {
 	 * @param array $uniqueIndexes Unused
 	 * @param string|array $rows
 	 * @param string $fname
-	 * @return bool|ResultWrapper
 	 */
 	function replace( $table, $uniqueIndexes, $rows, $fname = __METHOD__ ) {
 		if ( !count( $rows ) ) {
-			return true;
+			return;
 		}
 
 		# SQLite can't handle multi-row replaces, so divide up into multiple single-row queries
 		if ( isset( $rows[0] ) && is_array( $rows[0] ) ) {
-			$ret = true;
-			foreach ( $rows as $v ) {
-				if ( !$this->nativeReplace( $table, $v, "$fname/multi-row" ) ) {
-					$ret = false;
+			$affectedRowCount = 0;
+			try {
+				$this->startAtomic( $fname, self::ATOMIC_CANCELABLE );
+				foreach ( $rows as $v ) {
+					$this->nativeReplace( $table, $v, "$fname/multi-row" );
+					$affectedRowCount += $this->affectedRows();
 				}
+				$this->endAtomic( $fname );
+			} catch ( Exception $e ) {
+				$this->cancelAtomic( $fname );
+				throw $e;
 			}
+			$this->affectedRowCount = $affectedRowCount;
 		} else {
-			$ret = $this->nativeReplace( $table, $rows, "$fname/single-row" );
+			$this->nativeReplace( $table, $rows, "$fname/single-row" );
 		}
-
-		return $ret;
 	}
 
 	/**
@@ -987,7 +997,9 @@ class DatabaseSqlite extends Database {
 		}
 		$sql = $obj->sql;
 		$sql = preg_replace(
-			'/(?<=\W)"?' . preg_quote( trim( $this->addIdentifierQuotes( $oldName ), '"' ) ) . '"?(?=\W)/',
+			'/(?<=\W)"?' .
+				preg_quote( trim( $this->addIdentifierQuotes( $oldName ), '"' ), '/' ) .
+				'"?(?=\W)/',
 			$this->addIdentifierQuotes( $newName ),
 			$sql,
 			1

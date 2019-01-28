@@ -21,6 +21,7 @@
  */
 
 use Wikimedia\Rdbms\IDatabase;
+use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\MediaWikiServices;
 use Wikimedia\ScopedCallback;
 
@@ -141,14 +142,9 @@ class LinksUpdate extends DataUpdate implements EnqueueableDataUpdate {
 		}
 
 		foreach ( $this->mCategories as &$sortkey ) {
-			# If the sortkey is longer then 255 bytes,
-			# it truncated by DB, and then doesn't get
-			# matched when comparing existing vs current
-			# categories, causing T27254.
-			# Also. substr behaves weird when given "".
-			if ( $sortkey !== '' ) {
-				$sortkey = substr( $sortkey, 0, 255 );
-			}
+			# If the sortkey is longer then 255 bytes, it is truncated by DB, and then doesn't match
+			# when comparing existing vs current categories, causing T27254.
+			$sortkey = mb_strcut( $sortkey, 0, 255 );
 		}
 
 		$this->mRecursive = $recursive;
@@ -161,13 +157,16 @@ class LinksUpdate extends DataUpdate implements EnqueueableDataUpdate {
 	/**
 	 * Update link tables with outgoing links from an updated article
 	 *
-	 * @note: this is managed by DeferredUpdates::execute(). Do not run this in a transaction.
+	 * @note this is managed by DeferredUpdates::execute(). Do not run this in a transaction.
 	 */
 	public function doUpdate() {
 		if ( $this->ticket ) {
 			// Make sure all links update threads see the changes of each other.
 			// This handles the case when updates have to batched into several COMMITs.
 			$scopedLock = self::acquirePageLock( $this->getDB(), $this->mId );
+			if ( !$scopedLock ) {
+				throw new RuntimeException( "Could not acquire lock for page ID '{$this->mId}'." );
+			}
 		}
 
 		// Avoid PHP 7.1 warning from passing $this by reference
@@ -195,15 +194,19 @@ class LinksUpdate extends DataUpdate implements EnqueueableDataUpdate {
 	 * @param IDatabase $dbw
 	 * @param int $pageId
 	 * @param string $why One of (job, atomicity)
-	 * @return ScopedCallback
-	 * @throws RuntimeException
+	 * @return ScopedCallback|null
 	 * @since 1.27
 	 */
 	public static function acquirePageLock( IDatabase $dbw, $pageId, $why = 'atomicity' ) {
 		$key = "LinksUpdate:$why:pageid:$pageId";
 		$scopedLock = $dbw->getScopedLockAndFlush( $key, __METHOD__, 15 );
 		if ( !$scopedLock ) {
-			throw new RuntimeException( "Could not acquire lock '$key'." );
+			$logger = LoggerFactory::getInstance( 'SecondaryDataUpdate' );
+			$logger->info( "Could not acquire lock '{key}' for page ID '{page_id}'.", [
+				'key' => $key,
+				'page_id' => $pageId,
+			] );
+			return null;
 		}
 
 		return $scopedLock;
@@ -402,7 +405,7 @@ class LinksUpdate extends DataUpdate implements EnqueueableDataUpdate {
 	/**
 	 * @param array $images
 	 */
-	private function invalidateImageDescriptions( $images ) {
+	private function invalidateImageDescriptions( array $images ) {
 		PurgeJobUtils::invalidatePages( $this->getDB(), NS_FILE, array_keys( $images ) );
 	}
 
@@ -564,7 +567,7 @@ class LinksUpdate extends DataUpdate implements EnqueueableDataUpdate {
 		$arr = [];
 		$diffs = array_diff_key( $this->mExternals, $existing );
 		foreach ( $diffs as $url => $dummy ) {
-			foreach ( wfMakeUrlIndexes( $url ) as $index ) {
+			foreach ( LinkFilter::makeIndexes( $url ) as $index ) {
 				$arr[] = [
 					'el_from' => $this->mId,
 					'el_to' => $url,
@@ -586,12 +589,14 @@ class LinksUpdate extends DataUpdate implements EnqueueableDataUpdate {
 	 * @return array
 	 */
 	private function getCategoryInsertions( $existing = [] ) {
-		global $wgContLang, $wgCategoryCollation;
+		global $wgCategoryCollation;
 		$diffs = array_diff_assoc( $this->mCategories, $existing );
 		$arr = [];
+		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
+		$collation = Collation::singleton();
 		foreach ( $diffs as $name => $prefix ) {
 			$nt = Title::makeTitleSafe( NS_CATEGORY, $name );
-			$wgContLang->findVariantLink( $name, $nt, true );
+			$contLang->findVariantLink( $name, $nt, true );
 
 			$type = MWNamespace::getCategoryLinkType( $this->mTitle->getNamespace() );
 
@@ -599,8 +604,7 @@ class LinksUpdate extends DataUpdate implements EnqueueableDataUpdate {
 			# things are forced to sort as '*' or something, they'll
 			# sort properly in the category rather than in page_id
 			# order or such.
-			$sortkey = Collation::singleton()->getSortKey(
-				$this->mTitle->getCategorySortkey( $prefix ) );
+			$sortkey = $collation->getSortKey( $this->mTitle->getCategorySortkey( $prefix ) );
 
 			$arr[] = [
 				'cl_from' => $this->mId,

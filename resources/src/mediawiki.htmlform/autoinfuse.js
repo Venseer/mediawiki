@@ -2,12 +2,17 @@
  * HTMLForm enhancements:
  * Infuse some OOUI HTMLForm fields (those which benefit from always being infused).
  */
-( function ( mw, $ ) {
+( function () {
 
 	mw.hook( 'htmlform.enhance' ).add( function ( $root ) {
 		var $oouiNodes, modules, extraModules;
 
 		$oouiNodes = $root.find( '.mw-htmlform-field-autoinfuse' );
+
+		$oouiNodes = $oouiNodes.filter( function () {
+			return !$( this ).closest( '.mw-htmlform-autoinfuse-lazy' ).length;
+		} );
+
 		if ( $oouiNodes.length ) {
 			// The modules are preloaded (added server-side in HTMLFormField, and the individual fields
 			// which need extra ones), but this module doesn't depend on them. Wait until they're loaded.
@@ -29,4 +34,4 @@
 
 	} );
 
-}( mediaWiki, jQuery ) );
+}() );

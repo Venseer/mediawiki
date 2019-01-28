@@ -1,7 +1,7 @@
 /**
  * MediaWiki legacy wikibits
  */
-( function ( mw, $ ) {
+( function () {
 	var msg,
 		loadedScripts = {};
 
@@ -27,7 +27,9 @@
 	 * @deprecated since 1.17 Use jQuery instead
 	 */
 	mw.log.deprecate( window, 'addOnloadHook', function ( fn ) {
-		$( function () { fn(); } );
+		$( function () {
+			fn();
+		} );
 	}, 'Use jQuery instead.' );
 
 	/**
@@ -102,4 +104,4 @@
 		}, 'Use jQuery or mw.loader.load instead.', 'document.' + method );
 	} );
 
-}( mediaWiki, jQuery ) );
+}() );

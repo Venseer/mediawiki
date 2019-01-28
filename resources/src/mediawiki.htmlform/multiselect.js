@@ -2,11 +2,11 @@
  * HTMLForm enhancements:
  * Convert multiselect fields from checkboxes to Chosen selector when requested.
  */
-( function ( mw, $ ) {
+( function () {
 
 	function addMulti( $oldContainer, $container ) {
 		var name = $oldContainer.find( 'input:first-child' ).attr( 'name' ),
-			oldClass = ( ' ' + $oldContainer.attr( 'class' ) + ' ' ).replace( /(mw-htmlform-field-HTMLMultiSelectField|mw-chosen|mw-htmlform-dropdown)/g, '' ),
+			oldClass = ( ' ' + $oldContainer.attr( 'class' ) + ' ' ).replace( /(mw-htmlform-field-HTMLMultiSelectField|mw-htmlform-dropdown)/g, '' ),
 			$select = $( '<select>' ),
 			dataPlaceholder = mw.message( 'htmlform-chosen-placeholder' );
 		oldClass = oldClass.trim();
@@ -14,7 +14,7 @@
 			name: name,
 			multiple: 'multiple',
 			'data-placeholder': dataPlaceholder.plain(),
-			'class': 'htmlform-chzn-select mw-input ' + oldClass
+			class: 'htmlform-chzn-select mw-input ' + oldClass
 		} );
 		$oldContainer.find( 'input' ).each( function () {
 			var $oldInput = $( this ),
@@ -112,4 +112,4 @@
 		}
 	} );
 
-}( mediaWiki, jQuery ) );
+}() );

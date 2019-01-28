@@ -75,8 +75,8 @@ class IcuCollation extends Collation {
 	 * letters (denoted by keys starting with '-').
 	 *
 	 * These are additions to (or subtractions from) the data stored in the
-	 * first-letters-root.ser file (which among others includes full basic latin,
-	 * cyrillic and greek alphabets).
+	 * first-letters-root.php data file (which among others includes full basic Latin,
+	 * Cyrillic and Greek alphabets).
 	 *
 	 * "Separate letter" is a letter that would have a separate heading/section
 	 * for it in a dictionary or a phone book in this language. This data isn't
@@ -124,7 +124,7 @@ class IcuCollation extends Collation {
 		'en' => [],
 		'eo' => [ "Ĉ", "Ĝ", "Ĥ", "Ĵ", "Ŝ", "Ŭ" ],
 		'es' => [ "Ñ" ],
-		'et' => [ "Š", "Ž", "Õ", "Ä", "Ö", "Ü", "W" ], // added W for CollationEt (xx-uca-et)
+		'et' => [ "Š", "Ž", "Õ", "Ä", "Ö", "Ü" ],
 		'eu' => [ "Ñ" ], // not in libicu
 		'fa' => [
 			// RTL, let's put each letter on a new line
@@ -348,9 +348,10 @@ class IcuCollation extends Collation {
 	 * @throws MWException
 	 */
 	private function fetchFirstLetterData() {
+		global $IP;
 		// Generate data from serialized data file
 		if ( isset( self::$tailoringFirstLetters[$this->locale] ) ) {
-			$letters = wfGetPrecompiledData( 'first-letters-root.ser' );
+			$letters = require "$IP/includes/collation/data/first-letters-root.php";
 			// Append additional characters
 			$letters = array_merge( $letters, self::$tailoringFirstLetters[$this->locale] );
 			// Remove unnecessary ones, if any
@@ -364,10 +365,15 @@ class IcuCollation extends Collation {
 				$letters[] = $this->digitTransformLanguage->formatNum( $digit, true );
 			}
 		} else {
-			$letters = wfGetPrecompiledData( "first-letters-{$this->locale}.ser" );
-			if ( $letters === false ) {
-				throw new MWException( "MediaWiki does not support ICU locale " .
-					"\"{$this->locale}\"" );
+			if ( $this->locale === 'root' ) {
+				$letters = require "$IP/includes/collation/data/first-letters-root.php";
+			} else {
+				// FIXME: Is this still used?
+				$letters = wfGetPrecompiledData( "first-letters-{$this->locale}.ser" );
+				if ( $letters === false ) {
+					throw new MWException( "MediaWiki does not support ICU locale " .
+						"\"{$this->locale}\"" );
+				}
 			}
 		}
 
@@ -554,6 +560,8 @@ class IcuCollation extends Collation {
 		$versionPrefix = substr( $icuVersion, 0, 3 );
 		// Source: http://site.icu-project.org/download
 		$map = [
+			'63.' => '11.0',
+			'62.' => '11.0',
 			'61.' => '10.0',
 			'60.' => '10.0',
 			'59.' => '9.0',

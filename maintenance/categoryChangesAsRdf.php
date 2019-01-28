@@ -40,6 +40,20 @@ INSERT DATA {
 SPARQL;
 
 	/**
+	 * Delete query
+	 */
+	const SPARQL_DELETE = <<<SPARQLD
+DELETE {
+?category ?x ?y
+} WHERE {
+   VALUES ?category {
+     %s
+   }
+};
+
+SPARQLD;
+
+	/**
 	 * Delete/Insert query
 	 */
 	const SPARQL_DELETE_INSERT = <<<SPARQLDI
@@ -102,8 +116,8 @@ SPARQLDI;
 		global $wgRCMaxAge;
 
 		$this->initialize();
-
 		$startTS = new MWTimestamp( $this->getOption( "start" ) );
+
 		$endTS = new MWTimestamp( $this->getOption( "end" ) );
 		$now = new MWTimestamp();
 
@@ -143,11 +157,27 @@ SPARQLDI;
 		$this->handleMoves( $dbr, $output );
 		// We need to handle restores too since delete may have happened in previous update.
 		$this->handleRestores( $dbr, $output );
+		// Process newly added pages
 		$this->handleAdds( $dbr, $output );
-		$this->handleChanges( $dbr, $output );
+		// Process page edits
+		$this->handleEdits( $dbr, $output );
+		// Process categorization changes
+		$this->handleCategorization( $dbr, $output );
 
 		// Update timestamp
 		fwrite( $output, $this->updateTS( $this->endTS ) );
+	}
+
+	/**
+	 * Get the text of SPARQL INSERT DATA clause
+	 * @return string
+	 */
+	private function getInsertRdf() {
+		$rdfText = $this->getRdf();
+		if ( !$rdfText ) {
+			return "";
+		}
+		return sprintf( self::SPARQL_INSERT, $rdfText );
 	}
 
 	/**
@@ -167,15 +197,15 @@ SPARQLDI;
 			$this->writeParentCategories( $dbr, $pages );
 		}
 
-		return "# $mark\n" . sprintf( self::SPARQL_DELETE_INSERT,
-				$this->getRdf(),
-				implode( ' ', $deleteUrls ) );
+		return "# $mark\n" . sprintf( self::SPARQL_DELETE, implode( ' ', $deleteUrls ) ) .
+			$this->getInsertRdf();
 	}
 
 	/**
-	 * Write data for a set of categories
+	 * Write parent data for a set of categories.
+	 * The list has the child categories.
 	 * @param IDatabase $dbr
-	 * @param string[] $pages List of categories: id => title
+	 * @param string[] $pages List of child categories: id => title
 	 */
 	private function writeParentCategories( IDatabase $dbr, $pages ) {
 		foreach ( $this->getCategoryLinksIterator( $dbr, array_keys( $pages ) ) as $row ) {
@@ -331,16 +361,17 @@ SPARQL;
 	}
 
 	/**
-	 * Fetch categorization changes
+	 * Fetch categorization changes or edits
 	 * @param IDatabase $dbr
 	 * @return BatchRowIterator
 	 */
-	protected function getChangedCatsIterator( IDatabase $dbr ) {
-		$it = $this->setupChangesIterator( $dbr );
+	protected function getChangedCatsIterator( IDatabase $dbr, $type ) {
+		$it =
+			$this->setupChangesIterator( $dbr );
 		$it->addConditions( [
 			'rc_namespace' => NS_CATEGORY,
 			'rc_new' => 0,
-			'rc_type' => [ RC_EDIT, RC_CATEGORIZE ],
+			'rc_type' => $type,
 		] );
 		$this->addIndex( $it );
 		return $it;
@@ -483,7 +514,7 @@ SPARQL;
 
 			$this->writeParentCategories( $dbr, $pages );
 
-			fwrite( $output, sprintf( self::SPARQL_INSERT, $this->getRdf() ) );
+			fwrite( $output, $this->getInsertRdf() );
 		}
 	}
 
@@ -510,19 +541,26 @@ SPARQL;
 			}
 
 			$this->writeParentCategories( $dbr, $pages );
-			fwrite( $output, sprintf( self::SPARQL_INSERT, $this->getRdf() ) );
+			fwrite( $output, $this->getInsertRdf() );
 		}
 	}
 
 	/**
+	 * Handle edits for category texts
 	 * @param IDatabase $dbr
 	 * @param resource $output
 	 */
-	public function handleChanges( IDatabase $dbr, $output ) {
-		foreach ( $this->getChangedCatsIterator( $dbr ) as $batch ) {
+	public function handleEdits( IDatabase $dbr, $output ) {
+		// Editing category can change hidden flag and add new parents.
+		// TODO: it's pretty expensive to update all edited categories, and most edits
+		// aren't actually interesting for us. Some way to know which are interesting?
+		// We can capture recategorization on the next step, but not change in hidden status.
+		foreach ( $this->getChangedCatsIterator( $dbr, RC_EDIT ) as $batch ) {
 			$pages = [];
 			$deleteUrls = [];
 			foreach ( $batch as $row ) {
+				// Note that on categorization event, cur_id points to
+				// the child page, not the parent category!
 				if ( isset( $this->processed[$row->rc_cur_id] ) ) {
 					// We already captured this one before
 					continue;
@@ -531,6 +569,121 @@ SPARQL;
 				$pages[$row->rc_cur_id] = $row->rc_title;
 				$this->processed[$row->rc_cur_id] = true;
 				$deleteUrls[] = '<' . $this->categoriesRdf->labelToUrl( $row->rc_title ) . '>';
+			}
+
+			fwrite( $output, $this->getCategoriesUpdate( $dbr, $deleteUrls, $pages, "Edits" ) );
+		}
+	}
+
+	/**
+	 * Handles categorization changes
+	 * @param IDatabase $dbr
+	 * @param resource $output
+	 */
+	public function handleCategorization( IDatabase $dbr, $output ) {
+		$processedTitle = [];
+		// Categorization change can add new parents and change counts
+		// for the parent category.
+		foreach ( $this->getChangedCatsIterator( $dbr, RC_CATEGORIZE ) as $batch ) {
+			/*
+			 * Note that on categorization event, cur_id points to
+			 * the child page, not the parent category!
+			 * So we need to have a two-stage process, since we have ID from one
+			 * category and title from another, and we need both for proper updates.
+			 * TODO: For now, we do full update even though some data hasn't changed,
+			 * e.g. parents for parent cat and counts for child cat.
+			 */
+			foreach ( $batch as $row ) {
+				$childPages[$row->rc_cur_id] = true;
+				$parentCats[$row->rc_title] = true;
+			}
+
+			$joinConditions = [
+				'page_props' => [
+					'LEFT JOIN',
+					[ 'pp_propname' => 'hiddencat', 'pp_page = page_id' ],
+				],
+				'category' => [
+					'LEFT JOIN',
+					[ 'cat_title = page_title' ],
+				],
+			];
+
+			$pages = [];
+			$deleteUrls = [];
+
+			if ( !empty( $childPages ) ) {
+				// Load child rows by ID
+				$childRows = $dbr->select(
+					[ 'page', 'page_props', 'category' ],
+					[
+						'page_id',
+						'rc_title' => 'page_title',
+						'pp_propname',
+						'cat_pages',
+						'cat_subcats',
+						'cat_files',
+					],
+					[ 'page_namespace' => NS_CATEGORY, 'page_id' => array_keys( $childPages ) ],
+					__METHOD__,
+					[],
+					$joinConditions
+				);
+				foreach ( $childRows as $row ) {
+					if ( isset( $this->processed[$row->page_id] ) ) {
+						// We already captured this one before
+						continue;
+					}
+					$this->writeCategoryData( $row );
+					$deleteUrls[] = '<' . $this->categoriesRdf->labelToUrl( $row->rc_title ) . '>';
+					$this->processed[$row->page_id] = true;
+				}
+			}
+
+			if ( !empty( $parentCats ) ) {
+				// Load parent rows by title
+				$joinConditions = [
+					'page' => [
+						'LEFT JOIN',
+						[ 'page_title = cat_title', 'page_namespace' => NS_CATEGORY ],
+					],
+					'page_props' => [
+						'LEFT JOIN',
+						[ 'pp_propname' => 'hiddencat', 'pp_page = page_id' ],
+					],
+				];
+
+				$parentRows = $dbr->select(
+					[ 'category', 'page', 'page_props' ],
+					[
+						'page_id',
+						'rc_title' => 'cat_title',
+						'pp_propname',
+						'cat_pages',
+						'cat_subcats',
+						'cat_files',
+					],
+					[ 'cat_title' => array_keys( $parentCats ) ],
+					__METHOD__,
+					[],
+					$joinConditions
+				);
+				foreach ( $parentRows as $row ) {
+					if ( $row->page_id && isset( $this->processed[$row->page_id] ) ) {
+						// We already captured this one before
+						continue;
+					}
+					if ( isset( $processedTitle[$row->rc_title] ) ) {
+						// We already captured this one before
+						continue;
+					}
+					$this->writeCategoryData( $row );
+					$deleteUrls[] = '<' . $this->categoriesRdf->labelToUrl( $row->rc_title ) . '>';
+					if ( $row->page_id ) {
+						$this->processed[$row->page_id] = true;
+					}
+					$processedTitle[$row->rc_title] = true;
+				}
 			}
 
 			fwrite( $output, $this->getCategoriesUpdate( $dbr, $deleteUrls, $pages, "Changes" ) );

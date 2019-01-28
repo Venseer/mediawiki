@@ -160,7 +160,7 @@ class UserrightsPage extends SpecialPage {
 
 			// save settings
 			if ( !$fetchedStatus->isOK() ) {
-				$this->getOutput()->addWikiText( $fetchedStatus->getWikiText() );
+				$this->getOutput()->addWikiTextAsInterface( $fetchedStatus->getWikiText() );
 
 				return;
 			}
@@ -170,10 +170,12 @@ class UserrightsPage extends SpecialPage {
 				$targetUser->clearInstanceCache(); // T40989
 			}
 
-			if ( $request->getVal( 'conflictcheck-originalgroups' )
-				!== implode( ',', $targetUser->getGroups() )
-			) {
-				$out->addWikiMsg( 'userrights-conflict' );
+			$conflictCheck = $request->getVal( 'conflictcheck-originalgroups' );
+			$conflictCheck = ( $conflictCheck === '' ) ? [] : explode( ',', $conflictCheck );
+			$userGroups = $targetUser->getGroups();
+
+			if ( $userGroups !== $conflictCheck ) {
+				$out->wrapWikiMsg( '<span class="error">$1</span>', 'userrights-conflict' );
 			} else {
 				$status = $this->saveUserGroups(
 					$this->mTarget,
@@ -189,7 +191,7 @@ class UserrightsPage extends SpecialPage {
 					return;
 				} else {
 					// Print an error message and redisplay the form
-					$out->addWikiText( '<div class="error">' . $status->getWikiText() . '</div>' );
+					$out->wrapWikiTextAsInterface( 'error', $status->getWikiText() );
 				}
 			}
 		}
@@ -468,7 +470,7 @@ class UserrightsPage extends SpecialPage {
 	function editUserGroupsForm( $username ) {
 		$status = $this->fetchUser( $username, true );
 		if ( !$status->isOK() ) {
-			$this->getOutput()->addWikiText( $status->getWikiText() );
+			$this->getOutput()->addWikiTextAsInterface( $status->getWikiText() );
 
 			return;
 		} else {
@@ -497,18 +499,18 @@ class UserrightsPage extends SpecialPage {
 		$parts = explode( $this->getConfig()->get( 'UserrightsInterwikiDelimiter' ), $username );
 		if ( count( $parts ) < 2 ) {
 			$name = trim( $username );
-			$database = '';
+			$wikiId = '';
 		} else {
-			list( $name, $database ) = array_map( 'trim', $parts );
+			list( $name, $wikiId ) = array_map( 'trim', $parts );
 
-			if ( $database == wfWikiID() ) {
-				$database = '';
+			if ( WikiMap::isCurrentWikiId( $wikiId ) ) {
+				$wikiId = '';
 			} else {
 				if ( $writing && !$this->getUser()->isAllowed( 'userrights-interwiki' ) ) {
 					return Status::newFatal( 'userrights-no-interwiki' );
 				}
-				if ( !UserRightsProxy::validDatabase( $database ) ) {
-					return Status::newFatal( 'userrights-nodatabase', $database );
+				if ( !UserRightsProxy::validDatabase( $wikiId ) ) {
+					return Status::newFatal( 'userrights-nodatabase', $wikiId );
 				}
 			}
 		}
@@ -522,10 +524,10 @@ class UserrightsPage extends SpecialPage {
 			// We'll do a lookup for the name internally.
 			$id = intval( substr( $name, 1 ) );
 
-			if ( $database == '' ) {
+			if ( $wikiId == '' ) {
 				$name = User::whoIs( $id );
 			} else {
-				$name = UserRightsProxy::whoIs( $database, $id );
+				$name = UserRightsProxy::whoIs( $wikiId, $id );
 			}
 
 			if ( !$name ) {
@@ -539,10 +541,10 @@ class UserrightsPage extends SpecialPage {
 			}
 		}
 
-		if ( $database == '' ) {
+		if ( $wikiId == '' ) {
 			$user = User::newFromName( $name );
 		} else {
-			$user = UserRightsProxy::newFromName( $database, $name );
+			$user = UserRightsProxy::newFromName( $wikiId, $name );
 		}
 
 		if ( !$user || $user->isAnon() ) {
@@ -767,7 +769,7 @@ class UserrightsPage extends SpecialPage {
 	 * @param UserGroupMembership[] $usergroups Associative array of (group name as string =>
 	 *   UserGroupMembership object) for groups the user belongs to
 	 * @param User $user
-	 * @return Array with 2 elements: the XHTML table element with checkxboes, and
+	 * @return array Array with 2 elements: the XHTML table element with checkxboes, and
 	 * whether any groups are changeable
 	 */
 	private function groupCheckboxes( $usergroups, $user ) {

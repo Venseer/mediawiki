@@ -1,8 +1,8 @@
-( function ( mw, $ ) {
+( function () {
 	'use strict';
 
 	var notification,
-		// The #mw-notification-area div that all notifications are contained inside.
+		// The .mw-notification-area div that all notifications are contained inside.
 		$area,
 		// Number of open notification boxes at any time
 		openNotificationCount = 0,
@@ -29,9 +29,12 @@
 	function Notification( message, options ) {
 		var $notification, $notificationContent;
 
-		$notification = $( '<div class="mw-notification"></div>' )
-			.data( 'mw.notification', this )
-			.addClass( options.autoHide ? 'mw-notification-autohide' : 'mw-notification-noautohide' );
+		$notification = $( '<div>' )
+			.data( 'mw-notification', this )
+			.addClass( [
+				'mw-notification',
+				options.autoHide ? 'mw-notification-autohide' : 'mw-notification-noautohide'
+			] );
 
 		if ( options.tag ) {
 			// Sanitize options.tag before it is used by any code. (Including Notification class methods)
@@ -50,12 +53,13 @@
 		}
 
 		if ( options.title ) {
-			$( '<div class="mw-notification-title"></div>' )
+			$( '<div>' )
+				.addClass( 'mw-notification-title' )
 				.text( options.title )
 				.appendTo( $notification );
 		}
 
-		$notificationContent = $( '<div class="mw-notification-content"></div>' );
+		$notificationContent = $( '<div>' ).addClass( 'mw-notification-content' );
 
 		if ( typeof message === 'object' ) {
 			// Handle mw.Message objects separately from DOM nodes and jQuery objects
@@ -134,7 +138,7 @@
 			// While there can be only one "open" notif with a given tag, there can be several
 			// matches here because they remain in the DOM until the animation is finished.
 			$tagMatches.each( function () {
-				var notif = $( this ).data( 'mw.notification' );
+				var notif = $( this ).data( 'mw-notification' );
 				if ( notif && notif.isOpen ) {
 					// Detach from render flow with position absolute so that the new tag can
 					// occupy its space instead.
@@ -262,7 +266,7 @@
 	 */
 	function callEachNotification( $notifications, fn ) {
 		$notifications.each( function () {
-			var notif = $( this ).data( 'mw.notification' );
+			var notif = $( this ).data( 'mw-notification' );
 			if ( notif ) {
 				notif[ fn ]();
 			}
@@ -290,9 +294,18 @@
 				.toggleClass( 'mw-notification-area-layout', !isFloating );
 		}
 
-		// Write to the DOM:
-		// Prepend the notification area to the content area and save its object.
-		$area = $( '<div id="mw-notification-area" class="mw-notification-area mw-notification-area-layout"></div>' )
+		// Look for a preset notification area in the skin.
+		// 'data-mw*' attributes are banned from user content in Sanitizer.
+		$area = $( '.mw-notification-area[data-mw="interface"]' ).first();
+		if ( !$area.length ) {
+			$area = $( '<div>' ).addClass( 'mw-notification-area' );
+			// Prepend the notification area to the content area
+			mw.util.$content.prepend( $area );
+		}
+		$area
+			.addClass( 'mw-notification-area-layout' )
+			// The ID attribute here is deprecated.
+			.attr( 'id', 'mw-notification-area' )
 			// Pause auto-hide timers when the mouse is in the notification area.
 			.on( {
 				mouseenter: notification.pause,
@@ -300,7 +313,7 @@
 			} )
 			// When clicking on a notification close it.
 			.on( 'click', '.mw-notification', function () {
-				var notif = $( this ).data( 'mw.notification' );
+				var notif = $( this ).data( 'mw-notification' );
 				if ( notif ) {
 					notif.close();
 				}
@@ -310,8 +323,6 @@
 			.on( 'click', 'a', function ( e ) {
 				e.stopPropagation();
 			} );
-
-		mw.util.$content.prepend( $area );
 
 		// Read from the DOM:
 		// Must be in the next frame to avoid synchronous layout
@@ -438,8 +449,8 @@
 		 * @property {Object}
 		 */
 		autoHideSeconds: {
-			'short': 5,
-			'long': 30
+			short: 5,
+			long: 30
 		},
 
 		/**
@@ -459,4 +470,4 @@
 
 	mw.notification = notification;
 
-}( mediaWiki, jQuery ) );
+}() );

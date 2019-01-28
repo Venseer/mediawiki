@@ -5,7 +5,7 @@
  * @license The MIT License (MIT); see LICENSE.txt
  */
 /* global moment */
-( function ( $, mw ) {
+( function () {
 
 	/**
 	 * Creates a mw.widgets.ExpiryWidget object.
@@ -27,24 +27,6 @@
 
 		// Parent constructor
 		mw.widgets.ExpiryWidget.parent.call( this, config );
-
-		// If the wiki does not want the date picker, then initialize the relative
-		// field and exit.
-		if ( config.noDatePicker ) {
-			this.relativeField.on( 'change', function ( event ) {
-				// Emit a change event for this widget.
-				this.emit( 'change', event );
-			}.bind( this ) );
-
-			// Initialization
-			this.$element
-				.addClass( 'mw-widget-ExpiryWidget' )
-				.append(
-					this.relativeField.$element
-				);
-
-			return;
-		}
 
 		// Properties
 		this.inputSwitch = new OO.ui.ButtonSelectWidget( {
@@ -224,4 +206,4 @@
 		return this.relativeField.getValue();
 	};
 
-}( jQuery, mediaWiki ) );
+}() );

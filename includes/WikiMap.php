@@ -196,7 +196,8 @@ class WikiMap {
 				$infoMap = [];
 				// Make sure at least the current wiki is set, for simple configurations.
 				// This also makes it the first in the map, which is useful for common cases.
-				$infoMap[wfWikiID()] = [
+				$wikiId = self::getWikiIdFromDomain( self::getCurrentWikiDomain() );
+				$infoMap[$wikiId] = [
 					'url' => $wgCanonicalServer,
 					'parts' => wfParseUrl( $wgCanonicalServer )
 				];
@@ -245,17 +246,68 @@ class WikiMap {
 	 * Get the wiki ID of a database domain
 	 *
 	 * This is like DatabaseDomain::getId() without encoding (for legacy reasons)
+	 * and without the schema if it merely set to the generic value "mediawiki"
 	 *
 	 * @param string|DatabaseDomain $domain
 	 * @return string
 	 */
 	public static function getWikiIdFromDomain( $domain ) {
-		if ( !( $domain instanceof DatabaseDomain ) ) {
-			$domain = DatabaseDomain::newFromId( $domain );
+		$domain = DatabaseDomain::newFromId( $domain );
+
+		if ( !in_array( $domain->getSchema(), [ null, 'mediawiki' ], true ) ) {
+			// Include the schema if it is set and is not the default placeholder.
+			// This means a site admin may have specifically taylored the schemas.
+			// Domain IDs might use the form <DB>-<project>-<language>, meaning that
+			// the schema portion must be accounted for to disambiguate wikis.
+			return "{$domain->getDatabase()}-{$domain->getSchema()}-{$domain->getTablePrefix()}";
 		}
 
+		// Note that if this wiki ID is passed a a domain ID to LoadBalancer, then it can
+		// handle the schema by assuming the generic "mediawiki" schema if needed.
 		return strlen( $domain->getTablePrefix() )
 			? "{$domain->getDatabase()}-{$domain->getTablePrefix()}"
-			: $domain->getDatabase();
+			: (string)$domain->getDatabase();
+	}
+
+	/**
+	 * @return DatabaseDomain Database domain of the current wiki
+	 * @since 1.33
+	 */
+	public static function getCurrentWikiDomain() {
+		global $wgDBname, $wgDBmwschema, $wgDBprefix;
+		// Avoid invoking LBFactory to avoid any chance of recursion
+		return new DatabaseDomain( $wgDBname, $wgDBmwschema, (string)$wgDBprefix );
+	}
+
+	/**
+	 * @param DatabaseDomain|string $domain
+	 * @return bool Whether $domain has the same DB/prefix as the current wiki
+	 * @since 1.33
+	 */
+	public static function isCurrentWikiDomain( $domain ) {
+		$domain = DatabaseDomain::newFromId( $domain );
+		$curDomain = self::getCurrentWikiDomain();
+
+		if ( !in_array( $curDomain->getSchema(), [ null, 'mediawiki' ], true ) ) {
+			// Include the schema if it is set and is not the default placeholder.
+			// This means a site admin may have specifically taylored the schemas.
+			// Domain IDs might use the form <DB>-<project>-<language>, meaning that
+			// the schema portion must be accounted for to disambiguate wikis.
+			return $curDomain->equals( $domain );
+		}
+
+		return (
+			$curDomain->getDatabase() === $domain->getDatabase() &&
+			$curDomain->getTablePrefix() === $domain->getTablePrefix()
+		);
+	}
+
+	/**
+	 * @param string $wikiId
+	 * @return bool Whether $wikiId has the same DB/prefix as the current wiki
+	 * @since 1.33
+	 */
+	public static function isCurrentWikiId( $wikiId ) {
+		return ( self::getWikiIdFromDomain( self::getCurrentWikiDomain() ) === $wikiId );
 	}
 }

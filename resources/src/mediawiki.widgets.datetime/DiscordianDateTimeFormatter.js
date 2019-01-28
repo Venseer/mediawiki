@@ -1,4 +1,4 @@
-( function ( $, mw ) {
+( function () {
 
 	/**
 	 * Provides various methods needed for formatting dates and times. This
@@ -20,7 +20,7 @@
 		config = $.extend( {}, config );
 
 		// Parent constructor
-		mw.widgets.datetime.DiscordianDateTimeFormatter[ 'super' ].call( this, config );
+		mw.widgets.datetime.DiscordianDateTimeFormatter.super.call( this, config );
 	};
 
 	/* Setup */
@@ -170,7 +170,7 @@
 				break;
 
 			default:
-				return mw.widgets.datetime.DiscordianDateTimeFormatter[ 'super' ].prototype.getFieldForTag.call( this, tag, params );
+				return mw.widgets.datetime.DiscordianDateTimeFormatter.super.prototype.getFieldForTag.call( this, tag, params );
 		}
 
 		if ( spec ) {
@@ -183,6 +183,7 @@
 			}
 			if ( spec.values ) {
 				spec.size = Math.max.apply(
+					// eslint-disable-next-line jquery/no-map-util
 					null, $.map( spec.values, function ( v ) { return v.length; } )
 				);
 			}
@@ -566,4 +567,4 @@
 		return ret;
 	};
 
-}( jQuery, mediaWiki ) );
+}() );

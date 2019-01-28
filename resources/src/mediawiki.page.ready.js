@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 	mw.hook( 'wikipage.content' ).add( function ( $content ) {
 		var $sortable, $collapsible;
 
@@ -49,10 +49,10 @@
 			mw.hook( 'wikipage.categories' ).fire( $nodes );
 		}
 
-		$( '#t-print a' ).click( function ( e ) {
+		$( '#t-print a' ).on( 'click', function ( e ) {
 			window.print();
 			e.preventDefault();
 		} );
 	} );
 
-}( mediaWiki, jQuery ) );
+}() );

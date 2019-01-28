@@ -29,26 +29,8 @@ use MediaWiki\MediaWikiServices;
  * @ingroup SpecialPage
  */
 class SpecialPreferences extends SpecialPage {
-	/**
-	 * @var bool Whether OOUI should be enabled here
-	 */
-	private $oouiEnabled = false;
-
 	function __construct() {
 		parent::__construct( 'Preferences' );
-	}
-
-	/**
-	 * Check if OOUI mode is enabled, by config or query string
-	 *
-	 * @since 1.32
-	 * @param IContextSource $context The context.
-	 * @return bool
-	 */
-	public static function isOouiEnabled( IContextSource $context ) {
-		return $context->getRequest()->getFuzzyBool( 'ooui',
-			$context->getConfig()->get( 'OOUIPreferences' )
-		);
 	}
 
 	public function doesWrites() {
@@ -56,8 +38,6 @@ class SpecialPreferences extends SpecialPage {
 	}
 
 	public function execute( $par ) {
-		$this->oouiEnabled = static::isOouiEnabled( $this->getContext() );
-
 		$this->setHeaders();
 		$this->outputHeader();
 		$out = $this->getOutput();
@@ -72,14 +52,12 @@ class SpecialPreferences extends SpecialPage {
 			return;
 		}
 
-		if ( $this->oouiEnabled ) {
-			$out->addModules( 'mediawiki.special.preferences.ooui' );
-			$out->addModuleStyles( 'mediawiki.special.preferences.styles.ooui' );
-			$out->addModuleStyles( 'oojs-ui-widgets.styles' );
-		} else {
-			$out->addModules( 'mediawiki.special.preferences' );
-			$out->addModuleStyles( 'mediawiki.special.preferences.styles' );
-		}
+		$out->addModules( 'mediawiki.special.preferences.ooui' );
+		$out->addModuleStyles( [
+			'mediawiki.special.preferences.styles.ooui',
+			'mediawiki.widgets.TagMultiselectWidget.styles',
+		] );
+		$out->addModuleStyles( 'oojs-ui-widgets.styles' );
 
 		$session = $this->getRequest()->getSession();
 		if ( $session->get( 'specialPreferencesSaveSuccess' ) ) {
@@ -112,49 +90,14 @@ class SpecialPreferences extends SpecialPage {
 		$htmlForm = $this->getFormObject( $user, $this->getContext() );
 		$sectionTitles = $htmlForm->getPreferenceSections();
 
-		if ( $this->oouiEnabled ) {
-			$prefTabs = [];
-			foreach ( $sectionTitles as $key ) {
-				$prefTabs[] = [
-					'name' => $key,
-					'label' => $htmlForm->getLegend( $key ),
-				];
-			}
-			$out->addJsConfigVars( 'wgPreferencesTabs', $prefTabs );
-		} else {
-
-			$prefTabs = '';
-			foreach ( $sectionTitles as $key ) {
-				$prefTabs .= Html::rawElement( 'li',
-					[
-						'role' => 'presentation',
-						'class' => ( $key === 'personal' ) ? 'selected' : null
-					],
-					Html::rawElement( 'a',
-						[
-							'id' => 'preftab-' . $key,
-							'role' => 'tab',
-							'href' => '#mw-prefsection-' . $key,
-							'aria-controls' => 'mw-prefsection-' . $key,
-							'aria-selected' => ( $key === 'personal' ) ? 'true' : 'false',
-							'tabIndex' => ( $key === 'personal' ) ? 0 : -1,
-						],
-						$htmlForm->getLegend( $key )
-					)
-				);
-			}
-
-			$out->addHTML(
-				Html::rawElement( 'ul',
-					[
-						'id' => 'preftoc',
-						'role' => 'tablist'
-					],
-					$prefTabs )
-			);
+		$prefTabs = [];
+		foreach ( $sectionTitles as $key ) {
+			$prefTabs[] = [
+				'name' => $key,
+				'label' => $htmlForm->getLegend( $key ),
+			];
 		}
-
-		$htmlForm->addHiddenField( 'ooui', $this->oouiEnabled ? '1' : '0' );
+		$out->addJsConfigVars( 'wgPreferencesTabs', $prefTabs );
 
 		$htmlForm->show();
 	}
@@ -167,11 +110,7 @@ class SpecialPreferences extends SpecialPage {
 	 */
 	protected function getFormObject( $user, IContextSource $context ) {
 		$preferencesFactory = MediaWikiServices::getInstance()->getPreferencesFactory();
-		if ( $this->oouiEnabled ) {
-			$form = $preferencesFactory->getForm( $user, $context, PreferencesFormOOUI::class );
-		} else {
-			$form = $preferencesFactory->getForm( $user, $context, PreferencesFormLegacy::class );
-		}
+		$form = $preferencesFactory->getForm( $user, $context, PreferencesFormOOUI::class );
 		return $form;
 	}
 

@@ -54,8 +54,7 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 					$fit = $this->appendMagicWords( $p );
 					break;
 				case 'interwikimap':
-					$filteriw = $params['filteriw'] ?? false;
-					$fit = $this->appendInterwikiMap( $p, $filteriw );
+					$fit = $this->appendInterwikiMap( $p, $params['filteriw'] );
 					break;
 				case 'dbrepllag':
 					$fit = $this->appendDbReplLagInfo( $p, $params['showalldb'] );
@@ -112,7 +111,7 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 					$fit = $this->appendUploadDialog( $p );
 					break;
 				default:
-					ApiBase::dieDebug( __METHOD__, "Unknown prop=$p" );
+					ApiBase::dieDebug( __METHOD__, "Unknown prop=$p" ); // @codeCoverageIgnore
 			}
 			if ( !$fit ) {
 				// Abuse siprop as a query-continue parameter
@@ -126,8 +125,6 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	}
 
 	protected function appendGeneralInfo( $property ) {
-		global $wgContLang;
-
 		$config = $this->getConfig();
 
 		$data = [];
@@ -145,7 +142,7 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 		$data['phpversion'] = PHP_VERSION;
 		$data['phpsapi'] = PHP_SAPI;
 		if ( defined( 'HHVM_VERSION' ) ) {
-			$data['hhvmversion'] = HHVM_VERSION;
+			$data['hhvmversion'] = HHVM_VERSION; // @codeCoverageIgnore
 		}
 		$data['dbtype'] = $config->get( 'DBtype' );
 		$data['dbversion'] = $this->getDB()->getServerVersion();
@@ -165,8 +162,9 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 		$data['langconversion'] = !$config->get( 'DisableLangConversion' );
 		$data['titleconversion'] = !$config->get( 'DisableTitleConversion' );
 
-		if ( $wgContLang->linkPrefixExtension() ) {
-			$linkPrefixCharset = $wgContLang->linkPrefixCharset();
+		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
+		if ( $contLang->linkPrefixExtension() ) {
+			$linkPrefixCharset = $contLang->linkPrefixCharset();
 			$data['linkprefixcharset'] = $linkPrefixCharset;
 			// For backwards compatibility
 			$data['linkprefix'] = "/^((?>.*[^$linkPrefixCharset]|))(.+)$/sDu";
@@ -175,7 +173,7 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 			$data['linkprefix'] = '';
 		}
 
-		$linktrail = $wgContLang->linkTrail();
+		$linktrail = $contLang->linkTrail();
 		$data['linktrail'] = $linktrail ?: '';
 
 		$data['legaltitlechars'] = Title::legalChars();
@@ -198,26 +196,26 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 		$data['lang'] = $config->get( 'LanguageCode' );
 
 		$fallbacks = [];
-		foreach ( $wgContLang->getFallbackLanguages() as $code ) {
+		foreach ( $contLang->getFallbackLanguages() as $code ) {
 			$fallbacks[] = [ 'code' => $code ];
 		}
 		$data['fallback'] = $fallbacks;
 		ApiResult::setIndexedTagName( $data['fallback'], 'lang' );
 
-		if ( $wgContLang->hasVariants() ) {
+		if ( $contLang->hasVariants() ) {
 			$variants = [];
-			foreach ( $wgContLang->getVariants() as $code ) {
+			foreach ( $contLang->getVariants() as $code ) {
 				$variants[] = [
 					'code' => $code,
-					'name' => $wgContLang->getVariantname( $code ),
+					'name' => $contLang->getVariantname( $code ),
 				];
 			}
 			$data['variants'] = $variants;
 			ApiResult::setIndexedTagName( $data['variants'], 'lang' );
 		}
 
-		$data['rtl'] = $wgContLang->isRTL();
-		$data['fallback8bitEncoding'] = $wgContLang->fallback8bitEncoding();
+		$data['rtl'] = $contLang->isRTL();
+		$data['fallback8bitEncoding'] = $contLang->fallback8bitEncoding();
 
 		$data['readonly'] = wfReadOnly();
 		if ( $data['readonly'] ) {
@@ -229,12 +227,6 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 
 		$tz = $config->get( 'Localtimezone' );
 		$offset = $config->get( 'LocalTZoffset' );
-		if ( is_null( $tz ) ) {
-			$tz = 'UTC';
-			$offset = 0;
-		} elseif ( is_null( $offset ) ) {
-			$offset = 0;
-		}
 		$data['timezone'] = $tz;
 		$data['timeoffset'] = intval( $offset );
 		$data['articlepath'] = $config->get( 'ArticlePath' );
@@ -287,11 +279,13 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	}
 
 	protected function appendNamespaces( $property ) {
-		global $wgContLang;
 		$data = [
 			ApiResult::META_TYPE => 'assoc',
 		];
-		foreach ( $wgContLang->getFormattedNamespaces() as $ns => $title ) {
+		foreach (
+			MediaWikiServices::getInstance()->getContentLanguage()->getFormattedNamespaces()
+			as $ns => $title
+		) {
 			$data[$ns] = [
 				'id' => intval( $ns ),
 				'case' => MWNamespace::isCapitalized( $ns ) ? 'first-letter' : 'case-sensitive',
@@ -321,10 +315,10 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	}
 
 	protected function appendNamespaceAliases( $property ) {
-		global $wgContLang;
+		$contLang = MediaWikiServices::getInstance()->getContentLanguage();
 		$aliases = array_merge( $this->getConfig()->get( 'NamespaceAliases' ),
-			$wgContLang->getNamespaceAliases() );
-		$namespaces = $wgContLang->getNamespaces();
+			$contLang->getNamespaceAliases() );
+		$namespaces = $contLang->getNamespaces();
 		$data = [];
 		foreach ( $aliases as $title => $ns ) {
 			if ( $namespaces[$ns] == $title ) {
@@ -346,10 +340,10 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	}
 
 	protected function appendSpecialPageAliases( $property ) {
-		global $wgContLang;
 		$data = [];
-		$aliases = $wgContLang->getSpecialPageAliases();
-		foreach ( SpecialPageFactory::getNames() as $specialpage ) {
+		$services = MediaWikiServices::getInstance();
+		$aliases = $services->getContentLanguage()->getSpecialPageAliases();
+		foreach ( $services->getSpecialPageFactory()->getNames() as $specialpage ) {
 			if ( isset( $aliases[$specialpage] ) ) {
 				$arr = [ 'realname' => $specialpage, 'aliases' => $aliases[$specialpage] ];
 				ApiResult::setIndexedTagName( $arr['aliases'], 'alias' );
@@ -362,9 +356,11 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	}
 
 	protected function appendMagicWords( $property ) {
-		global $wgContLang;
 		$data = [];
-		foreach ( $wgContLang->getMagicWords() as $magicword => $aliases ) {
+		foreach (
+			MediaWikiServices::getInstance()->getContentLanguage()->getMagicWords()
+			as $magicword => $aliases
+		) {
 			$caseSensitive = array_shift( $aliases );
 			$arr = [ 'name' => $magicword, 'aliases' => $aliases ];
 			$arr['case-sensitive'] = (bool)$caseSensitive;
@@ -377,13 +373,13 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	}
 
 	protected function appendInterwikiMap( $property, $filter ) {
-		$local = null;
 		if ( $filter === 'local' ) {
 			$local = 1;
 		} elseif ( $filter === '!local' ) {
 			$local = 0;
-		} elseif ( $filter ) {
-			ApiBase::dieDebug( __METHOD__, "Unknown filter=$filter" );
+		} else {
+			// $filter === null
+			$local = null;
 		}
 
 		$params = $this->extractRequestParams();
@@ -663,13 +659,13 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 			$url = $config->get( 'RightsUrl' );
 		}
 		$text = $config->get( 'RightsText' );
-		if ( !$text && $title ) {
+		if ( $title && !strlen( $text ) ) {
 			$text = $title->getPrefixedText();
 		}
 
 		$data = [
-			'url' => $url ?: '',
-			'text' => $text ?: ''
+			'url' => strlen( $url ) ? $url : '',
+			'text' => strlen( $text ) ? $text : '',
 		];
 
 		return $this->getResult()->addValue( 'query', $property, $data );
@@ -792,8 +788,12 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 
 	public function appendExtensionTags( $property ) {
 		global $wgParser;
-		$wgParser->firstCallInit();
-		$tags = array_map( [ $this, 'formatParserTags' ], $wgParser->getTags() );
+		$tags = array_map(
+			function ( $item ) {
+				return "<$item>";
+			},
+			$wgParser->getTags()
+		);
 		ApiResult::setArrayType( $tags, 'BCarray' );
 		ApiResult::setIndexedTagName( $tags, 't' );
 
@@ -802,7 +802,6 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 
 	public function appendFunctionHooks( $property ) {
 		global $wgParser;
-		$wgParser->firstCallInit();
 		$hooks = $wgParser->getFunctionHooks();
 		ApiResult::setArrayType( $hooks, 'BCarray' );
 		ApiResult::setIndexedTagName( $hooks, 'h' );
@@ -811,7 +810,7 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	}
 
 	public function appendVariables( $property ) {
-		$variables = MagicWord::getVariableIDs();
+		$variables = MediaWikiServices::getInstance()->getMagicWordFactory()->getVariableIDs();
 		ApiResult::setArrayType( $variables, 'BCarray' );
 		ApiResult::setIndexedTagName( $variables, 'v' );
 
@@ -836,10 +835,6 @@ class ApiQuerySiteinfo extends ApiQueryBase {
 	public function appendUploadDialog( $property ) {
 		$config = $this->getConfig()->get( 'UploadDialog' );
 		return $this->getResult()->addValue( 'query', $property, $config );
-	}
-
-	private function formatParserTags( $item ) {
-		return "<{$item}>";
 	}
 
 	public function appendSubscribedHooks( $property ) {

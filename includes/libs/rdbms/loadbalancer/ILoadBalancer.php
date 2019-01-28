@@ -137,6 +137,14 @@ interface ILoadBalancer {
 	public function resolveDomainID( $domain );
 
 	/**
+	 * Close all connection and redefine the local domain for testing or schema creation
+	 *
+	 * @param DatabaseDomain|string $domain
+	 * @since 1.33
+	 */
+	public function redefineLocalDomain( $domain );
+
+	/**
 	 * Get the index of the reader connection, which may be a replica DB
 	 *
 	 * This takes into account load ratios and lag times. It should
@@ -187,7 +195,8 @@ interface ILoadBalancer {
 	/**
 	 * Get any open connection to a given server index, local or foreign
 	 *
-	 * Use CONN_TRX_AUTOCOMMIT to only look for connections opened with that flag
+	 * Use CONN_TRX_AUTOCOMMIT to only look for connections opened with that flag.
+	 * Avoid the use of begin() or startAtomic() on any such connections.
 	 *
 	 * @param int $i Server index or DB_MASTER/DB_REPLICA
 	 * @param int $flags Bitfield of CONN_* class constants
@@ -202,9 +211,10 @@ interface ILoadBalancer {
 	 * (e.g. sqlite) in order to avoid deadlocks. ILoadBalancer::getServerAttributes()
 	 * can be used to check such flags beforehand.
 	 *
-	 * If the caller uses $domain or sets CONN_TRX_AUTOCOMMIT in $flags, then it must also
-	 * call ILoadBalancer::reuseConnection() on the handle when finished using it.
+	 * If the caller uses $domain or sets CONN_TRX_AUTOCOMMIT in $flags, then it must
+	 * also call ILoadBalancer::reuseConnection() on the handle when finished using it.
 	 * In all other cases, this is not necessary, though not harmful either.
+	 * Avoid the use of begin() or startAtomic() on any such connections.
 	 *
 	 * @param int $i Server index (overrides $groups) or DB_MASTER/DB_REPLICA
 	 * @param array|string|bool $groups Query group(s), or false for the generic reader
@@ -236,7 +246,8 @@ interface ILoadBalancer {
 	 *
 	 * The CONN_TRX_AUTOCOMMIT flag is ignored for databases with ATTR_DB_LEVEL_LOCKING
 	 * (e.g. sqlite) in order to avoid deadlocks. ILoadBalancer::getServerAttributes()
-	 * can be used to check such flags beforehand.
+	 * can be used to check such flags beforehand. Avoid the use of begin() or startAtomic()
+	 * on any CONN_TRX_AUTOCOMMIT connections.
 	 *
 	 * @see ILoadBalancer::getConnection() for parameter information
 	 *
@@ -255,7 +266,8 @@ interface ILoadBalancer {
 	 *
 	 * The CONN_TRX_AUTOCOMMIT flag is ignored for databases with ATTR_DB_LEVEL_LOCKING
 	 * (e.g. sqlite) in order to avoid deadlocks. ILoadBalancer::getServerAttributes()
-	 * can be used to check such flags beforehand.
+	 * can be used to check such flags beforehand. Avoid the use of begin() or startAtomic()
+	 * on any CONN_TRX_AUTOCOMMIT connections.
 	 *
 	 * @see ILoadBalancer::getConnection() for parameter information
 	 *
@@ -274,7 +286,8 @@ interface ILoadBalancer {
 	 *
 	 * The CONN_TRX_AUTOCOMMIT flag is ignored for databases with ATTR_DB_LEVEL_LOCKING
 	 * (e.g. sqlite) in order to avoid deadlocks. ILoadBalancer::getServerAttributes()
-	 * can be used to check such flags beforehand.
+	 * can be used to check such flags beforehand. Avoid the use of begin() or startAtomic()
+	 * on any CONN_TRX_AUTOCOMMIT connections.
 	 *
 	 * @see ILoadBalancer::getConnection() for parameter information
 	 *
@@ -292,13 +305,14 @@ interface ILoadBalancer {
 	 * The index must be an actual index into the array. If a connection to the server is
 	 * already open and not considered an "in use" foreign connection, this simply returns it.
 	 *
-	 * Avoid using CONN_TRX_AUTOCOMMIT for databases with ATTR_DB_LEVEL_LOCKING (e.g. sqlite) in
-	 * order to avoid deadlocks. ILoadBalancer::getServerAttributes() can be used to check
+	 * Avoid using CONN_TRX_AUTOCOMMIT for databases with ATTR_DB_LEVEL_LOCKING (e.g. sqlite)
+	 * in order to avoid deadlocks. ILoadBalancer::getServerAttributes() can be used to check
 	 * such flags beforehand.
 	 *
-	 * If the caller uses $domain or sets CONN_TRX_AUTOCOMMIT in $flags, then it must also
-	 * call ILoadBalancer::reuseConnection() on the handle when finished using it.
+	 * If the caller uses $domain or sets CONN_TRX_AUTOCOMMIT in $flags, then it must
+	 * also call ILoadBalancer::reuseConnection() on the handle when finished using it.
 	 * In all other cases, this is not necessary, though not harmful either.
+	 * Avoid the use of begin() or startAtomic() on any such connections.
 	 *
 	 * @note This method throws DBAccessError if ILoadBalancer::disable() was called
 	 *
@@ -350,6 +364,7 @@ interface ILoadBalancer {
 	 * Return the server info structure for a given index, or false if the index is invalid.
 	 * @param int $i
 	 * @return array|bool
+	 * @since 1.31
 	 */
 	public function getServerInfo( $i );
 
@@ -438,7 +453,7 @@ interface ILoadBalancer {
 	public function beginMasterChanges( $fname = __METHOD__ );
 
 	/**
-	 * Issue COMMIT on all master connections where writes where done
+	 * Issue COMMIT on all open master connections to flush changes and view snapshots
 	 * @param string $fname Caller name
 	 * @throws DBExpectedError
 	 */
@@ -637,8 +652,9 @@ interface ILoadBalancer {
 	 * Set a new table prefix for the existing local domain ID for testing
 	 *
 	 * @param string $prefix
+	 * @since 1.33
 	 */
-	public function setDomainPrefix( $prefix );
+	public function setLocalDomainPrefix( $prefix );
 
 	/**
 	 * Make certain table names use their own database, schema, and table prefix

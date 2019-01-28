@@ -1,5 +1,7 @@
 <?php
 
+use Wikimedia\TestingAccessWrapper;
+
 class LanguageTest extends LanguageClassesTestCase {
 	/**
 	 * @covers Language::convertDoubleWidth
@@ -1772,6 +1774,45 @@ class LanguageTest extends LanguageClassesTestCase {
 	}
 
 	/**
+	 * @covers Language::clearCaches
+	 */
+	public function testClearCaches() {
+		$languageClass = TestingAccessWrapper::newFromClass( Language::class );
+
+		// Populate $dataCache
+		Language::getLocalisationCache()->getItem( 'zh', 'mainpage' );
+		$oldCacheObj = Language::$dataCache;
+		$this->assertNotCount( 0,
+			TestingAccessWrapper::newFromObject( Language::$dataCache )->loadedItems );
+
+		// Populate $mLangObjCache
+		$lang = Language::factory( 'en' );
+		$this->assertNotCount( 0, Language::$mLangObjCache );
+
+		// Populate $fallbackLanguageCache
+		Language::getFallbacksIncludingSiteLanguage( 'en' );
+		$this->assertNotCount( 0, $languageClass->fallbackLanguageCache );
+
+		// Populate $grammarTransformations
+		$lang->getGrammarTransformations();
+		$this->assertNotNull( $languageClass->grammarTransformations );
+
+		// Populate $languageNameCache
+		Language::fetchLanguageNames();
+		$this->assertNotNull( $languageClass->languageNameCache );
+
+		Language::clearCaches();
+
+		$this->assertNotSame( $oldCacheObj, Language::$dataCache );
+		$this->assertCount( 0,
+			TestingAccessWrapper::newFromObject( Language::$dataCache )->loadedItems );
+		$this->assertCount( 0, Language::$mLangObjCache );
+		$this->assertCount( 0, $languageClass->fallbackLanguageCache );
+		$this->assertNull( $languageClass->grammarTransformations );
+		$this->assertNull( $languageClass->languageNameCache );
+	}
+
+	/**
 	 * @dataProvider provideIsSupportedLanguage
 	 * @covers Language::isSupportedLanguage
 	 */
@@ -1838,18 +1879,34 @@ class LanguageTest extends LanguageClassesTestCase {
 	}
 
 	/**
+	 * @covers Language::hasVariant
+	 */
+	public function testHasVariant() {
+		// See LanguageSrTest::testHasVariant() for additional tests
+		$en = Language::factory( 'en' );
+		$this->assertTrue( $en->hasVariant( 'en' ), 'base is always a variant' );
+		$this->assertFalse( $en->hasVariant( 'en-bogus' ), 'bogus en variant' );
+
+		$bogus = Language::factory( 'bogus' );
+		$this->assertTrue( $bogus->hasVariant( 'bogus' ), 'base is always a variant' );
+	}
+
+	/**
 	 * @covers Language::equals
 	 */
 	public function testEquals() {
-		$en1 = new Language();
-		$en1->setCode( 'en' );
-
+		$en1 = Language::factory( 'en' );
 		$en2 = Language::factory( 'en' );
-		$en2->setCode( 'en' );
-
-		$this->assertTrue( $en1->equals( $en2 ), 'en equals en' );
+		$en3 = new Language();
+		$this->assertTrue( $en1->equals( $en2 ), 'en1 equals en2' );
+		$this->assertTrue( $en2->equals( $en3 ), 'en2 equals en3' );
+		$this->assertTrue( $en3->equals( $en1 ), 'en3 equals en1' );
 
 		$fr = Language::factory( 'fr' );
 		$this->assertFalse( $en1->equals( $fr ), 'en not equals fr' );
+
+		$ar1 = Language::factory( 'ar' );
+		$ar2 = new LanguageAr();
+		$this->assertTrue( $ar1->equals( $ar2 ), 'ar equals ar' );
 	}
 }

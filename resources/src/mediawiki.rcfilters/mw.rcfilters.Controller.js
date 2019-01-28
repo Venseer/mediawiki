@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 
 	var byteLength = require( 'mediawiki.String' ).byteLength;
 
@@ -67,6 +67,7 @@
 		// Prepare views
 		if ( namespaceStructure ) {
 			items = [];
+			// eslint-disable-next-line jquery/no-each-util
 			$.each( namespaceStructure, function ( namespaceID, label ) {
 				// Build and clean up the individual namespace items definition
 				items.push( {
@@ -74,8 +75,8 @@
 					label: label || mw.msg( 'blanknamespace' ),
 					description: '',
 					identifiers: [
-						( namespaceID < 0 || namespaceID % 2 === 0 ) ?
-							'subject' : 'talk'
+						mw.Title.isTalkNamespace( namespaceID ) ?
+							'talk' : 'subject'
 					],
 					cssClass: 'mw-changeslist-ns-' + namespaceID
 				} );
@@ -89,7 +90,7 @@
 					name: 'namespace', // parameter name is singular
 					type: 'string_options',
 					title: mw.msg( 'namespaces' ),
-					labelPrefixKey: { 'default': 'rcfilters-tag-prefix-namespace', inverted: 'rcfilters-tag-prefix-namespace-inverted' },
+					labelPrefixKey: { default: 'rcfilters-tag-prefix-namespace', inverted: 'rcfilters-tag-prefix-namespace-inverted' },
 					separator: ';',
 					fullCoverage: true,
 					filters: items
@@ -103,7 +104,7 @@
 						hidden: true,
 						filters: [ {
 							name: 'invert',
-							'default': '0'
+							default: '0'
 						} ]
 					} ]
 			};
@@ -140,7 +141,7 @@
 						max: 1000
 					},
 					sortFunc: function ( a, b ) { return Number( a.name ) - Number( b.name ); },
-					'default': mw.user.options.get( this.limitPreferenceName, displayConfig.limitDefault ),
+					default: mw.user.options.get( this.limitPreferenceName, displayConfig.limitDefault ),
 					sticky: true,
 					filters: displayConfig.limitArray.map( function ( num ) {
 						return controller._createFilterDataFromNumber( num, num );
@@ -163,7 +164,7 @@
 							( Number( i ) * 24 ).toFixed( 2 ) :
 							Number( i );
 					},
-					'default': mw.user.options.get( this.daysPreferenceName, displayConfig.daysDefault ),
+					default: mw.user.options.get( this.daysPreferenceName, displayConfig.daysDefault ),
 					sticky: true,
 					filters: [
 						// Hours (1, 2, 6, 12)
@@ -192,7 +193,7 @@
 					filters: [
 						{
 							name: 'enhanced',
-							'default': String( mw.user.options.get( 'usenewrc', 0 ) )
+							default: String( mw.user.options.get( 'usenewrc', 0 ) )
 						}
 					]
 				}
@@ -202,6 +203,7 @@
 		// Before we do anything, we need to see if we require additional items in the
 		// groups that have 'AllowArbitrary'. For the moment, those are only single_option
 		// groups; if we ever expand it, this might need further generalization:
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( views, function ( viewName, viewData ) {
 			viewData.groups.forEach( function ( groupData ) {
 				var extraValues = [];
@@ -337,8 +339,8 @@
 	/**
 	 * Create filter data from a number, for the filters that are numerical value
 	 *
-	 * @param {Number} num Number
-	 * @param {Number} numForDisplay Number for the label
+	 * @param {number} num Number
+	 * @param {number} numForDisplay Number for the label
 	 * @return {Object} Filter data
 	 */
 	mw.rcfilters.Controller.prototype._createFilterDataFromNumber = function ( num, numForDisplay ) {
@@ -672,7 +674,7 @@
 	 * Check if new changes, newer than those currently shown, are available
 	 *
 	 * @return {jQuery.Promise} Promise object that resolves with a bool
-	 * 	specifying if there are new changes or not
+	 *   specifying if there are new changes or not
 	 *
 	 * @private
 	 */
@@ -1216,4 +1218,4 @@
 			this.filtersModel.getViewTrigger( view )
 		);
 	};
-}( mediaWiki, jQuery ) );
+}() );

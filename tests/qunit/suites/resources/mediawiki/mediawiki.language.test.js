@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 	'use strict';
 
 	var grammarTests, bcp47Tests;
@@ -598,6 +598,7 @@
 		]
 	};
 
+	// eslint-disable-next-line jquery/no-each-util
 	$.each( grammarTests, function ( langCode, test ) {
 		if ( langCode === mw.config.get( 'wgUserLanguage' ) ) {
 			grammarTest( langCode, test );
@@ -717,7 +718,7 @@
 		[ 'kk-Cyrl', 'kk-Cyrl' ],
 		[ 'kk-Latn', 'kk-Latn' ],
 		[ 'map-bms', 'jv-x-bms' ],
-		[ 'mo', 'ro-MD' ],
+		[ 'mo', 'ro-Cyrl-MD' ],
 		[ 'nrm', 'nrf' ],
 		[ 'nl-informal', 'nl-x-informal' ],
 		[ 'roa-tara', 'nap-x-tara' ],
@@ -744,4 +745,4 @@
 			assert.strictEqual( mw.language.bcp47( input.toUpperCase() ), expected );
 		} );
 	} );
-}( mediaWiki, jQuery ) );
+}() );

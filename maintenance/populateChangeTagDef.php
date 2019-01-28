@@ -23,7 +23,7 @@ require_once __DIR__ . '/Maintenance.php';
  *
  * @ingroup Maintenance
  */
-class PopulateChangeTagDef extends Maintenance {
+class PopulateChangeTagDef extends LoggedUpdateMaintenance {
 	/** @var Wikimedia\Rdbms\ILBFactory */
 	protected $lbFactory;
 
@@ -34,27 +34,75 @@ class PopulateChangeTagDef extends Maintenance {
 		$this->setBatchSize( 1000 );
 		$this->addOption(
 			'sleep',
-			'Sleep time (in seconds) between every batch',
+			'Sleep time (in seconds) between every batch, defaults to zero',
 			false,
 			true
 		);
+		$this->addOption( 'populate-only', 'Do not update change_tag_def table' );
+		$this->addOption( 'set-user-tags-only', 'Only update ctd_user_defined from valid_tag table' );
 	}
 
-	public function execute() {
-		global $wgChangeTagsSchemaMigrationStage;
+	protected function doDBUpdates() {
 		$this->lbFactory = MediaWiki\MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
 		$this->setBatchSize( $this->getOption( 'batch-size', $this->getBatchSize() ) );
 
-		$this->countDown( 5 );
-		if ( $wgChangeTagsSchemaMigrationStage < MIGRATION_NEW ) {
-			$this->updateCountTag();
+		if ( $this->lbFactory->getMainLB()->getConnection( DB_REPLICA )->fieldExists(
+				'change_tag',
+				'ct_tag',
+				__METHOD__
+			)
+		) {
+			if ( $this->hasOption( 'set-user-tags-only' ) ) {
+				$this->setUserDefinedTags();
+				return true;
+			}
+			if ( !$this->hasOption( 'populate-only' ) ) {
+				$this->updateCountTag();
+			}
 			$this->backpopulateChangeTagId();
+			$this->setUserDefinedTags();
 		} else {
 			$this->updateCountTagId();
 		}
 
 		// TODO: Implement
 		// $this->cleanZeroCountRows();
+
+		return true;
+	}
+
+	private function setUserDefinedTags() {
+		$dbr = $this->lbFactory->getMainLB()->getConnection( DB_REPLICA );
+
+		$userTags = $dbr->selectFieldValues(
+			'valid_tag',
+			'vt_tag',
+			[],
+			__METHOD__
+		);
+
+		if ( empty( $userTags ) ) {
+			$this->output( "No user defined tags to set, moving on...\n" );
+			return;
+		}
+
+		if ( $this->hasOption( 'dry-run' ) ) {
+			$this->output(
+				'These tags will have ctd_user_defined=1 : ' . implode( ', ', $userTags ) . "\n"
+			);
+			return;
+		}
+
+		$dbw = $this->lbFactory->getMainLB()->getConnection( DB_MASTER );
+
+		$dbw->update(
+			'change_tag_def',
+			[ 'ctd_user_defined' => 1 ],
+			[ 'ctd_name' => $userTags ],
+			__METHOD__
+		);
+		$this->lbFactory->waitForReplication();
+		$this->output( "Finished setting user defined tags in change_tag_def table\n" );
 	}
 
 	private function updateCountTagId() {
@@ -149,7 +197,7 @@ class PopulateChangeTagDef extends Maintenance {
 	private function backpopulateChangeTagPerTag( $tagName, $tagId ) {
 		$dbr = $this->lbFactory->getMainLB()->getConnection( DB_REPLICA );
 		$dbw = $this->lbFactory->getMainLB()->getConnection( DB_MASTER );
-		$sleep = (int)$this->getOption( 'sleep', 10 );
+		$sleep = (int)$this->getOption( 'sleep', 0 );
 		$lastId = 0;
 		$this->output( "Starting to add ct_tag_id = {$tagId} for ct_tag = {$tagName}\n" );
 		while ( true ) {
@@ -192,6 +240,9 @@ class PopulateChangeTagDef extends Maintenance {
 		$this->output( "Finished adding ct_tag_id = {$tagId} for ct_tag = {$tagName}\n" );
 	}
 
+	protected function getUpdateKey() {
+		return __CLASS__;
+	}
 }
 
 $maintClass = PopulateChangeTagDef::class;

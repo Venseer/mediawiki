@@ -13,14 +13,24 @@
 .mw-email-authenticated .oo-ui-labelWidget { }
 */
 
+/*
+ * Use `position: sticky` on supported browsers, degrades gracefully in
+ * all others, therefore no `@supports` feature query to reduce code complexity.
+ */
+.mw-prefs-buttons {
+	background-color: #fff;
+	position: -webkit-sticky;
+	position: sticky;
+	bottom: 0;
+	margin-top: -1px;
+	border-top: 1px solid #c8ccd1;
+	padding: 1em 0;
+}
+
 /* This is needed because add extra buttons in a weird way */
 .mw-prefs-buttons .mw-htmlform-submit-buttons {
 	display: inline;
 	margin: 0;
-}
-
-.mw-prefs-buttons {
-	margin-top: 1em;
 }
 
 #prefcontrol {
@@ -28,19 +38,18 @@
 }
 
 /*
- * Hide, but keep accessible for screen-readers.
+ * Hide, when not keyboard focussed.
  */
 .client-js .mw-navigation-hint:not( :focus ) {
-	.mixin-screen-reader-text;
+	height: 0;
+	overflow: hidden;
 }
 
-/* Override OOUI styles so that dropdowns near the bottom of the form don't get clipped,
- * e.g.'Appearance' / 'Threshold for stub link formatting'. This is hacky and bad, it would be
- * better solved by setting overlays for the widgets, but we can't do it from PHP... */
-#preferences .oo-ui-panelLayout {
-	position: static;
-	overflow: visible;
-	.transform( none );
+/* Most outer Panellayout:
+ * Decrease contrast of `border` slightly as padding/border combination is sufficient
+ * accessibility wise and focus of content is more important here. */
+#preferences .oo-ui-panelLayout-framed {
+	border-color: #c8ccd1;
 }
 
 #preferences .oo-ui-menuLayout .oo-ui-panelLayout-framed .oo-ui-panelLayout-framed {
@@ -110,6 +119,10 @@
 		&:first-child {
 			margin-top: 0.85714286em;
 		}
+
+		.oo-ui-panelLayout-framed:first-child {
+			margin-top: 0;
+		}
 	}
 
 	> .oo-ui-panelLayout > .oo-ui-fieldsetLayout > .oo-ui-fieldsetLayout-header {
@@ -135,6 +148,14 @@
 		display: inline-block;
 		width: 80%;
 		vertical-align: middle;
+	}
+}
+
+/* Compact number inputs, used at "Display options" on "Recent changes" */
+.mw-htmlform-field-HTMLFloatField,
+.mw-htmlform-field-HTMLIntField {
+	.oo-ui-inputWidget {
+		max-width: 10em;
 	}
 }
 

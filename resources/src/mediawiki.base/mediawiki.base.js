@@ -14,7 +14,6 @@
  *   "mediawiki" module, and will remain a default/implicit dependency for all
  *   regular modules, just like jquery and wikibits already are.
  */
-/* globals mw */
 ( function () {
 	'use strict';
 
@@ -22,7 +21,7 @@
 		mwLoaderTrack = mw.track,
 		trackCallbacks = $.Callbacks( 'memory' ),
 		trackHandlers = [],
-		hasOwn = Object.prototype.hasOwnProperty;
+		queue;
 
 	/**
 	 * Object constructor for messages.
@@ -104,7 +103,13 @@
 		 * @return {string} Parsed message
 		 */
 		parser: function () {
-			return mw.format.apply( null, [ this.map.get( this.key ) ].concat( this.parameters ) );
+			var text;
+			if ( mw.config.get( 'wgUserLanguage' ) === 'qqx' ) {
+				text = '(' + this.key + '$*)';
+			} else {
+				text = this.map.get( this.key );
+			}
+			return mw.format.apply( null, [ text ].concat( this.parameters ) );
 		},
 
 		/**
@@ -218,6 +223,9 @@
 		 * @return {boolean}
 		 */
 		exists: function () {
+			if ( mw.config.get( 'wgUserLanguage' ) === 'qqx' ) {
+				return true;
+			}
 			return this.map.exists( this.key );
 		}
 	};
@@ -240,6 +248,29 @@
 	};
 
 	/**
+	 * Replace $* with a list of parameters for &uselang=qqx.
+	 *
+	 * @private
+	 * @since 1.33
+	 * @param {string} formatString Format string
+	 * @param {Array} parameters Values for $N replacements
+	 * @return {string} Transformed format string
+	 */
+	mw.internalDoTransformFormatForQqx = function ( formatString, parameters ) {
+		var parametersString;
+		if ( formatString.indexOf( '$*' ) !== -1 ) {
+			parametersString = '';
+			if ( parameters.length ) {
+				parametersString = ': ' + parameters.map( function ( _, i ) {
+					return '$' + ( i + 1 );
+				} ).join( ', ' );
+			}
+			return formatString.replace( '$*', parametersString );
+		}
+		return formatString;
+	};
+
+	/**
 	 * Format a string. Replace $1, $2 ... $N with positional arguments.
 	 *
 	 * Used by Message#parser().
@@ -251,6 +282,7 @@
 	 */
 	mw.format = function ( formatString ) {
 		var parameters = slice.call( arguments, 1 );
+		formatString = mw.internalDoTransformFormatForQqx( formatString, parameters );
 		return formatString.replace( /\$(\d+)/g, function ( str, match ) {
 			var index = parseInt( match, 10 ) - 1;
 			return parameters[ index ] !== undefined ? parameters[ index ] : '$' + match;
@@ -357,7 +389,7 @@
 		} );
 	};
 
-	// Fire events from before track() triggred fire()
+	// Fire events from before track() triggered fire()
 	trackCallbacks.fire( mw.trackQueue );
 
 	/**
@@ -400,7 +432,7 @@
 	 * @class mw.hook
 	 */
 	mw.hook = ( function () {
-		var lists = {};
+		var lists = Object.create( null );
 
 		/**
 		 * Create an instance of mw.hook.
@@ -411,9 +443,7 @@
 		 * @return {mw.hook}
 		 */
 		return function ( name ) {
-			var list = hasOwn.call( lists, name ) ?
-				lists[ name ] :
-				lists[ name ] = $.Callbacks( 'memory' );
+			var list = lists[ name ] || ( lists[ name ] = $.Callbacks( 'memory' ) );
 
 			return {
 				/**
@@ -549,11 +579,11 @@
 						} else if ( contents instanceof this.Cdata ) {
 							// CDATA
 							if ( /<\/[a-zA-z]/.test( contents.value ) ) {
-								throw new Error( 'mw.html.element: Illegal end tag found in CDATA' );
+								throw new Error( 'Illegal end tag found in CDATA' );
 							}
 							s += contents.value;
 						} else {
-							throw new Error( 'mw.html.element: Invalid type of contents' );
+							throw new Error( 'Invalid type of contents' );
 						}
 				}
 				s += '</' + name + '>';
@@ -642,4 +672,23 @@
 	// Alias $j to jQuery for backwards compatibility
 	// @deprecated since 1.23 Use $ or jQuery instead
 	mw.log.deprecate( window, '$j', $, 'Use $ or jQuery instead.' );
+
+	// Process callbacks for Grade A that require modules.
+	queue = window.RLQ;
+	// Replace temporary RLQ implementation from startup.js with the
+	// final implementation that also processes callbacks that can
+	// require modules. It must also support late arrivals of
+	// plain callbacks. (T208093)
+	window.RLQ = {
+		push: function ( entry ) {
+			if ( typeof entry === 'function' ) {
+				entry();
+			} else {
+				mw.loader.using( entry[ 0 ], entry[ 1 ] );
+			}
+		}
+	};
+	while ( queue[ 0 ] ) {
+		window.RLQ.push( queue.shift() );
+	}
 }() );

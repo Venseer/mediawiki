@@ -79,7 +79,11 @@ class DeferredUpdates {
 	public static function addUpdate( DeferrableUpdate $update, $stage = self::POSTSEND ) {
 		global $wgCommandLineMode;
 
-		if ( self::$executeContext && self::$executeContext['stage'] >= $stage ) {
+		if (
+			self::$executeContext &&
+			self::$executeContext['stage'] >= $stage &&
+			!( $update instanceof MergeableUpdate )
+		) {
 			// This is a sub-DeferredUpdate; run it right after its parent update.
 			// Also, while post-send updates are running, push any "pre-send" jobs to the
 			// active post-send queue to make sure they get run this round (or at all).
@@ -125,23 +129,17 @@ class DeferredUpdates {
 	 */
 	public static function doUpdates( $mode = 'run', $stage = self::ALL ) {
 		$stageEffective = ( $stage === self::ALL ) ? self::POSTSEND : $stage;
+		// For ALL mode, make sure that any PRESEND updates added along the way get run.
+		// Normally, these use the subqueue, but that isn't true for MergeableUpdate items.
+		do {
+			if ( $stage === self::ALL || $stage === self::PRESEND ) {
+				self::execute( self::$preSendUpdates, $mode, $stageEffective );
+			}
 
-		if ( $stage === self::ALL || $stage === self::PRESEND ) {
-			self::execute( self::$preSendUpdates, $mode, $stageEffective );
-		}
-
-		if ( $stage === self::ALL || $stage == self::POSTSEND ) {
-			self::execute( self::$postSendUpdates, $mode, $stageEffective );
-		}
-	}
-
-	/**
-	 * @param bool $value Whether to just immediately run updates in addUpdate()
-	 * @since 1.28
-	 * @deprecated 1.29 Causes issues in Web-executed jobs - see T165714 and T100085.
-	 */
-	public static function setImmediateMode( $value ) {
-		wfDeprecated( __METHOD__, '1.29' );
+			if ( $stage === self::ALL || $stage == self::POSTSEND ) {
+				self::execute( self::$postSendUpdates, $mode, $stageEffective );
+			}
+		} while ( $stage === self::ALL && self::$preSendUpdates );
 	}
 
 	/**
@@ -155,6 +153,10 @@ class DeferredUpdates {
 				/** @var MergeableUpdate $existingUpdate */
 				$existingUpdate = $queue[$class];
 				$existingUpdate->merge( $update );
+				// Move the update to the end to handle things like mergeable purge
+				// updates that might depend on the prior updates in the queue running
+				unset( $queue[$class] );
+				$queue[$class] = $existingUpdate;
 			} else {
 				$queue[$class] = $update;
 			}

@@ -59,6 +59,46 @@ class ApiErrorFormatter {
 	}
 
 	/**
+	 * Test whether a code is a valid API error code
+	 *
+	 * A valid code contains only ASCII letters, numbers, underscore, and
+	 * hyphen and is not the empty string.
+	 *
+	 * For backwards compatibility, any code beginning 'internal_api_error_' is
+	 * also allowed.
+	 *
+	 * @param string $code
+	 * @return bool
+	 */
+	public static function isValidApiCode( $code ) {
+		return is_string( $code ) && (
+			preg_match( '/^[a-zA-Z0-9_-]+$/', $code ) ||
+			// TODO: Deprecate this
+			preg_match( '/^internal_api_error_[^\0\r\n]+$/', $code )
+		);
+	}
+
+	/**
+	 * Return a formatter like this one but with a different format
+	 *
+	 * @since 1.32
+	 * @param string $format New format.
+	 * @return ApiErrorFormatter
+	 */
+	public function newWithFormat( $format ) {
+		return new self( $this->result, $this->lang, $format, $this->useDB );
+	}
+
+	/**
+	 * Fetch the format for this formatter
+	 * @since 1.32
+	 * @return string
+	 */
+	public function getFormat() {
+		return $this->format;
+	}
+
+	/**
 	 * Fetch the Language for this formatter
 	 * @since 1.29
 	 * @return Language
@@ -113,9 +153,10 @@ class ApiErrorFormatter {
 	 * @param string|null $modulePath
 	 * @param StatusValue $status
 	 * @param string[]|string $types 'warning' and/or 'error'
+	 * @param string[] $filter Messages to filter out (since 1.33)
 	 */
 	public function addMessagesFromStatus(
-		$modulePath, StatusValue $status, $types = [ 'warning', 'error' ]
+		$modulePath, StatusValue $status, $types = [ 'warning', 'error' ], array $filter = []
 	) {
 		if ( $status->isGood() || !$status->getErrors() ) {
 			return;
@@ -138,7 +179,9 @@ class ApiErrorFormatter {
 				->inLanguage( $this->lang )
 				->title( $this->getDummyTitle() )
 				->useDatabase( $this->useDB );
-			$this->addWarningOrError( $tag, $modulePath, $msg );
+			if ( !in_array( $msg->getKey(), $filter, true ) ) {
+				$this->addWarningOrError( $tag, $modulePath, $msg );
+			}
 		}
 	}
 
@@ -164,16 +207,6 @@ class ApiErrorFormatter {
 			$msg = Message::newFromSpecifier( $exception );
 			$params = [];
 		} else {
-			// Extract code and data from the exception, if applicable
-			if ( $exception instanceof UsageException ) {
-				$data = $exception->getMessageArray();
-				if ( !$options['code'] ) {
-					$options['code'] = $data['code'];
-				}
-				unset( $data['code'], $data['info'] );
-				$options['data'] = array_merge( $data, $options['data'] );
-			}
-
 			if ( isset( $options['wrap'] ) ) {
 				$msg = $options['wrap'];
 			} else {
@@ -181,6 +214,7 @@ class ApiErrorFormatter {
 				if ( !isset( $options['code'] ) ) {
 					$class = preg_replace( '#^Wikimedia\\\Rdbms\\\#', '', get_class( $exception ) );
 					$options['code'] = 'internal_api_error_' . $class;
+					$options['data']['errorclass'] = get_class( $exception );
 				}
 			}
 			$params = [ wfEscapeWikiText( $exception->getMessage() ) ];
@@ -369,6 +403,10 @@ class ApiErrorFormatter_BackCompat extends ApiErrorFormatter {
 	 */
 	public function __construct( ApiResult $result ) {
 		parent::__construct( $result, Language::factory( 'en' ), 'none', false );
+	}
+
+	public function getFormat() {
+		return 'bc';
 	}
 
 	public function arrayFromStatus( StatusValue $status, $type = 'error', $format = null ) {

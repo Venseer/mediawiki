@@ -1,4 +1,4 @@
-( function ( $, mw, OO ) {
+( function () {
 	'use strict';
 	var ApiSandbox, Util, WidgetMethods, Validators,
 		$content, panel, booklet, oldhash, windowManager,
@@ -33,11 +33,11 @@
 		this.checkbox = new OO.ui.CheckboxInputWidget( config.checkbox )
 			.on( 'change', this.onCheckboxChange, [], this );
 
-		OptionalWidget[ 'super' ].call( this, config );
+		OptionalWidget.super.call( this, config );
 
 		// Forward most methods for convenience
 		for ( k in this.widget ) {
-			if ( $.isFunction( this.widget[ k ] ) && !this[ k ] ) {
+			if ( typeof this.widget[ k ] === 'function' && !this[ k ] ) {
 				this[ k ] = this.widget[ k ].bind( this.widget );
 			}
 		}
@@ -70,12 +70,12 @@
 	};
 	OptionalWidget.prototype.onOverlayClick = function () {
 		this.setDisabled( false );
-		if ( $.isFunction( this.widget.focus ) ) {
+		if ( typeof this.widget.focus === 'function' ) {
 			this.widget.focus();
 		}
 	};
 	OptionalWidget.prototype.setDisabled = function ( disabled ) {
-		OptionalWidget[ 'super' ].prototype.setDisabled.call( this, disabled );
+		OptionalWidget.super.prototype.setDisabled.call( this, disabled );
 		this.widget.setDisabled( this.isDisabled() );
 		this.checkbox.setSelected( !this.isDisabled() );
 		this.$cover.toggle( this.isDisabled() );
@@ -90,7 +90,7 @@
 			},
 			setApiValue: function ( v ) {
 				if ( v === undefined ) {
-					v = this.paramInfo[ 'default' ];
+					v = this.paramInfo.default;
 				}
 				this.setValue( v );
 			},
@@ -103,7 +103,7 @@
 				} ).done( function ( ok ) {
 					ok = ok || suppressErrors;
 					that.setIcon( ok ? null : 'alert' );
-					that.setIconTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
+					that.setTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
 				} );
 			}
 		},
@@ -174,7 +174,7 @@
 				var menu = this.getMenu();
 
 				if ( v === undefined ) {
-					v = this.paramInfo[ 'default' ];
+					v = this.paramInfo.default;
 				}
 				if ( v === undefined ) {
 					menu.selectItem();
@@ -185,7 +185,7 @@
 			apiCheckValid: function () {
 				var ok = this.getApiValue() !== undefined || suppressErrors;
 				this.setIcon( ok ? null : 'alert' );
-				this.setIconTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
+				this.setTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
 				return $.Deferred().resolve( ok ).promise();
 			}
 		},
@@ -204,7 +204,7 @@
 				}
 			},
 			getApiValueForTemplates: function () {
-				return this.isDisabled() ? this.parseApiValue( this.paramInfo[ 'default' ] ) : this.getValue();
+				return this.isDisabled() ? this.parseApiValue( this.paramInfo.default ) : this.getValue();
 			},
 			getApiValue: function () {
 				var items = this.getValue();
@@ -216,7 +216,7 @@
 			},
 			setApiValue: function ( v ) {
 				if ( v === undefined ) {
-					v = this.paramInfo[ 'default' ];
+					v = this.paramInfo.default;
 				}
 				this.setValue( this.parseApiValue( v ) );
 			},
@@ -233,7 +233,7 @@
 				}
 
 				this.setIcon( ok ? null : 'alert' );
-				this.setIconTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
+				this.setTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
 				return $.Deferred().resolve( ok ).promise();
 			},
 			createTagItemWidget: function ( data, label ) {
@@ -266,12 +266,12 @@
 
 		submoduleWidget: {
 			single: function () {
-				var v = this.isDisabled() ? this.paramInfo[ 'default' ] : this.getApiValue();
+				var v = this.isDisabled() ? this.paramInfo.default : this.getApiValue();
 				return v === undefined ? [] : [ { value: v, path: this.paramInfo.submodules[ v ] } ];
 			},
 			multi: function () {
 				var map = this.paramInfo.submodules,
-					v = this.isDisabled() ? this.paramInfo[ 'default' ] : this.getApiValue();
+					v = this.isDisabled() ? this.paramInfo.default : this.getApiValue();
 				return v === undefined || v === '' ? [] : String( v ).split( '|' ).map( function ( v ) {
 					return { value: v, path: map[ v ] };
 				} );
@@ -291,7 +291,7 @@
 			apiCheckValid: function () {
 				var ok = this.getValue() !== null || suppressErrors;
 				this.setIcon( ok ? null : 'alert' );
-				this.setIconTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
+				this.setTitle( ok ? '' : mw.message( 'apisandbox-alert-field' ).plain() );
 				return $.Deferred().resolve( ok ).promise();
 			}
 		}
@@ -468,7 +468,7 @@
 						isInteger: true
 					} );
 					widget.setIcon = widget.input.setIcon.bind( widget.input );
-					widget.setIconTitle = widget.input.setIconTitle.bind( widget.input );
+					widget.setTitle = widget.input.setTitle.bind( widget.input );
 					widget.getValidity = widget.input.getValidity.bind( widget.input );
 					widget.paramInfo = pi;
 					$.extend( widget, WidgetMethods.textInputWidget );
@@ -524,6 +524,7 @@
 					break;
 
 				case 'namespace':
+					// eslint-disable-next-line jquery/no-map-util
 					items = $.map( mw.config.get( 'wgFormattedNamespaces' ), function ( name, ns ) {
 						if ( ns === '0' ) {
 							name = mw.message( 'blanknamespace' ).text();
@@ -661,7 +662,9 @@
 				$.extend( finalWidget, WidgetMethods.optionalWidget );
 				if ( widget.getSubmodules ) {
 					finalWidget.getSubmodules = widget.getSubmodules.bind( widget );
-					finalWidget.on( 'disable', function () { setTimeout( ApiSandbox.updateUI ); } );
+					finalWidget.on( 'disable', function () {
+						setTimeout( ApiSandbox.updateUI );
+					} );
 				}
 				if ( widget.getApiValueForTemplates ) {
 					finalWidget.getApiValueForTemplates = widget.getApiValueForTemplates.bind( widget );
@@ -669,7 +672,7 @@
 				finalWidget.setDisabled( true );
 			}
 
-			widget.setApiValue( pi[ 'default' ] );
+			widget.setApiValue( pi.default );
 
 			return finalWidget;
 		},
@@ -974,6 +977,7 @@
 			// OO.ui.ButtonWidget doesn't take focus itself (T128054)
 			$focus = $( '#mw-apisandbox-ui' ).find( document.activeElement );
 			if ( $focus.length ) {
+				// eslint-disable-next-line jquery/no-event-shorthand
 				$focus[ 0 ].blur();
 			}
 
@@ -1204,14 +1208,14 @@
 								.text( data )
 								.appendTo( $result );
 						}
-						if ( paramsAreForced || data[ 'continue' ] ) {
+						if ( paramsAreForced || data.continue ) {
 							$result.append(
 								$( '<div>' ).append(
 									new OO.ui.ButtonWidget( {
 										label: mw.message( 'apisandbox-continue' ).text()
 									} ).on( 'click', function () {
-										ApiSandbox.sendRequest( $.extend( {}, baseRequestParams, data[ 'continue' ] ) );
-									} ).setDisabled( !data[ 'continue' ] ).$element,
+										ApiSandbox.sendRequest( $.extend( {}, baseRequestParams, data.continue ) );
+									} ).setDisabled( !data.continue ).$element,
 									( clear = new OO.ui.ButtonWidget( {
 										label: mw.message( 'apisandbox-continue-clear' ).text()
 									} ).on( 'click', function () {
@@ -1352,7 +1356,7 @@
 		this.templatedItemsCache = {};
 		this.tokenWidget = null;
 		this.indentLevel = config.indentLevel ? config.indentLevel : 0;
-		ApiSandbox.PageLayout[ 'super' ].call( this, config.key, config );
+		ApiSandbox.PageLayout.super.call( this, config.key, config );
 		this.loadParamInfo();
 	};
 	OO.inheritClass( ApiSandbox.PageLayout, OO.ui.PageLayout );
@@ -1360,17 +1364,17 @@
 		this.outlineItem.setLevel( this.indentLevel );
 		this.outlineItem.setLabel( this.displayText );
 		this.outlineItem.setIcon( this.apiIsValid || suppressErrors ? null : 'alert' );
-		this.outlineItem.setIconTitle(
+		this.outlineItem.setTitle(
 			this.apiIsValid || suppressErrors ? '' : mw.message( 'apisandbox-alert-page' ).plain()
 		);
 	};
 
 	function widgetLabelOnClick() {
 		var f = this.getField();
-		if ( $.isFunction( f.setDisabled ) ) {
+		if ( typeof f.setDisabled === 'function' ) {
 			f.setDisabled( false );
 		}
-		if ( $.isFunction( f.focus ) ) {
+		if ( typeof f.focus === 'function' ) {
 			f.focus();
 		}
 	}
@@ -1565,7 +1569,7 @@
 		// it makes it too hard to read and our "disabled"
 		// isn't really disabled.
 		widgetField.onFieldDisable( false );
-		widgetField.onFieldDisable = $.noop;
+		widgetField.onFieldDisable = function () {};
 
 		widgetField.apiParamIndex = ppi.index;
 
@@ -1596,6 +1600,7 @@
 		}
 
 		toRemove = {};
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( this.templatedItemsCache, function ( k, el ) {
 			if ( el.widget.isElementAttached() ) {
 				toRemove[ k ] = el;
@@ -1613,7 +1618,7 @@
 			};
 		} );
 		doProcess = function ( placeholder, target ) {
-			var values, container, index, usedVars, done;
+			var values, container, index, usedVars, done, items, i;
 
 			target = prefix + target;
 
@@ -1644,11 +1649,13 @@
 			done = $.isEmptyObject( p.vars );
 			if ( done ) {
 				container = Util.apiBool( p.info.deprecated ) ? that.deprecatedItemsFieldset : that.itemsFieldset;
-				index = container.getItems().findIndex( function ( el ) {
-					return el.apiParamIndex !== undefined && el.apiParamIndex > p.info.index;
-				} );
-				if ( index < 0 ) {
-					index = undefined;
+				items = container.getItems();
+				index = undefined;
+				for ( i = 0; i < items.length; i++ ) {
+					if ( items[ i ].apiParamIndex !== undefined && items[ i ].apiParamIndex > p.info.index ) {
+						index = i;
+						break;
+					}
 				}
 			}
 			values.forEach( function ( value ) {
@@ -1682,6 +1689,7 @@
 					}
 				} else {
 					newVars = {};
+					// eslint-disable-next-line jquery/no-each-util
 					$.each( p.vars, function ( k, v ) {
 						newVars[ k ] = v.replace( placeholder, value );
 					} );
@@ -1697,9 +1705,11 @@
 		};
 		while ( toProcess.length ) {
 			p = toProcess.shift();
+			// eslint-disable-next-line jquery/no-each-util
 			$.each( p.vars, doProcess );
 		}
 
+		// eslint-disable-next-line jquery/no-map-util
 		toRemove = $.map( toRemove, function ( el, name ) {
 			delete that.widgets[ name ];
 			return [ el.widgetField, el.helpField ];
@@ -1747,7 +1757,7 @@
 				widget = Util.createWidgetForParameter( {
 					name: name,
 					type: 'string',
-					'default': ''
+					default: ''
 				}, {
 					nooptional: true
 				} );
@@ -1796,7 +1806,7 @@
 					for ( i = 0; i < pi.parameters.length; i++ ) {
 						if ( pi.parameters[ i ].name === 'action' ) {
 							pi.parameters[ i ].required = true;
-							delete pi.parameters[ i ][ 'default' ];
+							delete pi.parameters[ i ].default;
 						}
 						if ( pi.parameters[ i ].name === 'format' ) {
 							tmp = pi.parameters[ i ].type;
@@ -1804,7 +1814,7 @@
 								availableFormats[ tmp[ j ] ] = true;
 							}
 							pi.parameters[ i ].type = tmp.filter( filterFmModules );
-							pi.parameters[ i ][ 'default' ] = 'json';
+							pi.parameters[ i ].default = 'json';
 							pi.parameters[ i ].required = true;
 						}
 					}
@@ -1934,6 +1944,7 @@
 				}
 
 				that.deprecatedItemsFieldset = new OO.ui.FieldsetLayout().addItems( deprecatedItems ).toggle( false );
+				// eslint-disable-next-line jquery/no-animate-toggle
 				tmp = $( '<fieldset>' )
 					.toggle( !that.deprecatedItemsFieldset.isEmpty() )
 					.append(
@@ -1991,14 +2002,15 @@
 		if ( this.paramInfo === null ) {
 			return [];
 		} else {
+			// eslint-disable-next-line jquery/no-map-util
 			promises = $.map( this.widgets, function ( widget ) {
 				return widget.apiCheckValid();
 			} );
 			$.when.apply( $, promises ).then( function () {
-				that.apiIsValid = $.inArray( false, arguments ) === -1;
+				that.apiIsValid = Array.prototype.indexOf.call( arguments, false ) === -1;
 				if ( that.getOutlineItem() ) {
 					that.getOutlineItem().setIcon( that.apiIsValid || suppressErrors ? null : 'alert' );
-					that.getOutlineItem().setIconTitle(
+					that.getOutlineItem().setTitle(
 						that.apiIsValid || suppressErrors ? '' : mw.message( 'apisandbox-alert-page' ).plain()
 					);
 				}
@@ -2016,6 +2028,7 @@
 		if ( this.paramInfo === null ) {
 			this.loadFromQueryParams = params;
 		} else {
+			// eslint-disable-next-line jquery/no-each-util
 			$.each( this.widgets, function ( name, widget ) {
 				var v = Object.prototype.hasOwnProperty.call( params, name ) ? params[ name ] : undefined;
 				widget.setApiValue( v );
@@ -2031,11 +2044,12 @@
 	 * @param {Object} displayParams Write query parameters for display into this object
 	 */
 	ApiSandbox.PageLayout.prototype.getQueryParams = function ( params, displayParams ) {
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( this.widgets, function ( name, widget ) {
 			var value = widget.getApiValue();
 			if ( value !== undefined ) {
 				params[ name ] = value;
-				if ( $.isFunction( widget.getApiValueForDisplay ) ) {
+				if ( typeof widget.getApiValueForDisplay === 'function' ) {
 					value = widget.getApiValueForDisplay();
 				}
 				displayParams[ name ] = value;
@@ -2050,9 +2064,10 @@
 	 */
 	ApiSandbox.PageLayout.prototype.getSubpages = function () {
 		var ret = [];
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( this.widgets, function ( name, widget ) {
 			var submodules, i;
-			if ( $.isFunction( widget.getSubmodules ) ) {
+			if ( typeof widget.getSubmodules === 'function' ) {
 				submodules = widget.getSubmodules();
 				for ( i = 0; i < submodules.length; i++ ) {
 					ret.push( {
@@ -2070,4 +2085,4 @@
 
 	module.exports = ApiSandbox;
 
-}( jQuery, mediaWiki, OO ) );
+}() );

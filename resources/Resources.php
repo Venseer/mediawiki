@@ -136,14 +136,29 @@ return [
 		],
 	],
 
-	/* jQuery */
+	/* Base modules */
+	// These modules' dependencies MUST also be included in StartUpModule::getBaseModules().
+	// These modules' dependencies MUST be dependency-free (having dependencies would cause recursion).
 
 	'jquery' => [
 		'scripts' => [
 			'resources/lib/jquery/jquery.js',
 			'resources/lib/jquery/jquery.migrate.js',
 		],
-		'raw' => true,
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+	'mediawiki.base' => [
+		'scripts' => [
+			// This MUST be kept in sync with maintenance/jsduck/eg-iframe.html
+			'resources/src/mediawiki.base/mediawiki.errorLogger.js',
+			'resources/src/mediawiki.base/mediawiki.base.js',
+		],
+		'dependencies' => 'jquery',
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+	'mediawiki.legacy.wikibits' => [
+		'scripts' => 'resources/src/mediawiki.legacy/wikibits.js',
+		'dependencies' => 'jquery',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 
@@ -159,17 +174,13 @@ return [
 		'targets' => [ 'mobile', 'desktop' ],
 	],
 	'jquery.async' => [
-		'scripts' => 'resources/lib/jquery/jquery.async.js',
+		'scripts' => 'resources/lib/jquery.async.js',
+		'deprecated' => true,
 	],
 	'jquery.byteLength' => [
 		'scripts' => 'resources/src/jquery/jquery.byteLength.js',
 		'deprecated' => 'Use "mediawiki.String" instead.',
 		'dependencies' => 'mediawiki.String',
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'jquery.byteLimit' => [
-		'dependencies' => 'jquery.lengthLimit',
-		'deprecated' => 'Use "jquery.lengthLimit" instead.',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.checkboxShiftClick' => [
@@ -206,17 +217,14 @@ return [
 		'dependencies' => 'mediawiki.jqueryMsg',
 	],
 	'jquery.cookie' => [
-		'scripts' => 'resources/lib/jquery/jquery.cookie.js',
+		'scripts' => 'resources/lib/jquery.cookie/jquery.cookie.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
-	'jquery.expandableField' => [
-		'scripts' => 'resources/src/jquery/jquery.expandableField.js',
-	],
 	'jquery.form' => [
-		'scripts' => 'resources/lib/jquery/jquery.form.js',
+		'scripts' => 'resources/lib/jquery.form.js',
 	],
 	'jquery.fullscreen' => [
-		'scripts' => 'resources/lib/jquery/jquery.fullscreen.js',
+		'scripts' => 'resources/lib/jquery.fullscreen.js',
 	],
 	'jquery.getAttrs' => [
 		'targets' => [ 'desktop', 'mobile' ],
@@ -236,7 +244,7 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.hoverIntent' => [
-		'scripts' => 'resources/lib/jquery/jquery.hoverIntent.js',
+		'scripts' => 'resources/lib/jquery.hoverIntent.js',
 	],
 	'jquery.i18n' => [
 		'scripts' => [
@@ -272,9 +280,6 @@ return [
 		'dependencies' => 'mediawiki.String',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
-	'jquery.localize' => [
-		'scripts' => 'resources/src/jquery/jquery.localize.js',
-	],
 	'jquery.makeCollapsible' => [
 		'dependencies' => [ 'jquery.makeCollapsible.styles' ],
 		'scripts' => 'resources/src/jquery/jquery.makeCollapsible.js',
@@ -283,7 +288,7 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.mockjax' => [
-		'scripts' => 'resources/lib/jquery/jquery.mockjax.js',
+		'scripts' => 'resources/lib/jquery.mockjax.js',
 	],
 	'jquery.mw-jump' => [
 		'scripts' => 'resources/src/jquery/jquery.mw-jump.js',
@@ -301,7 +306,7 @@ return [
 	],
 	'jquery.jStorage' => [
 		'deprecated' => 'Please use "mediawiki.storage" instead.',
-		'scripts' => 'resources/lib/jquery/jquery.jStorage.js',
+		'scripts' => 'resources/lib/jquery.jStorage.js',
 	],
 	'jquery.suggestions' => [
 		'targets' => [ 'desktop', 'mobile' ],
@@ -328,11 +333,11 @@ return [
 		'targets' => [ 'mobile', 'desktop' ],
 	],
 	'jquery.throttle-debounce' => [
-		'scripts' => 'resources/lib/jquery/jquery.ba-throttle-debounce.js',
+		'scripts' => 'resources/lib/jquery.ba-throttle-debounce.js',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'jquery.xmldom' => [
-		'scripts' => 'resources/lib/jquery/jquery.xmldom.js',
+		'scripts' => 'resources/lib/jquery.xmldom.js',
 	],
 
 	/* jQuery Tipsy */
@@ -832,15 +837,6 @@ return [
 	],
 
 	/* MediaWiki */
-
-	'mediawiki.base' => [
-		// Keep in sync with maintenance/jsduck/eg-iframe.html
-		'scripts' => [
-			'resources/src/mediawiki.base/mediawiki.errorLogger.js',
-			'resources/src/mediawiki.base/mediawiki.base.js',
-		],
-		'targets' => [ 'desktop', 'mobile' ],
-	],
 	'mediawiki.apihelp' => [
 		'styles' => 'resources/src/mediawiki.apihelp.css',
 		'targets' => [ 'desktop' ],
@@ -887,54 +883,6 @@ return [
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
-	'mediawiki.api.category' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-	],
-	'mediawiki.api.edit' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => [
-			'mediawiki.api',
-		],
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.api.login' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-	],
-	'mediawiki.api.options' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.api.parse' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.api.upload' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.api.user' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.api.watch' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-	],
-	'mediawiki.api.messages' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.api.rollback' => [
-		'deprecated' => 'Use "mediawiki.api" instead.',
-		'dependencies' => 'mediawiki.api',
-	],
 	'mediawiki.content.json' => [
 		'styles' => 'resources/src/mediawiki.content.json.less',
 	],
@@ -958,11 +906,17 @@ return [
 		],
 	],
 	'mediawiki.diff.styles' => [
+		'class' => ResourceLoaderLessVarFileModule::class,
 		'styles' => [
+			'resources/src/mediawiki.diff.styles/header.less',
 			'resources/src/mediawiki.diff.styles/diff.css',
 			'resources/src/mediawiki.diff.styles/print.css' => [
 				'media' => 'print'
 			],
+		],
+		'lessMessages' => [
+			'parentheses-start',
+			'parentheses-end',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -1180,6 +1134,7 @@ return [
 			'jquery.suggestions',
 			'jquery.getAttrs',
 			'mediawiki.api',
+			'user.options',
 		],
 	],
 	'mediawiki.storage' => [
@@ -1293,7 +1248,6 @@ return [
 	],
 	'mediawiki.ForeignStructuredUpload.BookletLayout' => [
 		'scripts' => 'resources/src/mediawiki.ForeignStructuredUpload.BookletLayout/BookletLayout.js',
-		'styles' => 'resources/src/mediawiki.ForeignStructuredUpload.BookletLayout/BookletLayout.less',
 		'dependencies' => [
 			'mediawiki.ForeignStructuredUpload',
 			'mediawiki.Upload.BookletLayout',
@@ -1372,7 +1326,6 @@ return [
 		'dependencies' => [
 			'jquery.accessKeyLabel',
 			'mediawiki.RegExp',
-			'mediawiki.notify',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -1390,12 +1343,6 @@ return [
 		'scripts' => 'resources/src/mediawiki.cookie.js',
 		'dependencies' => 'jquery.cookie',
 		'targets' => [ 'desktop', 'mobile' ],
-	],
-	'mediawiki.toolbar' => [
-		'class' => ResourceLoaderEditToolbarModule::class,
-		'scripts' => 'resources/src/mediawiki.toolbar/toolbar.js',
-		'styles' => 'resources/src/mediawiki.toolbar/toolbar.less',
-		'dependencies' => 'jquery.textSelection',
 	],
 	'mediawiki.experiments' => [
 		'scripts' => 'resources/src/mediawiki.experiments.js',
@@ -1426,6 +1373,7 @@ return [
 	'mediawiki.action.delete.file' => [
 		'scripts' => 'resources/src/mediawiki.action/mediawiki.action.delete.file.js',
 		'dependencies' => [
+			'oojs-ui-core',
 			'jquery.lengthLimit',
 		],
 		'messages' => [
@@ -1446,6 +1394,7 @@ return [
 			'oojs-ui-core',
 			'mediawiki.widgets.visibleLengthLimit',
 			'mediawiki.api',
+			'mediawiki.util',
 		],
 	],
 	'mediawiki.action.edit.styles' => [
@@ -1791,6 +1740,7 @@ return [
 			'mediawiki.jqueryMsg',
 			'mediawiki.Uri',
 			'mediawiki.user',
+			'user.options',
 		],
 		'messages' => [
 			'quotation-marks',
@@ -1974,15 +1924,17 @@ return [
 	],
 	'mediawiki.special' => [
 		'styles' => [
-			'resources/src/mediawiki.special/special.css',
+			'resources/src/mediawiki.special/special.less',
 			'resources/src/mediawiki.special/apisandbox.css',
 			'resources/src/mediawiki.special/comparepages.less',
 			'resources/src/mediawiki.special/edittags.css',
 			'resources/src/mediawiki.special/movePage.css',
+			'resources/src/mediawiki.special/newpages.less',
 			'resources/src/mediawiki.special/pagesWithProp.css',
 			'resources/src/mediawiki.special/upload.css',
 			'resources/src/mediawiki.special/userrights.css',
 			'resources/src/mediawiki.special/watchlist.css',
+			'resources/src/mediawiki.special/block.less',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -2065,12 +2017,16 @@ return [
 			'oojs-ui-core',
 			'oojs-ui.styles.icons-editing-core',
 			'oojs-ui.styles.icons-editing-advanced',
-			'mediawiki.widgets.SelectWithInputWidget',
 			'mediawiki.widgets.DateInputWidget',
+			'mediawiki.widgets.SelectWithInputWidget',
+			'mediawiki.widgets.NamespacesMultiselectWidget',
+			'mediawiki.widgets.TitlesMultiselectWidget',
+			'mediawiki.widgets.UserInputWidget',
 			'mediawiki.util',
 			'mediawiki.htmlform',
 			'moment',
 		],
+		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.special.changecredentials.js' => [
 		'scripts' => 'resources/src/mediawiki.special.changecredentials.js',
@@ -2081,7 +2037,13 @@ return [
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.special.changeslist' => [
-		'styles' => 'resources/src/mediawiki.special.changeslist.css',
+		'class' => ResourceLoaderLessVarFileModule::class,
+		'lessMessages' => [
+			'parentheses-start',
+			'parentheses-end',
+			'pipe-separator'
+		],
+		'styles' => 'resources/src/mediawiki.special.changeslist.less',
 		'targets' => [ 'desktop', 'mobile' ],
 	],
 	'mediawiki.special.changeslist.enhanced' => [
@@ -2133,42 +2095,15 @@ return [
 			'oojs-ui-core',
 		],
 	],
-	'mediawiki.special.preferences' => [
-		'targets' => [ 'desktop', 'mobile' ],
-		'scripts' => [
-			'resources/src/mediawiki.special.preferences/confirmClose.js',
-			'resources/src/mediawiki.special.preferences/convertmessagebox.js',
-			'resources/src/mediawiki.special.preferences/tabs.legacy.js',
-			'resources/src/mediawiki.special.preferences/timezone.js',
-			'resources/src/mediawiki.special.preferences/personalEmail.js',
-		],
-		'messages' => [
-			'prefs-tabs-navigation-hint',
-			'prefswarning-warning',
-			'saveprefs',
-			'savedprefs',
-		],
-		'dependencies' => [
-			'mediawiki.language',
-			'mediawiki.confirmCloseWindow',
-			'mediawiki.notification.convertmessagebox',
-		],
-	],
-	'mediawiki.special.preferences.styles' => [
-		'targets' => [ 'desktop', 'mobile' ],
-		// legacy
-		'styles' => 'resources/src/mediawiki.special.preferences.styles.css',
-	],
 	'mediawiki.special.preferences.ooui' => [
 		'targets' => [ 'desktop', 'mobile' ],
 		'scripts' => [
-			// FIXME: This uses files already belonging to another module
-			'resources/src/mediawiki.special.preferences/confirmClose.js',
-			'resources/src/mediawiki.special.preferences/convertmessagebox.js',
+			'resources/src/mediawiki.special.preferences.ooui/confirmClose.js',
+			'resources/src/mediawiki.special.preferences.ooui/convertmessagebox.js',
 			'resources/src/mediawiki.special.preferences.ooui/editfont.js',
 			'resources/src/mediawiki.special.preferences.ooui/tabs.js',
-			'resources/src/mediawiki.special.preferences/timezone.js',
-			'resources/src/mediawiki.special.preferences/personalEmail.js',
+			'resources/src/mediawiki.special.preferences.ooui/timezone.js',
+			'resources/src/mediawiki.special.preferences.ooui/personalEmail.js',
 		],
 		'messages' => [
 			'prefs-tabs-navigation-hint',
@@ -2180,6 +2115,7 @@ return [
 			'mediawiki.language',
 			'mediawiki.confirmCloseWindow',
 			'mediawiki.notification.convertmessagebox',
+			'mediawiki.storage',
 			'oojs-ui-widgets',
 			'mediawiki.widgets.SelectWithInputWidget',
 			'mediawiki.editfont.styles',
@@ -2206,13 +2142,7 @@ return [
 	],
 	'mediawiki.special.search' => [
 		'scripts' => 'resources/src/mediawiki.special.search/search.js',
-		'styles' => 'resources/src/mediawiki.special.search/search.css',
 		'dependencies' => 'mediawiki.widgets.SearchInputWidget',
-		'messages' => [
-			'powersearch-togglelabel',
-			'powersearch-toggleall',
-			'powersearch-togglenone',
-		],
 	],
 	'mediawiki.special.search.commonsInterwikiWidget' => [
 		'scripts' => 'resources/src/mediawiki.special.search.commonsInterwikiWidget.js',
@@ -2387,10 +2317,6 @@ return [
 			'resources/src/mediawiki.legacy/oldshared.css' => [ 'media' => 'screen' ]
 		],
 	],
-	'mediawiki.legacy.wikibits' => [
-		'scripts' => 'resources/src/mediawiki.legacy/wikibits.js',
-		'targets' => [ 'desktop', 'mobile' ],
-	],
 
 	/* MediaWiki UI */
 
@@ -2502,6 +2428,21 @@ return [
 				'resources/src/mediawiki.widgets/mw.widgets.ComplexNamespaceInputWidget.base.css',
 				'resources/src/mediawiki.widgets/mw.widgets.ComplexTitleInputWidget.base.css',
 			],
+		],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+	'mediawiki.widgets.AbandonEditDialog' => [
+		'scripts' => [
+			'resources/src/mediawiki.widgets/mw.widgets.AbandonEditDialog.js',
+		],
+		'messages' => [
+			'mw-widgets-abandonedit',
+			'mw-widgets-abandonedit-discard',
+			'mw-widgets-abandonedit-keep',
+			'mw-widgets-abandonedit-title',
+		],
+		'dependencies' => [
+			'oojs-ui-windows',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -2629,6 +2570,15 @@ return [
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
+	'mediawiki.widgets.CheckMatrixWidget' => [
+		'scripts' => [
+			'resources/src/mediawiki.widgets/mw.widgets.CheckMatrixWidget.js',
+		],
+		'dependencies' => [
+			'oojs-ui-core',
+		],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
 	'mediawiki.widgets.CategoryMultiselectWidget' => [
 		'scripts' => [
 			'resources/src/mediawiki.widgets/mw.widgets.CategoryTagItemWidget.js',
@@ -2722,6 +2672,30 @@ return [
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
+	'mediawiki.widgets.NamespacesMultiselectWidget' => [
+		'scripts' => [
+			'resources/src/mediawiki.widgets/mw.widgets.NamespacesMultiselectWidget.js',
+		],
+		'dependencies' => [
+			'oojs-ui-widgets',
+		],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+	'mediawiki.widgets.TitlesMultiselectWidget' => [
+		'scripts' => [
+			'resources/src/mediawiki.widgets/mw.widgets.TitlesMultiselectWidget.js',
+		],
+		'dependencies' => [
+			'mediawiki.api',
+			'oojs-ui-widgets',
+			// FIXME: Needs TitleInputWidget only
+			'mediawiki.widgets',
+		],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+	'mediawiki.widgets.TagMultiselectWidget.styles' => [
+		'styles' => 'resources/src/mediawiki.widgets/mw.widgets.TagMultiselectWidget.base.css',
+	],
 	'mediawiki.widgets.SearchInputWidget' => [
 		'scripts' => [
 			'resources/src/mediawiki.widgets/mw.widgets.SearchInputWidget.js',
@@ -2771,6 +2745,25 @@ return [
 		'raw' => true,
 	],
 
+	/* EasyDeflate */
+
+	'easy-deflate.core' => [
+		'scripts' => [ 'resources/lib/easy-deflate/easydeflate.js' ],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+
+	'easy-deflate.deflate' => [
+		'scripts' => [ 'resources/lib/easy-deflate/deflate.js' ],
+		'dependencies' => [ 'easy-deflate.core' ],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+
+	'easy-deflate.inflate' => [
+		'scripts' => [ 'resources/lib/easy-deflate/inflate.js' ],
+		'dependencies' => [ 'easy-deflate.core' ],
+		'targets' => [ 'desktop', 'mobile' ],
+	],
+
 	/* OOjs */
 	'oojs' => [
 		'scripts' => [
@@ -2817,8 +2810,8 @@ return [
 	'oojs-ui-core' => [
 		'class' => ResourceLoaderOOUIFileModule::class,
 		'scripts' => [
-			'resources/lib/oojs-ui/oojs-ui-core.js',
-			'resources/src/oojs-ui-local.js',
+			'resources/lib/ooui/oojs-ui-core.js',
+			'resources/src/ooui-local.js',
 		],
 		'themeScripts' => 'core',
 		'dependencies' => [
@@ -2832,7 +2825,8 @@ return [
 			'oojs-ui.styles.icons-interactions',
 		],
 		'messages' => [
-			'ooui-field-help'
+			'ooui-field-help',
+			'ooui-combobox-button-label',
 		],
 		'targets' => [ 'desktop', 'mobile' ],
 	],
@@ -2840,7 +2834,7 @@ return [
 	'oojs-ui-core.styles' => [
 		'class' => ResourceLoaderOOUIFileModule::class,
 		'styles' => [
-			'resources/lib/oojs-ui/wikimedia-ui-base.less', // Providing Wikimedia UI LESS variables to all
+			'resources/lib/ooui/wikimedia-ui-base.less', // Providing Wikimedia UI LESS variables to all
 		],
 		'themeStyles' => 'core',
 		'targets' => [ 'desktop', 'mobile' ],
@@ -2848,10 +2842,10 @@ return [
 	// Additional widgets and layouts module.
 	'oojs-ui-widgets' => [
 		'class' => ResourceLoaderOOUIFileModule::class,
-		'scripts' => 'resources/lib/oojs-ui/oojs-ui-widgets.js',
+		'scripts' => 'resources/lib/ooui/oojs-ui-widgets.js',
+		'themeStyles' => 'widgets',
 		'dependencies' => [
 			'oojs-ui-core',
-			'oojs-ui-widgets.styles',
 			'oojs-ui.styles.icons-interactions',
 			'oojs-ui.styles.icons-content',
 			'oojs-ui.styles.icons-editing-advanced',
@@ -2881,7 +2875,7 @@ return [
 	// Toolbar and tools module.
 	'oojs-ui-toolbars' => [
 		'class' => ResourceLoaderOOUIFileModule::class,
-		'scripts' => 'resources/lib/oojs-ui/oojs-ui-toolbars.js',
+		'scripts' => 'resources/lib/ooui/oojs-ui-toolbars.js',
 		'themeStyles' => 'toolbars',
 		'dependencies' => [
 			'oojs-ui-core',
@@ -2897,7 +2891,7 @@ return [
 	// Windows and dialogs module.
 	'oojs-ui-windows' => [
 		'class' => ResourceLoaderOOUIFileModule::class,
-		'scripts' => 'resources/lib/oojs-ui/oojs-ui-windows.js',
+		'scripts' => 'resources/lib/ooui/oojs-ui-windows.js',
 		'themeStyles' => 'windows',
 		'dependencies' => [
 			'oojs-ui-core',
@@ -2937,6 +2931,10 @@ return [
 	'oojs-ui.styles.icons-editing-advanced' => [
 		'class' => ResourceLoaderOOUIImageModule::class,
 		'themeImages' => 'icons-editing-advanced',
+	],
+	'oojs-ui.styles.icons-editing-citation' => [
+		'class' => ResourceLoaderOOUIImageModule::class,
+		'themeImages' => 'icons-editing-citation',
 	],
 	'oojs-ui.styles.icons-editing-core' => [
 		'class' => ResourceLoaderOOUIImageModule::class,

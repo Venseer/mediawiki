@@ -179,7 +179,7 @@ class LanguageCodeTest extends PHPUnit\Framework\TestCase {
 			[ 'kk-Cyrl', 'kk-Cyrl' ],
 			[ 'kk-Latn', 'kk-Latn' ],
 			[ 'map-bms', 'jv-x-bms' ],
-			[ 'mo', 'ro-MD' ],
+			[ 'mo', 'ro-Cyrl-MD' ],
 			[ 'nrm', 'nrf' ],
 			[ 'nl-informal', 'nl-x-informal' ],
 			[ 'roa-tara', 'nap-x-tara' ],

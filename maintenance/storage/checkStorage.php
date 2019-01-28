@@ -29,11 +29,7 @@ if ( !defined( 'MEDIAWIKI' ) ) {
 
 	$cs = new CheckStorage;
 	$fix = isset( $options['fix'] );
-	if ( isset( $args[0] ) ) {
-		$xml = $args[0];
-	} else {
-		$xml = false;
-	}
+	$xml = $args[0] ?? false;
 	$cs->check( $fix, $xml );
 }
 
@@ -266,12 +262,12 @@ class CheckStorage {
 						case 'historyblobcurstub':
 							if ( strlen( $row->header ) == $headerLength ) {
 								$this->addError( 'unfixable', "Error: overlong stub header", $oldId );
-								continue;
+								break;
 							}
 							$stubObj = unserialize( $row->header );
 							if ( !is_object( $stubObj ) ) {
 								$this->addError( 'restore text', "Error: unable to unserialize stub object", $oldId );
-								continue;
+								break;
 							}
 							if ( $className == 'historyblobstub' ) {
 								$concatBlobs[$stubObj->mOldId][] = $oldId;

@@ -45,10 +45,11 @@ class ExtensionProcessor implements Processor {
 		'MediaHandlers',
 		'PasswordPolicy',
 		'RateLimits',
+		'RawHtmlMessages',
+		'ReauthenticateTime',
 		'RecentChangesFlags',
 		'RemoveCredentialsBlacklist',
 		'RemoveGroups',
-		'ResourceLoaderLESSVars',
 		'ResourceLoaderSources',
 		'RevokePermissions',
 		'SessionProviders',
@@ -161,6 +162,11 @@ class ExtensionProcessor implements Processor {
 	 * @var array
 	 */
 	protected $credits = [];
+
+	/**
+	 * @var array
+	 */
+	protected $config = [];
 
 	/**
 	 * Any thing else in the $info that hasn't
@@ -290,6 +296,7 @@ class ExtensionProcessor implements Processor {
 
 		return [
 			'globals' => $this->globals,
+			'config' => $this->config,
 			'defines' => $this->defines,
 			'callbacks' => $this->callbacks,
 			'credits' => $this->credits,
@@ -478,11 +485,7 @@ class ExtensionProcessor implements Processor {
 	 * @param string $dir
 	 */
 	protected function extractConfig2( array $info, $dir ) {
-		if ( isset( $info['config_prefix'] ) ) {
-			$prefix = $info['config_prefix'];
-		} else {
-			$prefix = 'wg';
-		}
+		$prefix = $info['config_prefix'] ?? 'wg';
 		if ( isset( $info['config'] ) ) {
 			foreach ( $info['config'] as $key => $data ) {
 				$value = $data['value'];
@@ -493,6 +496,11 @@ class ExtensionProcessor implements Processor {
 					$value = "$dir/$value";
 				}
 				$this->addConfigGlobal( "$prefix$key", $value, $info['name'] );
+				$data['providedby'] = $info['name'];
+				if ( isset( $info['ConfigRegistry'][0] ) ) {
+					$data['configregistry'] = array_keys( $info['ConfigRegistry'] )[0];
+				}
+				$this->config[$key] = $data;
 			}
 		}
 	}

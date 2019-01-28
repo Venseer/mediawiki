@@ -5,7 +5,7 @@
  * @license The MIT License (MIT); see LICENSE.txt
  */
 /* global moment */
-( function ( $, mw ) {
+( function () {
 
 	/**
 	 * Creates an mw.widgets.DateInputWidget object.
@@ -200,10 +200,9 @@
 				if ( e.which === OO.ui.Keys.TAB ) {
 					if ( e.shiftKey ) {
 						// Tabbing backward from text input: normal browser behavior
-						$.noop();
 					} else {
 						// Tabbing forward from text input: just focus the calendar
-						this.calendar.$element.focus();
+						this.calendar.$element.trigger( 'focus' );
 						return false;
 					}
 				}
@@ -212,12 +211,12 @@
 				if ( e.which === OO.ui.Keys.TAB ) {
 					if ( e.shiftKey ) {
 						// Tabbing backward from calendar: just focus the text input
-						this.textInput.$input.focus();
+						this.textInput.$input.trigger( 'focus' );
 						return false;
 					} else {
 						// Tabbing forward from calendar: focus the text input, then allow normal browser
 						// behavior to move focus to next focusable after it
-						this.textInput.$input.focus();
+						this.textInput.$input.trigger( 'focus' );
 					}
 				}
 			}.bind( this ) );
@@ -406,7 +405,7 @@
 		if ( userSelected ) {
 			// Prevent focusing the handle from reopening the calendar
 			this.closing = true;
-			this.$handle.focus();
+			this.$handle.trigger( 'focus' );
 			this.closing = false;
 		}
 
@@ -425,7 +424,7 @@
 		this.textInput.toggle( true );
 		this.calendar.toggle( true );
 
-		this.textInput.$input.focus();
+		this.textInput.$input.trigger( 'focus' );
 	};
 
 	/**
@@ -692,4 +691,4 @@
 		}
 	};
 
-}( jQuery, mediaWiki ) );
+}() );

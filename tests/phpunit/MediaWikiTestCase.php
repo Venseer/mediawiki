@@ -8,7 +8,6 @@ use Psr\Log\LoggerInterface;
 use Wikimedia\Rdbms\IDatabase;
 use Wikimedia\Rdbms\IMaintainableDatabase;
 use Wikimedia\Rdbms\Database;
-use Wikimedia\Rdbms\LBFactory;
 use Wikimedia\TestingAccessWrapper;
 
 /**
@@ -20,13 +19,17 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	use PHPUnit4And6Compat;
 
 	/**
-	 * The service locator created by prepareServices(). This service locator will
-	 * be restored after each test. Tests that pollute the global service locator
-	 * instance should use overrideMwServices() to isolate the test.
+	 * The original service locator. This is overridden during setUp().
 	 *
 	 * @var MediaWikiServices|null
 	 */
-	private static $serviceLocator = null;
+	private static $originalServices;
+
+	/**
+	 * The local service locator, created during setUp().
+	 * @var MediaWikiServices
+	 */
+	private $localServices;
 
 	/**
 	 * $called tracks whether the setUp and tearDown method has been called.
@@ -98,10 +101,31 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	private $mwGlobalsToUnset = [];
 
 	/**
+	 * Holds original values of ini settings to be restored
+	 * in tearDown().
+	 * @see setIniSettings()
+	 * @var array
+	 */
+	private $iniSettings = [];
+
+	/**
 	 * Holds original loggers which have been replaced by setLogger()
 	 * @var LoggerInterface[]
 	 */
 	private $loggers = [];
+
+	/**
+	 * The CLI arguments passed through from phpunit.php
+	 * @var array
+	 */
+	private $cliArgs = [];
+
+	/**
+	 * Holds a list of services that were overridden with setService().  Used for printing an error
+	 * if overrideMwServices() overrides a service that was previously set.
+	 * @var string[]
+	 */
+	private $overriddenServices = [];
 
 	/**
 	 * Table name prefixes. Oracle likes it shorter.
@@ -138,8 +162,10 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	public static function setUpBeforeClass() {
 		parent::setUpBeforeClass();
 
-		// Get the service locator, and reset services if it's not done already
-		self::$serviceLocator = self::prepareServices( new GlobalVarConfig() );
+		// Get the original service locator
+		if ( !self::$originalServices ) {
+			self::$originalServices = MediaWikiServices::getInstance();
+		}
 	}
 
 	/**
@@ -147,7 +173,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 *
 	 * @since 1.28
 	 *
-	 * @param string[] $groups Groups the test user should be in.
+	 * @param string|string[] $groups Groups the test user should be in.
 	 * @return TestUser
 	 */
 	public static function getTestUser( $groups = [] ) {
@@ -159,7 +185,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 *
 	 * @since 1.28
 	 *
-	 * @param string[] $groups Groups the test user should be added in.
+	 * @param string|string[] $groups Groups the test user should be added in.
 	 * @return TestUser
 	 */
 	public static function getMutableTestUser( $groups = [] ) {
@@ -185,9 +211,17 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 *
 	 * @param Title|string|null $title
 	 * @return WikiPage
-	 * @throws MWException
+	 * @throws MWException If this test cases's needsDB() method doesn't return true.
+	 *         Test cases can use "@group Database" to enable database test support,
+	 *         or list the tables under testing in $this->tablesUsed, or override the
+	 *         needsDB() method.
 	 */
 	protected function getExistingTestPage( $title = null ) {
+		if ( !$this->needsDB() ) {
+			throw new MWException( 'When testing which pages, the test cases\'s needsDB()' .
+				' method should return true. Use @group Database or $this->tablesUsed.' );
+		}
+
 		$title = ( $title === null ) ? 'UTPage' : $title;
 		$title = is_string( $title ) ? Title::newFromText( $title ) : $title;
 		$page = WikiPage::factory( $title );
@@ -213,9 +247,17 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 *
 	 * @param Title|string|null $title
 	 * @return WikiPage
-	 * @throws MWException
+	 * @throws MWException If this test cases's needsDB() method doesn't return true.
+	 *         Test cases can use "@group Database" to enable database test support,
+	 *         or list the tables under testing in $this->tablesUsed, or override the
+	 *         needsDB() method.
 	 */
 	protected function getNonexistingTestPage( $title = null ) {
+		if ( !$this->needsDB() ) {
+			throw new MWException( 'When testing which pages, the test cases\'s needsDB()' .
+				' method should return true. Use @group Database or $this->tablesUsed.' );
+		}
+
 		$title = ( $title === null ) ? 'UTPage-' . rand( 0, 100000 ) : $title;
 		$title = is_string( $title ) ? Title::newFromText( $title ) : $title;
 		$page = WikiPage::factory( $title );
@@ -228,63 +270,9 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	}
 
 	/**
-	 * Prepare service configuration for unit testing.
-	 *
-	 * This calls MediaWikiServices::resetGlobalInstance() to allow some critical services
-	 * to be overridden for testing.
-	 *
-	 * prepareServices() only needs to be called once, but should be called as early as possible,
-	 * before any class has a chance to grab a reference to any of the global services
-	 * instances that get discarded by prepareServices(). Only the first call has any effect,
-	 * later calls are ignored.
-	 *
-	 * @note This is called by PHPUnitMaintClass::finalSetup.
-	 *
-	 * @see MediaWikiServices::resetGlobalInstance()
-	 *
-	 * @param Config $bootstrapConfig The bootstrap config to use with the new
-	 *        MediaWikiServices. Only used for the first call to this method.
-	 * @return MediaWikiServices
+	 * @deprecated since 1.32
 	 */
 	public static function prepareServices( Config $bootstrapConfig ) {
-		static $services = null;
-
-		if ( !$services ) {
-			$services = self::resetGlobalServices( $bootstrapConfig );
-		}
-		return $services;
-	}
-
-	/**
-	 * Reset global services, and install testing environment.
-	 * This is the testing equivalent of MediaWikiServices::resetGlobalInstance().
-	 * This should only be used to set up the testing environment, not when
-	 * running unit tests. Use MediaWikiTestCase::overrideMwServices() for that.
-	 *
-	 * @see MediaWikiServices::resetGlobalInstance()
-	 * @see prepareServices()
-	 * @see MediaWikiTestCase::overrideMwServices()
-	 *
-	 * @param Config|null $bootstrapConfig The bootstrap config to use with the new
-	 *        MediaWikiServices.
-	 * @return MediaWikiServices
-	 */
-	protected static function resetGlobalServices( Config $bootstrapConfig = null ) {
-		$oldServices = MediaWikiServices::getInstance();
-		$oldConfigFactory = $oldServices->getConfigFactory();
-		$oldLoadBalancerFactory = $oldServices->getDBLoadBalancerFactory();
-
-		$testConfig = self::makeTestConfig( $bootstrapConfig );
-
-		MediaWikiServices::resetGlobalInstance( $testConfig );
-
-		$serviceLocator = MediaWikiServices::getInstance();
-		self::installTestServices(
-			$oldConfigFactory,
-			$oldLoadBalancerFactory,
-			$serviceLocator
-		);
-		return $serviceLocator;
 	}
 
 	/**
@@ -303,7 +291,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 		$defaultOverrides = new HashConfig();
 
 		if ( !$baseConfig ) {
-			$baseConfig = MediaWikiServices::getInstance()->getBootstrapConfig();
+			$baseConfig = self::$originalServices->getBootstrapConfig();
 		}
 
 		/* Some functions require some kind of caching, and will end up using the db,
@@ -332,38 +320,6 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 			: new MultiConfig( [ $defaultOverrides, $baseConfig ] );
 
 		return $testConfig;
-	}
-
-	/**
-	 * @param ConfigFactory $oldConfigFactory
-	 * @param LBFactory $oldLoadBalancerFactory
-	 * @param MediaWikiServices $newServices
-	 *
-	 * @throws MWException
-	 */
-	private static function installTestServices(
-		ConfigFactory $oldConfigFactory,
-		LBFactory $oldLoadBalancerFactory,
-		MediaWikiServices $newServices
-	) {
-		// Use bootstrap config for all configuration.
-		// This allows config overrides via global variables to take effect.
-		$bootstrapConfig = $newServices->getBootstrapConfig();
-		$newServices->resetServiceForTesting( 'ConfigFactory' );
-		$newServices->redefineService(
-			'ConfigFactory',
-			self::makeTestConfigFactoryInstantiator(
-				$oldConfigFactory,
-				[ 'main' => $bootstrapConfig ]
-			)
-		);
-		$newServices->resetServiceForTesting( 'DBLoadBalancerFactory' );
-		$newServices->redefineService(
-			'DBLoadBalancerFactory',
-			function ( MediaWikiServices $services ) use ( $oldLoadBalancerFactory ) {
-				return $oldLoadBalancerFactory;
-			}
-		);
 	}
 
 	/**
@@ -398,17 +354,10 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	}
 
 	/**
-	 * Resets some well known services that typically have state that may interfere with unit tests.
-	 * This is a lightweight alternative to resetGlobalServices().
-	 *
-	 * @note There is no guarantee that no references remain to stale service instances destroyed
-	 * by a call to doLightweightServiceReset().
-	 *
-	 * @throws MWException if called outside of PHPUnit tests.
-	 *
-	 * @see resetGlobalServices()
+	 * Resets some non-service singleton instances and other static caches. It's not necessary to
+	 * reset services here.
 	 */
-	private function doLightweightServiceReset() {
+	public static function resetNonServiceCaches() {
 		global $wgRequest, $wgJobClasses;
 
 		foreach ( $wgJobClasses as $type => $class ) {
@@ -417,10 +366,6 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 		JobQueueGroup::destroySingletons();
 
 		ObjectCache::clear();
-		$services = MediaWikiServices::getInstance();
-		$services->resetServiceForTesting( 'MainObjectStash' );
-		$services->resetServiceForTesting( 'LocalServerObjectCache' );
-		$services->getMainWANObjectCache()->clearProcessCache();
 		FileBackendGroup::destroySingleton();
 		DeferredUpdates::clearPendingUpdates();
 
@@ -436,8 +381,18 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	}
 
 	public function run( PHPUnit_Framework_TestResult $result = null ) {
-		$needsResetDB = false;
+		if ( $result instanceof MediaWikiTestResult ) {
+			$this->cliArgs = $result->getMediaWikiCliArgs();
+		}
+		$this->overrideMwServices();
 
+		if ( $this->needsDB() && !$this->isTestInDatabaseGroup() ) {
+			throw new Exception(
+				get_class( $this ) . ' apparently needsDB but is not in the Database group'
+			);
+		}
+
+		$needsResetDB = false;
 		if ( !self::$dbSetup || $this->needsDB() ) {
 			// set up a DB connection for this test to use
 
@@ -468,9 +423,15 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 
 		parent::run( $result );
 
+		// We don't mind if we override already-overridden services during cleanup
+		$this->overriddenServices = [];
+
 		if ( $needsResetDB ) {
 			$this->resetDB( $this->db, $this->tablesUsed );
 		}
+
+		self::restoreMwServices();
+		$this->localServices = null;
 	}
 
 	/**
@@ -543,6 +504,8 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 
 		$this->phpErrorLevel = intval( ini_get( 'error_reporting' ) );
 
+		$this->overriddenServices = [];
+
 		// Cleaning up temporary files
 		foreach ( $this->tmpFiles as $fileName ) {
 			if ( is_file( $fileName ) || ( is_link( $fileName ) ) ) {
@@ -559,18 +522,17 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 			}
 			// Check for unsafe queries
 			if ( $this->db->getType() === 'mysql' ) {
-				$this->db->query( "SET sql_mode = 'STRICT_ALL_TABLES'" );
+				$this->db->query( "SET sql_mode = 'STRICT_ALL_TABLES'", __METHOD__ );
 			}
 		}
 
 		// Reset all caches between tests.
-		$this->doLightweightServiceReset();
+		self::resetNonServiceCaches();
 
 		// XXX: reset maintenance triggers
 		// Hook into period lag checks which often happen in long-running scripts
-		$services = MediaWikiServices::getInstance();
-		$lbFactory = $services->getDBLoadBalancerFactory();
-		Maintenance::setLBFactoryTriggers( $lbFactory, $services->getMainConfig() );
+		$lbFactory = $this->localServices->getDBLoadBalancerFactory();
+		Maintenance::setLBFactoryTriggers( $lbFactory, $this->localServices->getMainConfig() );
 
 		ob_start( 'MediaWikiTestCase::wfResetOutputBuffersBarrier' );
 	}
@@ -605,10 +567,13 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 				$this->db->rollback( __METHOD__, 'flush' );
 			}
 			if ( $this->db->getType() === 'mysql' ) {
-				$this->db->query( "SET sql_mode = " . $this->db->addQuotes( $wgSQLMode ) );
+				$this->db->query( "SET sql_mode = " . $this->db->addQuotes( $wgSQLMode ),
+					__METHOD__ );
 			}
 		}
 
+		// Re-enable any disabled deprecation warnings
+		MWDebug::clearLog();
 		// Restore mw globals
 		foreach ( $this->mwGlobals as $key => $value ) {
 			$GLOBALS[$key] = $value;
@@ -616,13 +581,18 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 		foreach ( $this->mwGlobalsToUnset as $value ) {
 			unset( $GLOBALS[$value] );
 		}
+		foreach ( $this->iniSettings as $name => $value ) {
+			ini_set( $name, $value );
+		}
+		if (
+			array_key_exists( 'wgExtraNamespaces', $this->mwGlobals ) ||
+			in_array( 'wgExtraNamespaces', $this->mwGlobalsToUnset )
+		) {
+			$this->resetNamespaces();
+		}
 		$this->mwGlobals = [];
 		$this->mwGlobalsToUnset = [];
 		$this->restoreLoggers();
-
-		if ( self::$serviceLocator && MediaWikiServices::getInstance() !== self::$serviceLocator ) {
-			MediaWikiServices::forceGlobalInstance( self::$serviceLocator );
-		}
 
 		// TODO: move global state into MediaWikiServices
 		RequestContext::resetMain();
@@ -674,18 +644,28 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 * @param object $object
 	 */
 	protected function setService( $name, $object ) {
-		// If we did not yet override the service locator, so so now.
-		if ( MediaWikiServices::getInstance() === self::$serviceLocator ) {
-			$this->overrideMwServices();
+		if ( !$this->localServices ) {
+			throw new Exception( __METHOD__ . ' must be called after MediaWikiTestCase::run()' );
 		}
 
-		MediaWikiServices::getInstance()->disableService( $name );
-		MediaWikiServices::getInstance()->redefineService(
+		if ( $this->localServices !== MediaWikiServices::getInstance() ) {
+			throw new Exception( __METHOD__ . ' will not work because the global MediaWikiServices '
+				. 'instance has been replaced by test code.' );
+		}
+
+		$this->overriddenServices[] = $name;
+
+		$this->localServices->disableService( $name );
+		$this->localServices->redefineService(
 			$name,
 			function () use ( $object ) {
 				return $object;
 			}
 		);
+
+		if ( $name === 'ContentLanguage' ) {
+			$this->doSetMwGlobals( [ 'wgContLang' => $object ] );
+		}
 	}
 
 	/**
@@ -728,11 +708,65 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 			$pairs = [ $pairs => $value ];
 		}
 
-		$this->stashMwGlobals( array_keys( $pairs ) );
+		if ( isset( $pairs['wgContLang'] ) ) {
+			throw new MWException(
+				'No setting $wgContLang, use setContentLang() or setService( \'ContentLanguage\' )'
+			);
+		}
+
+		$this->doSetMwGlobals( $pairs, $value );
+	}
+
+	/**
+	 * An internal method that allows setService() to set globals that tests are not supposed to
+	 * touch.
+	 */
+	private function doSetMwGlobals( $pairs, $value = null ) {
+		$this->doStashMwGlobals( array_keys( $pairs ) );
 
 		foreach ( $pairs as $key => $value ) {
 			$GLOBALS[$key] = $value;
 		}
+
+		if ( array_key_exists( 'wgExtraNamespaces', $pairs ) ) {
+			$this->resetNamespaces();
+		}
+	}
+
+	/**
+	 * Set an ini setting for the duration of the test
+	 * @param string $name Name of the setting
+	 * @param string $value Value to set
+	 * @since 1.32
+	 */
+	protected function setIniSetting( $name, $value ) {
+		$original = ini_get( $name );
+		$this->iniSettings[$name] = $original;
+		ini_set( $name, $value );
+	}
+
+	/**
+	 * Must be called whenever namespaces are changed, e.g., $wgExtraNamespaces is altered.
+	 * Otherwise old namespace data will lurk and cause bugs.
+	 */
+	private function resetNamespaces() {
+		if ( !$this->localServices ) {
+			throw new Exception( __METHOD__ . ' must be called after MediaWikiTestCase::run()' );
+		}
+
+		if ( $this->localServices !== MediaWikiServices::getInstance() ) {
+			throw new Exception( __METHOD__ . ' will not work because the global MediaWikiServices '
+				. 'instance has been replaced by test code.' );
+		}
+
+		MWNamespace::clearCaches();
+		Language::clearCaches();
+
+		// We can't have the TitleFormatter holding on to an old Language object either
+		// @todo We shouldn't need to reset all the aliases here.
+		$this->localServices->resetServiceForTesting( 'TitleFormatter' );
+		$this->localServices->resetServiceForTesting( 'TitleParser' );
+		$this->localServices->resetServiceForTesting( '_MediaWikiTitleCodec' );
 	}
 
 	/**
@@ -774,8 +808,14 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 *       call overrideMwServices().
 	 *
 	 * @since 1.23
+	 * @deprecated since 1.32, use setMwGlobals() and don't alter globals directly
 	 */
 	protected function stashMwGlobals( $globalKeys ) {
+		wfDeprecated( __METHOD__, '1.32' );
+		$this->doStashMwGlobals( $globalKeys );
+	}
+
+	private function doStashMwGlobals( $globalKeys ) {
 		if ( is_string( $globalKeys ) ) {
 			$globalKeys = [ $globalKeys ];
 		}
@@ -891,38 +931,120 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 * @return MediaWikiServices
 	 * @throws MWException
 	 */
-	protected function overrideMwServices( Config $configOverrides = null, array $services = [] ) {
-		if ( !$configOverrides ) {
-			$configOverrides = new HashConfig();
+	protected function overrideMwServices(
+		Config $configOverrides = null, array $services = []
+	) {
+		if ( $this->overriddenServices ) {
+			throw new MWException(
+				'The following services were set and are now being unset by overrideMwServices: ' .
+					implode( ', ', $this->overriddenServices )
+			);
+		}
+		$newInstance = self::installMockMwServices( $configOverrides );
+
+		if ( $this->localServices ) {
+			$this->localServices->destroy();
 		}
 
-		$oldInstance = MediaWikiServices::getInstance();
-		$oldConfigFactory = $oldInstance->getConfigFactory();
-		$oldLoadBalancerFactory = $oldInstance->getDBLoadBalancerFactory();
-
-		$testConfig = self::makeTestConfig( null, $configOverrides );
-		$newInstance = new MediaWikiServices( $testConfig );
-
-		// Load the default wiring from the specified files.
-		// NOTE: this logic mirrors the logic in MediaWikiServices::newInstance.
-		$wiringFiles = $testConfig->get( 'ServiceWiringFiles' );
-		$newInstance->loadWiringFiles( $wiringFiles );
-
-		// Provide a traditional hook point to allow extensions to configure services.
-		Hooks::run( 'MediaWikiServices', [ $newInstance ] );
+		$this->localServices = $newInstance;
 
 		foreach ( $services as $name => $callback ) {
 			$newInstance->redefineService( $name, $callback );
 		}
 
-		self::installTestServices(
-			$oldConfigFactory,
-			$oldLoadBalancerFactory,
-			$newInstance
-		);
-		MediaWikiServices::forceGlobalInstance( $newInstance );
-
 		return $newInstance;
+	}
+
+	/**
+	 * Creates a new "mock" MediaWikiServices instance, and installs it.
+	 * This effectively resets all cached states in services, with the exception of
+	 * the ConfigFactory and the DBLoadBalancerFactory service, which are inherited from
+	 * the original MediaWikiServices.
+	 *
+	 * @note The new original MediaWikiServices instance can later be restored by calling
+	 * restoreMwServices(). That original is determined by the first call to this method, or
+	 * by setUpBeforeClass, whichever is called first. The caller is responsible for managing
+	 * and, when appropriate, destroying any other MediaWikiServices instances that may get
+	 * replaced when calling this method.
+	 *
+	 * @param Config|null $configOverrides Configuration overrides for the new MediaWikiServices
+	 *        instance.
+	 *
+	 * @return MediaWikiServices the new mock service locator.
+	 */
+	public static function installMockMwServices( Config $configOverrides = null ) {
+		// Make sure we have the original service locator
+		if ( !self::$originalServices ) {
+			self::$originalServices = MediaWikiServices::getInstance();
+		}
+
+		if ( !$configOverrides ) {
+			$configOverrides = new HashConfig();
+		}
+
+		$oldConfigFactory = self::$originalServices->getConfigFactory();
+		$oldLoadBalancerFactory = self::$originalServices->getDBLoadBalancerFactory();
+
+		$testConfig = self::makeTestConfig( null, $configOverrides );
+		$newServices = new MediaWikiServices( $testConfig );
+
+		// Load the default wiring from the specified files.
+		// NOTE: this logic mirrors the logic in MediaWikiServices::newInstance.
+		$wiringFiles = $testConfig->get( 'ServiceWiringFiles' );
+		$newServices->loadWiringFiles( $wiringFiles );
+
+		// Provide a traditional hook point to allow extensions to configure services.
+		Hooks::run( 'MediaWikiServices', [ $newServices ] );
+
+		// Use bootstrap config for all configuration.
+		// This allows config overrides via global variables to take effect.
+		$bootstrapConfig = $newServices->getBootstrapConfig();
+		$newServices->resetServiceForTesting( 'ConfigFactory' );
+		$newServices->redefineService(
+			'ConfigFactory',
+			self::makeTestConfigFactoryInstantiator(
+				$oldConfigFactory,
+				[ 'main' => $bootstrapConfig ]
+			)
+		);
+		$newServices->resetServiceForTesting( 'DBLoadBalancerFactory' );
+		$newServices->redefineService(
+			'DBLoadBalancerFactory',
+			function ( MediaWikiServices $services ) use ( $oldLoadBalancerFactory ) {
+				return $oldLoadBalancerFactory;
+			}
+		);
+
+		MediaWikiServices::forceGlobalInstance( $newServices );
+		return $newServices;
+	}
+
+	/**
+	 * Restores the original, non-mock MediaWikiServices instance.
+	 * The previously active MediaWikiServices instance is destroyed,
+	 * if it is different from the original that is to be restored.
+	 *
+	 * @note this if for internal use by test framework code. It should never be
+	 * called from inside a test case, a data provider, or a setUp or tearDown method.
+	 *
+	 * @return bool true if the original service locator was restored,
+	 *         false if there was nothing  too do.
+	 */
+	public static function restoreMwServices() {
+		if ( !self::$originalServices ) {
+			return false;
+		}
+
+		$currentServices = MediaWikiServices::getInstance();
+
+		if ( self::$originalServices === $currentServices ) {
+			return false;
+		}
+
+		MediaWikiServices::forceGlobalInstance( self::$originalServices );
+		$currentServices->destroy();
+
+		return true;
 	}
 
 	/**
@@ -940,16 +1062,17 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 */
 	public function setContentLang( $lang ) {
 		if ( $lang instanceof Language ) {
-			$langCode = $lang->getCode();
-			$langObj = $lang;
+			$this->setMwGlobals( 'wgLanguageCode', $lang->getCode() );
+			// Set to the exact object requested
+			$this->setService( 'ContentLanguage', $lang );
 		} else {
-			$langCode = $lang;
-			$langObj = Language::factory( $langCode );
+			$this->setMwGlobals( 'wgLanguageCode', $lang );
+			// Let the service handler make up the object.  Avoid calling setService(), because if
+			// we do, overrideMwServices() will complain if it's called later on.
+			$services = MediaWikiServices::getInstance();
+			$services->resetServiceForTesting( 'ContentLanguage' );
+			$this->doSetMwGlobals( [ 'wgContLang' => $services->getContentLanguage() ] );
 		}
-		$this->setMwGlobals( [
-			'wgLanguageCode' => $langCode,
-			'wgContLang' => $langObj,
-		] );
 	}
 
 	/**
@@ -969,17 +1092,18 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	public function setGroupPermissions( $newPerms, $newKey = null, $newValue = null ) {
 		global $wgGroupPermissions;
 
-		$this->stashMwGlobals( 'wgGroupPermissions' );
-
 		if ( is_string( $newPerms ) ) {
 			$newPerms = [ $newPerms => [ $newKey => $newValue ] ];
 		}
 
+		$newPermissions = $wgGroupPermissions;
 		foreach ( $newPerms as $group => $permissions ) {
 			foreach ( $permissions as $key => $value ) {
-				$wgGroupPermissions[$group][$key] = $value;
+				$newPermissions[$group][$key] = $value;
 			}
 		}
+
+		$this->setMwGlobals( 'wgGroupPermissions', $newPermissions );
 	}
 
 	/**
@@ -1062,18 +1186,18 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 */
 	public function needsDB() {
 		// If the test says it uses database tables, it needs the database
-		if ( $this->tablesUsed ) {
-			return true;
-		}
+		return $this->tablesUsed || $this->isTestInDatabaseGroup();
+	}
 
+	/**
+	 * @return bool
+	 * @since 1.32
+	 */
+	protected function isTestInDatabaseGroup() {
 		// If the test class says it belongs to the Database group, it needs the database.
 		// NOTE: This ONLY checks for the group in the class level doc comment.
 		$rc = new ReflectionClass( $this );
-		if ( preg_match( '/@group +Database/im', $rc->getDocComment() ) ) {
-			return true;
-		}
-
-		return false;
+		return (bool)preg_match( '/@group +Database/im', $rc->getDocComment() );
 	}
 
 	/**
@@ -1087,6 +1211,10 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 * @param int|null $namespace Namespace id (name cannot already contain namespace)
 	 * @param User|null $user If null, static::getTestSysop()->getUser() is used.
 	 * @return array Title object and page id
+	 * @throws MWException If this test cases's needsDB() method doesn't return true.
+	 *         Test cases can use "@group Database" to enable database test support,
+	 *         or list the tables under testing in $this->tablesUsed, or override the
+	 *         needsDB() method.
 	 */
 	protected function insertPage(
 		$pageName,
@@ -1094,6 +1222,11 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 		$namespace = null,
 		User $user = null
 	) {
+		if ( !$this->needsDB() ) {
+			throw new MWException( 'When testing which pages, the test cases\'s needsDB()' .
+				' method should return true. Use @group Database or $this->tablesUsed.' );
+		}
+
 		if ( is_string( $pageName ) ) {
 			$title = Title::newFromText( $pageName, $namespace );
 		} else {
@@ -1192,7 +1325,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 				$user
 			);
 			// an edit always attempt to purge backlink links such as history
-			// pages. That is unneccessary.
+			// pages. That is unnecessary.
 			JobQueueGroup::singleton()->get( 'htmlCacheUpdate' )->delete();
 			// WikiPages::doEditUpdates randomly adds RC purges
 			JobQueueGroup::singleton()->get( 'recentChangesUpdate' )->delete();
@@ -1233,52 +1366,6 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 
 		self::$oldTablePrefix = false;
 		self::$dbSetup = false;
-	}
-
-	/**
-	 * Prepares the given database connection for usage in the context of usage tests.
-	 * This sets up clones database tables and changes the table prefix as appropriate.
-	 * If the database connection already has cloned tables, calling this method has no
-	 * effect. The tables are not re-cloned or reset in that case.
-	 *
-	 * @param IMaintainableDatabase $db
-	 */
-	protected function prepareConnectionForTesting( IMaintainableDatabase $db ) {
-		if ( !self::$dbSetup ) {
-			throw new LogicException(
-				'Cannot use prepareConnectionForTesting()'
-				. ' if the test case is not defined to use the database!'
-			);
-		}
-
-		if ( isset( $db->_originalTablePrefix ) ) {
-			// The DB connection was already prepared for testing.
-			return;
-		}
-
-		$testPrefix = self::getTestPrefixFor( $db );
-		$oldPrefix = $db->tablePrefix();
-
-		$tablesCloned = self::listTables( $db );
-
-		if ( $oldPrefix === $testPrefix ) {
-			// The database connection already has the test prefix, but presumably not
-			// the cloned tables. This is the typical case, since the LBFactory will
-			// have the prefix set during testing, but LoadBalancers will still return
-			// connections that don't have the cloned table structure.
-			$oldPrefix = self::$oldTablePrefix;
-		}
-
-		$dbClone = new CloneDatabase( $db, $tablesCloned, $testPrefix, $oldPrefix );
-		$dbClone->useTemporaryTables( self::$useTemporaryTables );
-
-		$db->_originalTablePrefix = $oldPrefix;
-
-		if ( ( $db->getType() == 'oracle' || !self::$useTemporaryTables ) && self::$reuseDB ) {
-			throw new LogicException( 'Cannot clone database tables' );
-		} else {
-			$dbClone->cloneTableStructure();
-		}
 	}
 
 	/**
@@ -1392,7 +1479,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 		// Assuming this isn't needed for External Store database, and not sure if the procedure
 		// would be available there.
 		if ( $db->getType() == 'oracle' ) {
-			$db->query( 'BEGIN FILL_WIKI_INFO; END;' );
+			$db->query( 'BEGIN FILL_WIKI_INFO; END;', __METHOD__ );
 		}
 
 		Hooks::run( 'UnitTestsAfterDatabaseSetup', [ $db, $prefix ] );
@@ -1609,12 +1696,6 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 		foreach ( $tables as $tbl ) {
 			$tbl = $db->tableName( $tbl );
 			$db->query( "DROP TABLE IF EXISTS $tbl", __METHOD__ );
-
-			if ( $tbl === 'page' ) {
-				// Forget about the pages since they don't
-				// exist in the DB.
-				MediaWikiServices::getInstance()->getLinkCache()->clear();
-			}
 		}
 	}
 
@@ -1632,7 +1713,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 
 		$originalTables = $db->listTables( $db->_originalTablePrefix, __METHOD__ );
 		if ( $prefix === 'unprefixed' ) {
-			$originalPrefixRegex = '/^' . preg_quote( $db->_originalTablePrefix ) . '/';
+			$originalPrefixRegex = '/^' . preg_quote( $db->_originalTablePrefix, '/' ) . '/';
 			$originalTables = array_map(
 				function ( $pt ) use ( $originalPrefixRegex ) {
 					return preg_replace( $originalPrefixRegex, '', $pt );
@@ -1705,39 +1786,52 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 				}
 			}
 
-			$truncate = in_array( $db->getType(), [ 'oracle', 'mysql' ] );
 			foreach ( $tablesUsed as $tbl ) {
-				// TODO: reset interwiki table to its original content.
-				if ( $tbl == 'interwiki' ) {
-					continue;
-				}
-
-				if ( !$db->tableExists( $tbl ) ) {
-					continue;
-				}
-
-				if ( $truncate ) {
-					$db->query( 'TRUNCATE TABLE ' . $db->tableName( $tbl ), __METHOD__ );
-				} else {
-					$db->delete( $tbl, '*', __METHOD__ );
-				}
-
-				if ( in_array( $db->getType(), [ 'postgres', 'sqlite' ], true ) ) {
-					// Reset the table's sequence too.
-					$db->resetSequenceForTable( $tbl, __METHOD__ );
-				}
-
-				if ( $tbl === 'page' ) {
-					// Forget about the pages since they don't
-					// exist in the DB.
-					MediaWikiServices::getInstance()->getLinkCache()->clear();
-				}
+				$this->truncateTable( $tbl, $db );
 			}
 
 			if ( array_intersect( $tablesUsed, $coreDBDataTables ) ) {
+				// Reset services that may contain information relating to the truncated tables
+				$this->overrideMwServices();
 				// Re-add core DB data that was deleted
 				$this->addCoreDBData();
 			}
+		}
+	}
+
+	/**
+	 * Empties the given table and resets any auto-increment counters.
+	 * Will also purge caches associated with some well known tables.
+	 * If the table is not know, this method just returns.
+	 *
+	 * @param string $tableName
+	 * @param IDatabase|null $db
+	 */
+	protected function truncateTable( $tableName, IDatabase $db = null ) {
+		if ( !$db ) {
+			$db = $this->db;
+		}
+
+		if ( !$db->tableExists( $tableName ) ) {
+			return;
+		}
+
+		$truncate = in_array( $db->getType(), [ 'oracle', 'mysql' ] );
+
+		if ( $truncate ) {
+			$db->query( 'TRUNCATE TABLE ' . $db->tableName( $tableName ), __METHOD__ );
+		} else {
+			$db->delete( $tableName, '*', __METHOD__ );
+		}
+
+		if ( $db instanceof DatabasePostgres || $db instanceof DatabaseSqlite ) {
+			// Reset the table's sequence too.
+			$db->resetSequenceForTable( $tableName, __METHOD__ );
+		}
+
+		// re-initialize site_stats table
+		if ( $tableName === 'site_stats' ) {
+			SiteStatsInit::doPlaceholderInit();
 		}
 	}
 
@@ -1824,11 +1918,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 * @return mixed
 	 */
 	public function getCliArg( $offset ) {
-		if ( isset( PHPUnitMaintClass::$additionalOptions[$offset] ) ) {
-			return PHPUnitMaintClass::$additionalOptions[$offset];
-		}
-
-		return null;
+		return $this->cliArgs[$offset] ?? null;
 	}
 
 	/**
@@ -1837,7 +1927,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	 * @param mixed $value
 	 */
 	public function setCliArg( $offset, $value ) {
-		PHPUnitMaintClass::$additionalOptions[$offset] = $value;
+		$this->cliArgs[$offset] = $value;
 	}
 
 	/**
@@ -2171,6 +2261,18 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	}
 
 	/**
+	 * Skip the test if using the specified database type
+	 *
+	 * @param string $type Database type
+	 * @since 1.32
+	 */
+	protected function markTestSkippedIfDbType( $type ) {
+		if ( $this->db->getType() === $type ) {
+			$this->markTestSkipped( "The $type database type isn't supported for this test" );
+		}
+	}
+
+	/**
 	 * Used as a marker to prevent wfResetOutputBuffers from breaking PHPUnit.
 	 * @param string $buffer
 	 * @return string
@@ -2202,7 +2304,7 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 	protected function assertFileContains(
 		$fileName,
 		$actualData,
-		$createIfMissing = true,
+		$createIfMissing = false,
 		$msg = ''
 	) {
 		if ( $createIfMissing ) {
@@ -2214,5 +2316,51 @@ abstract class MediaWikiTestCase extends PHPUnit\Framework\TestCase {
 			self::assertFileExists( $fileName );
 		}
 		self::assertEquals( file_get_contents( $fileName ), $actualData, $msg );
+	}
+
+	/**
+	 * Edits or creates a page/revision
+	 * @param string $pageName Page title
+	 * @param string $text Content of the page
+	 * @param string $summary Optional summary string for the revision
+	 * @param int $defaultNs Optional namespace id
+	 * @return array Array as returned by WikiPage::doEditContent()
+	 * @throws MWException If this test cases's needsDB() method doesn't return true.
+	 *         Test cases can use "@group Database" to enable database test support,
+	 *         or list the tables under testing in $this->tablesUsed, or override the
+	 *         needsDB() method.
+	 */
+	protected function editPage( $pageName, $text, $summary = '', $defaultNs = NS_MAIN ) {
+		if ( !$this->needsDB() ) {
+			throw new MWException( 'When testing which pages, the test cases\'s needsDB()' .
+				' method should return true. Use @group Database or $this->tablesUsed.' );
+		}
+
+		$title = Title::newFromText( $pageName, $defaultNs );
+		$page = WikiPage::factory( $title );
+
+		return $page->doEditContent( ContentHandler::makeContent( $text, $title ), $summary );
+	}
+
+	/**
+	 * Revision-deletes a revision.
+	 *
+	 * @param Revision|int $rev Revision to delete
+	 * @param array $value Keys are Revision::DELETED_* flags.  Values are 1 to set the bit, 0 to
+	 *   clear, -1 to leave alone.  (All other values also clear the bit.)
+	 * @param string $comment Deletion comment
+	 */
+	protected function revisionDelete(
+		$rev, array $value = [ Revision::DELETED_TEXT => 1 ], $comment = ''
+	) {
+		if ( is_int( $rev ) ) {
+			$rev = Revision::newFromId( $rev );
+		}
+		RevisionDeleter::createList(
+			'revision', RequestContext::getMain(), $rev->getTitle(), [ $rev->getId() ]
+		)->setVisibility( [
+			'value' => $value,
+			'comment' => $comment,
+		] );
 	}
 }

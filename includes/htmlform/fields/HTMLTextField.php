@@ -85,18 +85,19 @@ class HTMLTextField extends HTMLFormField {
 			'type',
 			'min',
 			'max',
-			'pattern',
-			'title',
 			'step',
-			'list',
+			'title',
 			'maxlength',
 			'tabindex',
 			'disabled',
 			'required',
 			'autofocus',
-			'multiple',
 			'readonly',
 			'autocomplete',
+			// Only used in HTML mode:
+			'pattern',
+			'list',
+			'multiple',
 		];
 
 		$attribs += $this->getAttributes( $allowedParams );
@@ -117,6 +118,7 @@ class HTMLTextField extends HTMLFormField {
 			switch ( $this->mParams['type'] ) {
 				case 'int':
 					$type = 'number';
+					$attribs['step'] = 1;
 					break;
 				case 'float':
 					$type = 'number';
@@ -152,17 +154,22 @@ class HTMLTextField extends HTMLFormField {
 		# @todo Enforce pattern, step, required, readonly on the server side as
 		# well
 		$allowedParams = [
-			'autofocus',
-			'autosize',
+			'type',
+			'min',
+			'max',
+			'step',
+			'title',
+			'maxlength',
+			'tabindex',
 			'disabled',
+			'required',
+			'autofocus',
+			'readonly',
+			'autocomplete',
+			// Only used in OOUI mode:
+			'autosize',
 			'flags',
 			'indicator',
-			'maxlength',
-			'readonly',
-			'required',
-			'tabindex',
-			'type',
-			'autocomplete',
 		];
 
 		$attribs += OOUI\Element::configFromHtmlAttributes(
@@ -181,6 +188,9 @@ class HTMLTextField extends HTMLFormField {
 		}
 
 		$type = $this->getType( $attribs );
+		if ( isset( $attribs['step'] ) && $attribs['step'] === 'any' ) {
+			$attribs['step'] = null;
+		}
 
 		return $this->getInputWidget( [
 			'id' => $this->mID,

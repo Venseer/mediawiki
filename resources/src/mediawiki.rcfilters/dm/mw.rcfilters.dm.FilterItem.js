@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	/**
 	 * Filter item model
 	 *
@@ -94,6 +94,7 @@
 
 		key = key || 'contextDescription';
 
+		// eslint-disable-next-line jquery/no-each-util
 		$.each( conflicts, function ( filterName, conflict ) {
 			if ( !conflict.item.isSelected() ) {
 				return;
@@ -243,20 +244,21 @@
 	 *
 	 * Conflict object is set up by filter name keys and conflict
 	 * definition. For example:
-	 * 		{
-	 * 			filterName: {
-	 * 				filter: filterName,
-	 * 				group: group1,
-	 * 				label: itemLabel,
-	 * 				item: itemModel
-	 * 			}
-	 * 			filterName2: {
-	 * 				filter: filterName2,
-	 * 				group: group2
-	 * 				label: itemLabel2,
-	 * 				item: itemModel2
-	 * 			}
-	 * 		}
+	 *
+	 *  {
+	 *      filterName: {
+	 *          filter: filterName,
+	 *          group: group1,
+	 *          label: itemLabel,
+	 *          item: itemModel
+	 *      }
+	 *      filterName2: {
+	 *          filter: filterName2,
+	 *          group: group2
+	 *          label: itemLabel2,
+	 *          item: itemModel2
+	 *      }
+	 *  }
 	 *
 	 * @return {Object} Filter conflicts
 	 */
@@ -395,4 +397,4 @@
 		return this.visible;
 	};
 
-}( mediaWiki ) );
+}() );

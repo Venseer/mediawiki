@@ -304,16 +304,6 @@ abstract class MediaHandler {
 	}
 
 	/**
-	 * @deprecated since 1.30, use MediaHandler::getContentHeaders instead
-	 * @param array $metadata
-	 * @return array
-	 */
-	public function getStreamHeaders( $metadata ) {
-		wfDeprecated( __METHOD__, '1.30' );
-		return $this->getContentHeaders( $metadata );
-	}
-
-	/**
 	 * True if the handled types can be transformed
 	 *
 	 * @param File $file
@@ -781,6 +771,19 @@ abstract class MediaHandler {
 	}
 
 	/**
+	 * When overridden in a descendant class, returns a language code most suiting
+	 *
+	 * @since 1.32
+	 *
+	 * @param string $userPreferredLanguage Language code requesed
+	 * @param string[] $availableLanguages Languages present in the file
+	 * @return string|null Language code picked or null if not supported/available
+	 */
+	public function getMatchedLanguage( $userPreferredLanguage, array $availableLanguages ) {
+		return null;
+	}
+
+	/**
 	 * On file types that support renderings in multiple languages,
 	 * which language is used by default if unspecified.
 	 *
@@ -871,8 +874,8 @@ abstract class MediaHandler {
 	/**
 	 * Converts a dimensions array about a potentially multipage document from an
 	 * exhaustive list of ordered page numbers to a list of page ranges
-	 * @param Array $pagesByDimensions
-	 * @return String
+	 * @param array $pagesByDimensions
+	 * @return string
 	 * @since 1.30
 	 */
 	public static function getPageRangesByDimensions( $pagesByDimensions ) {

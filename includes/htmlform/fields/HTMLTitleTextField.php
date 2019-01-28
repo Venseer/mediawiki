@@ -41,6 +41,11 @@ class HTMLTitleTextField extends HTMLTextField {
 			return parent::validate( $value, $alldata );
 		}
 
+		// Default value (from getDefault()) is null, which breaks Title::newFromTextThrow() below
+		if ( $value === null ) {
+			$value = '';
+		}
+
 		if ( !$this->mParams['required'] && $value === '' ) {
 			// If this field is not required and the value is empty, that's okay, skip validation
 			return parent::validate( $value, $alldata );
@@ -51,17 +56,10 @@ class HTMLTitleTextField extends HTMLTextField {
 				$title = Title::newFromTextThrow( $value );
 			} else {
 				// Can't use Title::makeTitleSafe(), because it doesn't throw useful exceptions
-				global $wgContLang;
-				$namespaceName = $wgContLang->getNsText( $this->mParams['namespace'] );
-				$title = Title::newFromTextThrow( $namespaceName . ':' . $value );
+				$title = Title::newFromTextThrow( Title::makeName( $this->mParams['namespace'], $value ) );
 			}
 		} catch ( MalformedTitleException $e ) {
-			$msg = $this->msg( $e->getErrorMessage() );
-			$params = $e->getErrorMessageParameters();
-			if ( $params ) {
-				$msg->params( $params );
-			}
-			return $msg;
+			return $this->msg( $e->getErrorMessage(), $e->getErrorMessageParameters() );
 		}
 
 		$text = $title->getPrefixedText();

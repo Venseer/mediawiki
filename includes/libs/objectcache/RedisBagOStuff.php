@@ -81,11 +81,7 @@ class RedisBagOStuff extends BagOStuff {
 			$this->serverTagMap[is_int( $key ) ? $server : $key] = $server;
 		}
 
-		if ( isset( $params['automaticFailover'] ) ) {
-			$this->automaticFailover = $params['automaticFailover'];
-		} else {
-			$this->automaticFailover = true;
-		}
+		$this->automaticFailover = $params['automaticFailover'] ?? true;
 
 		$this->attrMap[self::ATTR_SYNCWRITES] = self::QOS_SYNCWRITES_NONE;
 	}
@@ -234,7 +230,7 @@ class RedisBagOStuff extends BagOStuff {
 					}
 				}
 			} catch ( RedisException $e ) {
-				$this->handleException( $server, $conn, $e );
+				$this->handleException( $conn, $e );
 				$result = false;
 			}
 		}

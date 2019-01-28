@@ -100,12 +100,17 @@ class ImportableUploadRevisionImporter implements UploadRevisionImporter {
 			return $this->newNotOkStatus();
 		}
 
-		$user = $importableRevision->getUserObj() ?: User::newFromName( $importableRevision->getUser() );
+		$user = $importableRevision->getUserObj()
+			?: User::newFromName( $importableRevision->getUser(), false );
 
 		# Do the actual upload
-		if ( $archiveName ) {
-			$status = $file->uploadOld( $source, $archiveName,
-				$importableRevision->getTimestamp(), $importableRevision->getComment(), $user );
+		if ( $file instanceof OldLocalFile ) {
+			$status = $file->uploadOld(
+				$source,
+				$importableRevision->getTimestamp(),
+				$importableRevision->getComment(),
+				$user
+			);
 		} else {
 			$flags = 0;
 			$status = $file->upload(

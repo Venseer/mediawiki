@@ -57,10 +57,12 @@ use Wikimedia\ObjectFactory;
  *    'cssclass'            -- CSS class
  *    'csshelpclass'        -- CSS class used to style help text
  *    'dir'                 -- Direction of the element.
- *    'options'             -- associative array mapping labels to values.
+ *    'options'             -- associative array mapping raw text labels to values.
  *                             Some field types support multi-level arrays.
+ *                             Overwrites 'options-message'.
  *    'options-messages'    -- associative array mapping message keys to values.
  *                             Some field types support multi-level arrays.
+ *                             Overwrites 'options' and 'options-message'.
  *    'options-message'     -- message key or object to be parsed to extract the list of
  *                             options (like 'ipbreason-dropdown').
  *    'label-message'       -- message key or object for a message to use as the label.
@@ -76,11 +78,9 @@ use Wikimedia\ObjectFactory;
  *    'help-messages'       -- array of message keys/objects. As above, each item can
  *                             be an array of msg key and then parameters.
  *                             Overwrites 'help'.
- *    'notice'              -- message text for a message to use as a notice in the field.
- *                             Currently used by OOUI form fields only.
- *    'notice-messages'     -- array of message keys/objects to use for notice.
- *                             Overrides 'notice'.
- *    'notice-message'      -- message key or object to use as a notice.
+ *    'help-inline'         -- Whether help text (defined using options above) will be shown
+ *                             inline after the input field, rather than in a popup.
+ *                             Defaults to true. Only used by OOUI form fields.
  *    'required'            -- passed through to the object, indicating that it
  *                             is a required field.
  *    'size'                -- the length of text fields
@@ -159,6 +159,7 @@ class HTMLForm extends ContextSource {
 		'checkmatrix' => HTMLCheckMatrix::class,
 		'cloner' => HTMLFormFieldCloner::class,
 		'autocompleteselect' => HTMLAutoCompleteSelectField::class,
+		'language' => HTMLSelectLanguageField::class,
 		'date' => HTMLDateTimeField::class,
 		'time' => HTMLDateTimeField::class,
 		'datetime' => HTMLDateTimeField::class,
@@ -172,6 +173,8 @@ class HTMLForm extends ContextSource {
 		'title' => HTMLTitleTextField::class,
 		'user' => HTMLUserTextField::class,
 		'usersmultiselect' => HTMLUsersMultiselectField::class,
+		'titlesmultiselect' => HTMLTitlesMultiselectField::class,
+		'namespacesmultiselect' => HTMLNamespacesMultiselectField::class,
 	];
 
 	public $mFieldData;
@@ -343,11 +346,7 @@ class HTMLForm extends ContextSource {
 
 			$setSection =& $loadedDescriptor;
 			if ( $section ) {
-				$sectionParts = explode( '/', $section );
-
-				while ( count( $sectionParts ) ) {
-					$newName = array_shift( $sectionParts );
-
+				foreach ( explode( '/', $section ) as $newName ) {
 					if ( !isset( $setSection[$newName] ) ) {
 						$setSection[$newName] = [];
 					}
@@ -1026,6 +1025,7 @@ class HTMLForm extends ContextSource {
 	 * @param bool|string|array|Status $submitResult Output from HTMLForm::trySubmit()
 	 *
 	 * @return string HTML
+	 * @return-taint escaped
 	 */
 	public function getHTML( $submitResult ) {
 		# For good measure (it is the default)
@@ -1283,7 +1283,7 @@ class HTMLForm extends ContextSource {
 			if ( $status->isGood() ) {
 				$elementstr = '';
 			} else {
-				$elementstr = $this->getOutput()->parse(
+				$elementstr = $this->getOutput()->parseAsInterface(
 					$status->getWikiText()
 				);
 			}
@@ -1829,7 +1829,7 @@ class HTMLForm extends ContextSource {
 	 *
 	 * @param string $key
 	 *
-	 * @return string
+	 * @return string Plain text (not HTML-escaped)
 	 */
 	public function getLegend( $key ) {
 		return $this->msg( "{$this->mMessagePrefix}-$key" )->text();

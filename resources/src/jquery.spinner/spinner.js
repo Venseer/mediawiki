@@ -5,7 +5,7 @@
  *
  * @class jQuery.plugin.spinner
  */
-( function ( $ ) {
+( function () {
 
 	// Default options for new spinners,
 	// stored outside the function to share between calls.
@@ -61,7 +61,7 @@
 		createSpinner: function ( opts ) {
 			var $spinner;
 
-			if ( opts !== undefined && $.type( opts ) !== 'object' ) {
+			if ( typeof opts === 'string' ) {
 				opts = {
 					id: opts
 				};
@@ -111,4 +111,4 @@
 	 * @mixins jQuery.plugin.spinner
 	 */
 
-}( jQuery ) );
+}() );

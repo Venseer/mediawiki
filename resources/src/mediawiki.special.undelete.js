@@ -1,13 +1,13 @@
 /*!
  * JavaScript for Special:Undelete
  */
-( function ( mw, $ ) {
+( function () {
 	$( function () {
 		var summaryCodePointLimit = mw.config.get( 'wgCommentCodePointLimit' ),
 			summaryByteLimit = mw.config.get( 'wgCommentByteLimit' ),
 			wpComment = OO.ui.infuse( $( '#wpComment' ).closest( '.oo-ui-widget' ) );
 
-		$( '#mw-undelete-invert' ).click( function () {
+		$( '#mw-undelete-invert' ).on( 'click', function () {
 			$( '.mw-undelete-revlist input[type="checkbox"]' ).prop( 'checked', function ( i, val ) {
 				return !val;
 			} );
@@ -20,4 +20,4 @@
 			mw.widgets.visibleByteLimit( wpComment, summaryByteLimit );
 		}
 	} );
-}( mediaWiki, jQuery ) );
+}() );

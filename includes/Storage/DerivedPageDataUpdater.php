@@ -27,23 +27,30 @@ use CategoryMembershipChangeJob;
 use Content;
 use ContentHandler;
 use DataUpdate;
+use DeferrableUpdate;
 use DeferredUpdates;
 use Hooks;
 use IDBAccessObject;
 use InvalidArgumentException;
 use JobQueueGroup;
 use Language;
+use LinksDeletionUpdate;
 use LinksUpdate;
 use LogicException;
 use MediaWiki\Edit\PreparedEdit;
-use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\MutableRevisionRecord;
+use MediaWiki\Revision\RenderedRevision;
+use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Revision\RevisionRenderer;
+use MediaWiki\Revision\RevisionSlots;
+use MediaWiki\Revision\RevisionStore;
+use MediaWiki\Revision\SlotRoleRegistry;
+use MediaWiki\Revision\SlotRecord;
 use MediaWiki\User\UserIdentity;
 use MessageCache;
 use ParserCache;
 use ParserOptions;
 use ParserOutput;
-use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use RecentChangesUpdateJob;
 use ResourceLoaderWikiModule;
 use Revision;
@@ -52,6 +59,7 @@ use SiteStatsUpdate;
 use Title;
 use User;
 use Wikimedia\Assert\Assert;
+use Wikimedia\Rdbms\LBFactory;
 use WikiPage;
 
 /**
@@ -110,12 +118,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	/**
 	 * @var Language
 	 */
-	private $contentLanguage;
-
-	/**
-	 * @var LoggerInterface
-	 */
-	private $saveParseLogger;
+	private $contLang;
 
 	/**
 	 * @var JobQueueGroup
@@ -128,6 +131,11 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	private $messageCache;
 
 	/**
+	 * @var LBFactory
+	 */
+	private $loadbalancerFactory;
+
+	/**
 	 * @var string see $wgArticleCountMethod
 	 */
 	private $articleCountMethod;
@@ -138,23 +146,43 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	private $rcWatchCategoryMembership = false;
 
 	/**
-	 * See $options on prepareUpdate.
+	 * Stores (most of) the $options parameter of prepareUpdate().
+	 * @see prepareUpdate()
 	 */
 	private $options = [
 		'changed' => true,
+		// newrev is true if prepareUpdate is handling the creation of a new revision,
+		// as opposed to a null edit or a forced update.
+		'newrev' => false,
 		'created' => false,
 		'moved' => false,
 		'restored' => false,
+		'oldrevision' => null,
 		'oldcountable' => null,
 		'oldredirect' => null,
+		'triggeringUser' => null,
+		// causeAction/causeAgent default to 'unknown' but that's handled where it's read,
+		// to make the life of prepareUpdate() callers easier.
+		'causeAction' => null,
+		'causeAgent' => null,
 	];
 
 	/**
 	 * The state of the relevant row in page table before the edit.
 	 * This is determined by the first call to grabCurrentRevision, prepareContent,
-	 * or prepareUpdate.
+	 * or prepareUpdate (so it is only accessible in 'knows-current' or a later stage).
 	 * If pageState was not initialized when prepareUpdate() is called, prepareUpdate() will
 	 * attempt to emulate the state of the page table before the edit.
+	 *
+	 * Contains the following fields:
+	 * - oldRevision (RevisionRecord|null): the revision that was current before the change
+	 *   associated with this update. Might not be set, use getParentRevision().
+	 * - oldId (int|null): the id of the above revision. 0 if there is no such revision (the change
+	 *   was about creating a new page); null if not known (that should not happen).
+	 * - oldIsRedirect (bool|null): whether the page was a redirect before the change. Lazy-loaded,
+	 *   can be null; use wasRedirect() instead of direct access.
+	 * - oldCountable (bool|null): whether the page was countable before the change (or null
+	 *   if we don't have that information)
 	 *
 	 * @var array
 	 */
@@ -166,31 +194,27 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	private $slotsUpdate = null;
 
 	/**
-	 * @var MutableRevisionSlots|null
+	 * @var RevisionRecord|null
 	 */
-	private $pstContentSlots = null;
+	private $parentRevision = null;
 
 	/**
-	 * @var object[] anonymous objects with two fields, using slot roles as keys:
-	 *  - hasHtml: whether the output contains HTML
-	 *  - ParserOutput: the slot's parser output
-	 */
-	private $slotsOutput = [];
-
-	/**
-	 * @var ParserOutput|null
-	 */
-	private $canonicalParserOutput = null;
-
-	/**
-	 * @var ParserOptions|null
-	 */
-	private $canonicalParserOptions = null;
-
-	/**
-	 * @var RevisionRecord
+	 * @var RevisionRecord|null
 	 */
 	private $revision = null;
+
+	/**
+	 * @var RenderedRevision
+	 */
+	private $renderedRevision = null;
+
+	/**
+	 * @var RevisionRenderer
+	 */
+	private $revisionRenderer;
+
+	/** @var SlotRoleRegistry */
+	private $slotRoleRegistry;
 
 	/**
 	 * A stage identifier for managing the life cycle of this instance.
@@ -237,31 +261,37 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	/**
 	 * @param WikiPage $wikiPage ,
 	 * @param RevisionStore $revisionStore
+	 * @param RevisionRenderer $revisionRenderer
+	 * @param SlotRoleRegistry $slotRoleRegistry
 	 * @param ParserCache $parserCache
 	 * @param JobQueueGroup $jobQueueGroup
 	 * @param MessageCache $messageCache
-	 * @param Language $contentLanguage
-	 * @param LoggerInterface|null $saveParseLogger
+	 * @param Language $contLang
+	 * @param LBFactory $loadbalancerFactory
 	 */
 	public function __construct(
 		WikiPage $wikiPage,
 		RevisionStore $revisionStore,
+		RevisionRenderer $revisionRenderer,
+		SlotRoleRegistry $slotRoleRegistry,
 		ParserCache $parserCache,
 		JobQueueGroup $jobQueueGroup,
 		MessageCache $messageCache,
-		Language $contentLanguage,
-		LoggerInterface $saveParseLogger = null
+		Language $contLang,
+		LBFactory $loadbalancerFactory
 	) {
 		$this->wikiPage = $wikiPage;
 
 		$this->parserCache = $parserCache;
 		$this->revisionStore = $revisionStore;
+		$this->revisionRenderer = $revisionRenderer;
+		$this->slotRoleRegistry = $slotRoleRegistry;
 		$this->jobQueueGroup = $jobQueueGroup;
 		$this->messageCache = $messageCache;
-		$this->contentLanguage = $contentLanguage;
-
-		// XXX: replace all wfDebug calls with a Logger. Do we nede more than one logger here?
-		$this->saveParseLogger = $saveParseLogger ?: new NullLogger();
+		$this->contLang = $contLang;
+		// XXX only needed for waiting for replicas to catch up; there should be a narrower
+		// interface for that.
+		$this->loadbalancerFactory = $loadbalancerFactory;
 	}
 
 	/**
@@ -309,7 +339,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 
 	/**
 	 * Checks whether this DerivedPageDataUpdater can be re-used for running updates targeting
-	 * the the given revision.
+	 * the given revision.
 	 *
 	 * @param UserIdentity|null $user The user creating the revision in question
 	 * @param RevisionRecord|null $revision New revision (after save, if already saved)
@@ -331,23 +361,17 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			throw new InvalidArgumentException( '$parentId should match the parent of $revision' );
 		}
 
-		if ( $revision
-			&& $user
-			&& $revision->getUser( RevisionRecord::RAW )->getName() !== $user->getName()
-		) {
-			throw new InvalidArgumentException( '$user should match the author of $revision' );
-		}
-
+		// NOTE: For null revisions, $user may be different from $this->revision->getUser
+		// and also from $revision->getUser.
+		// But $user should always match $this->user.
 		if ( $user && $this->user && $user->getName() !== $this->user->getName() ) {
 			return false;
 		}
 
-		if ( $revision && $this->revision && $this->revision->getId() !== $revision->getId() ) {
+		if ( $revision && $this->revision && $this->revision->getId()
+			&& $this->revision->getId() !== $revision->getId()
+		) {
 			return false;
-		}
-
-		if ( $revision && !$user ) {
-			$user = $revision->getUser( RevisionRecord::RAW );
 		}
 
 		if ( $this->pageState
@@ -365,20 +389,6 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			return false;
 		}
 
-		if ( $this->revision
-			&& $user
-			&& $this->revision->getUser( RevisionRecord::RAW )->getName() !== $user->getName()
-		) {
-			return false;
-		}
-
-		if ( $revision
-			&& $this->user
-			&& $revision->getUser( RevisionRecord::RAW )->getName() !== $this->user->getName()
-		) {
-			return false;
-		}
-
 		// NOTE: this check is the primary reason for having the $this->slotsUpdate field!
 		if ( $this->slotsUpdate
 			&& $slotsUpdate
@@ -387,9 +397,9 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			return false;
 		}
 
-		if ( $this->pstContentSlots
-			&& $revision
-			&& !$this->pstContentSlots->hasSameContent( $revision->getSlots() )
+		if ( $revision
+			&& $this->revision
+			&& !$this->revision->getSlots()->hasSameContent( $revision->getSlots() )
 		) {
 			return false;
 		}
@@ -443,29 +453,34 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	}
 
 	/**
-	 * Returns the revision that was current before the edit. This would be null if the edit
-	 * created the page, or the revision's parent for a regular edit, or the revision itself
-	 * for a null-edit.
-	 * Only defined after calling grabCurrentRevision() or prepareContent() or prepareUpdate()!
+	 * Returns the parent revision of the new revision wrapped by this update.
+	 * If the update is a null-edit, this will return the parent of the current (and new) revision.
+	 * This will return null if the revision wrapped by this update created the page.
+	 * Only defined after calling prepareContent() or prepareUpdate()!
 	 *
-	 * @return RevisionRecord|null the revision that was current before the edit, or null if
-	 *         the edit created the page.
+	 * @return RevisionRecord|null the parent revision of the new revision, or null if
+	 *         the update created the page.
 	 */
-	private function getOldRevision() {
-		$this->assertHasPageState( __METHOD__ );
+	private function getParentRevision() {
+		$this->assertPrepared( __METHOD__ );
 
-		// If 'oldRevision' is not set, load it!
-		// Useful if $this->oldPageState is initialized by prepareUpdate.
-		if ( !array_key_exists( 'oldRevision', $this->pageState ) ) {
-			/** @var int $oldId */
-			$oldId = $this->pageState['oldId'];
-			$flags = $this->useMaster() ? RevisionStore::READ_LATEST : 0;
-			$this->pageState['oldRevision'] = $oldId
-				? $this->revisionStore->getRevisionById( $oldId, $flags )
-				: null;
+		if ( $this->parentRevision ) {
+			return $this->parentRevision;
 		}
 
-		return $this->pageState['oldRevision'];
+		if ( !$this->pageState['oldId'] ) {
+			// If there was no current revision, there is no parent revision,
+			// since the page didn't exist.
+			return null;
+		}
+
+		$oldId = $this->revision->getParentId();
+		$flags = $this->useMaster() ? RevisionStore::READ_LATEST : 0;
+		$this->parentRevision = $oldId
+			? $this->revisionStore->getRevisionById( $oldId, $flags )
+			: null;
+
+		return $this->parentRevision;
 	}
 
 	/**
@@ -482,8 +497,8 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 * @note After prepareUpdate() was called, grabCurrentRevision() will throw an exception
 	 * to avoid confusion, since the page's current revision is then the new revision after
 	 * the edit, which was presumably passed to prepareUpdate() as the $revision parameter.
-	 * Use getOldRevision() instead to access the revision that used to be current before the
-	 * edit.
+	 * Use getParentRevision() instead to access the revision that is the parent of the
+	 * new revision.
 	 *
 	 * @return RevisionRecord|null the page's current revision, or null if the page does not
 	 * yet exist.
@@ -522,16 +537,18 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 * @return bool
 	 */
 	public function isContentPrepared() {
-		return $this->pstContentSlots !== null;
+		return $this->revision !== null;
 	}
 
 	/**
 	 * Whether prepareUpdate() has been called on this instance.
 	 *
+	 * @note will also return null in case of a null-edit!
+	 *
 	 * @return bool
 	 */
 	public function isUpdatePrepared() {
-		return $this->revision !== null;
+		return $this->revision !== null && $this->revision->getId() !== null;
 	}
 
 	/**
@@ -543,25 +560,17 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	}
 
 	/**
-	 * @return string
-	 */
-	private function getTimestampNow() {
-		// TODO: allow an override to be injected for testing
-		return wfTimestampNow();
-	}
-
-	/**
-	 * Whether the content of the target revision is publicly visible.
+	 * Whether the content is deleted and thus not visible to the public.
 	 *
 	 * @return bool
 	 */
-	public function isContentPublic() {
+	public function isContentDeleted() {
 		if ( $this->revision ) {
-			// XXX: if that revision is the current revision, this can be skipped
-			return !$this->revision->isDeleted( RevisionRecord::DELETED_TEXT );
+			// XXX: if that revision is the current revision, this should be skipped
+			return $this->revision->isDeleted( RevisionRecord::DELETED_TEXT );
 		} else {
-			// If the content has not been saved yet, it cannot have been suppressed yet.
-			return true;
+			// If the content has not been saved yet, it cannot have been deleted yet.
+			return false;
 		}
 	}
 
@@ -624,7 +633,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			return false;
 		}
 
-		if ( !$this->isContentPublic() ) {
+		if ( $this->isContentDeleted() ) {
 			// This should be irrelevant: countability only applies to the current revision,
 			// and the current revision is never suppressed.
 			return false;
@@ -637,12 +646,26 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		$hasLinks = null;
 
 		if ( $this->articleCountMethod === 'link' ) {
+			// NOTE: it would be more appropriate to determine for each slot separately
+			// whether it has links, and use that information with that slot's
+			// isCountable() method. However, that would break parity with
+			// WikiPage::isCountable, which uses the pagelinks table to determine
+			// whether the current revision has links.
 			$hasLinks = (bool)count( $this->getCanonicalParserOutput()->getLinks() );
 		}
 
-		// TODO: MCR: ask all slots if they have links [SlotHandler/PageTypeHandler]
-		$mainContent = $this->getRawContent( 'main' );
-		return $mainContent->isCountable( $hasLinks );
+		foreach ( $this->getModifiedSlotRoles() as $role ) {
+			$roleHandler = $this->slotRoleRegistry->getRoleHandler( $role );
+			if ( $roleHandler->supportsArticleCount() ) {
+				$content = $this->getRawContent( $role );
+
+				if ( $content->isCountable( $hasLinks ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -650,7 +673,8 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 */
 	public function isRedirect() {
 		// NOTE: main slot determines redirect status
-		$mainContent = $this->getRawContent( 'main' );
+		// TODO: MCR: this should be controlled by a PageTypeHandler
+		$mainContent = $this->getRawContent( SlotRecord::MAIN );
 
 		return $mainContent->isRedirect();
 	}
@@ -662,7 +686,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 */
 	private function revisionIsRedirect( RevisionRecord $rev ) {
 		// NOTE: main slot determines redirect status
-		$mainContent = $rev->getContent( 'main', RevisionRecord::RAW );
+		$mainContent = $rev->getContent( SlotRecord::MAIN, RevisionRecord::RAW );
 
 		return $mainContent->isRedirect();
 	}
@@ -679,11 +703,11 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 *
 	 * @see docs/pageupdater.txt for more information on when thie method can and should be called.
 	 *
-	 * @note: Calling this method more than once with the same $slotsUpdate
+	 * @note Calling this method more than once with the same $slotsUpdate
 	 * has no effect. Calling this method multiple times with different content will cause
 	 * an exception.
 	 *
-	 * @note: Calling this method after prepareUpdate() has been called will cause an exception.
+	 * @note Calling this method after prepareUpdate() has been called will cause an exception.
 	 *
 	 * @param User $user The user to act as context for pre-save transformation (PST).
 	 *        Type hint should be reduced to UserIdentity at some point.
@@ -728,43 +752,48 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 
 		$this->slotsOutput = [];
 		$this->canonicalParserOutput = null;
-		$this->canonicalParserOptions = null;
 
 		// The edit may have already been prepared via api.php?action=stashedit
 		$stashedEdit = false;
 
 		// TODO: MCR: allow output for all slots to be stashed.
-		if ( $useStash && $slotsUpdate->isModifiedSlot( 'main' ) ) {
-			$mainContent = $slotsUpdate->getModifiedSlot( 'main' )->getContent();
+		if ( $useStash && $slotsUpdate->isModifiedSlot( SlotRecord::MAIN ) ) {
+			$mainContent = $slotsUpdate->getModifiedSlot( SlotRecord::MAIN )->getContent();
 			$legacyUser = User::newFromIdentity( $user );
 			$stashedEdit = ApiStashEdit::checkCache( $title, $mainContent, $legacyUser );
 		}
 
-		if ( $stashedEdit ) {
-			/** @var ParserOutput $output */
-			$output = $stashedEdit->output;
-
-			// TODO: this should happen when stashing the ParserOutput, not now!
-			$output->setCacheTime( $stashedEdit->timestamp );
-
-			// TODO: MCR: allow output for all slots to be stashed.
-			$this->canonicalParserOutput = $output;
-		}
-
-		$userPopts = ParserOptions::newFromUserAndLang( $user, $this->contentLanguage );
+		$userPopts = ParserOptions::newFromUserAndLang( $user, $this->contLang );
 		Hooks::run( 'ArticlePrepareTextForEdit', [ $wikiPage, $userPopts ] );
 
 		$this->user = $user;
 		$this->slotsUpdate = $slotsUpdate;
 
 		if ( $parentRevision ) {
-			// start out by inheriting all parent slots
-			$this->pstContentSlots = MutableRevisionSlots::newFromParentRevisionSlots(
-				$parentRevision->getSlots()->getSlots()
-			);
+			$this->revision = MutableRevisionRecord::newFromParentRevision( $parentRevision );
 		} else {
-			$this->pstContentSlots = new MutableRevisionSlots();
+			$this->revision = new MutableRevisionRecord( $title );
 		}
+
+		// NOTE: user and timestamp must be set, so they can be used for
+		// {{subst:REVISIONUSER}} and {{subst:REVISIONTIMESTAMP}} in PST!
+		$this->revision->setTimestamp( wfTimestampNow() );
+		$this->revision->setUser( $user );
+
+		// Set up ParserOptions to operate on the new revision
+		$oldCallback = $userPopts->getCurrentRevisionCallback();
+		$userPopts->setCurrentRevisionCallback(
+			function ( Title $parserTitle, $parser = false ) use ( $title, $oldCallback ) {
+				if ( $parserTitle->equals( $title ) ) {
+					$legacyRevision = new Revision( $this->revision );
+					return $legacyRevision;
+				} else {
+					return call_user_func( $oldCallback, $parserTitle, $parser );
+				}
+			}
+		);
+
+		$pstContentSlots = $this->revision->getSlots();
 
 		foreach ( $slotsUpdate->getModifiedRoles() as $role ) {
 			$slot = $slotsUpdate->getModifiedSlot( $role );
@@ -773,7 +802,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 				// No PST for inherited slots! Note that "modified" slots may still be inherited
 				// from an earlier version, e.g. for rollbacks.
 				$pstSlot = $slot;
-			} elseif ( $role === 'main' && $stashedEdit ) {
+			} elseif ( $role === SlotRecord::MAIN && $stashedEdit ) {
 				// TODO: MCR: allow PST content for all slots to be stashed.
 				$pstSlot = SlotRecord::newUnsaved( $role, $stashedEdit->pstContent );
 			} else {
@@ -782,18 +811,88 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 				$pstSlot = SlotRecord::newUnsaved( $role, $pstContent );
 			}
 
-			$this->pstContentSlots->setSlot( $pstSlot );
+			$pstContentSlots->setSlot( $pstSlot );
 		}
 
 		foreach ( $slotsUpdate->getRemovedRoles() as $role ) {
-			$this->pstContentSlots->removeSlot( $role );
+			$pstContentSlots->removeSlot( $role );
 		}
 
 		$this->options['created'] = ( $parentRevision === null );
 		$this->options['changed'] = ( $parentRevision === null
-			|| !$this->pstContentSlots->hasSameContent( $parentRevision->getSlots() ) );
+			|| !$pstContentSlots->hasSameContent( $parentRevision->getSlots() ) );
 
 		$this->doTransition( 'has-content' );
+
+		if ( !$this->options['changed'] ) {
+			// null-edit!
+
+			// TODO: move this into MutableRevisionRecord
+			// TODO: This needs to behave differently for a forced dummy edit!
+			$this->revision->setId( $parentRevision->getId() );
+			$this->revision->setTimestamp( $parentRevision->getTimestamp() );
+			$this->revision->setPageId( $parentRevision->getPageId() );
+			$this->revision->setParentId( $parentRevision->getParentId() );
+			$this->revision->setUser( $parentRevision->getUser( RevisionRecord::RAW ) );
+			$this->revision->setComment( $parentRevision->getComment( RevisionRecord::RAW ) );
+			$this->revision->setMinorEdit( $parentRevision->isMinor() );
+			$this->revision->setVisibility( $parentRevision->getVisibility() );
+
+			// prepareUpdate() is redundant for null-edits
+			$this->doTransition( 'has-revision' );
+		} else {
+			$this->parentRevision = $parentRevision;
+		}
+
+		$renderHints = [ 'use-master' => $this->useMaster(), 'audience' => RevisionRecord::RAW ];
+
+		if ( $stashedEdit ) {
+			/** @var ParserOutput $output */
+			$output = $stashedEdit->output;
+
+			// TODO: this should happen when stashing the ParserOutput, not now!
+			$output->setCacheTime( $stashedEdit->timestamp );
+
+			$renderHints['known-revision-output'] = $output;
+		}
+
+		// NOTE: we want a canonical rendering, so don't pass $this->user or ParserOptions
+		// NOTE: the revision is either new or current, so we can bypass audience checks.
+		$this->renderedRevision = $this->revisionRenderer->getRenderedRevision(
+			$this->revision,
+			null,
+			null,
+			$renderHints
+		);
+	}
+
+	/**
+	 * Returns the update's target revision - that is, the revision that will be the current
+	 * revision after the update.
+	 *
+	 * @note Callers must treat the returned RevisionRecord's content as immutable, even
+	 * if it is a MutableRevisionRecord instance. Other aspects of a MutableRevisionRecord
+	 * returned from here, such as the user or the comment, may be changed, but may not
+	 * be reflected in ParserOutput until after prepareUpdate() has been called.
+	 *
+	 * @todo This is currently used by PageUpdater::makeNewRevision() to construct an unsaved
+	 * MutableRevisionRecord instance. Introduce something like an UnsavedRevisionFactory service
+	 * for that purpose instead!
+	 *
+	 * @return RevisionRecord
+	 */
+	public function getRevision() {
+		$this->assertPrepared( __METHOD__ );
+		return $this->revision;
+	}
+
+	/**
+	 * @return RenderedRevision
+	 */
+	public function getRenderedRevision() {
+		$this->assertPrepared( __METHOD__ );
+
+		return $this->renderedRevision;
 	}
 
 	private function assertHasPageState( $method ) {
@@ -806,9 +905,17 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	}
 
 	private function assertPrepared( $method ) {
-		if ( !$this->pstContentSlots ) {
+		if ( !$this->revision ) {
 			throw new LogicException(
 				'Must call prepareContent() or prepareUpdate() before calling ' . $method
+			);
+		}
+	}
+
+	private function assertHasRevision( $method ) {
+		if ( !$this->revision->getId() ) {
+			throw new LogicException(
+				'Must call prepareUpdate() before calling ' . $method
 			);
 		}
 	}
@@ -826,7 +933,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	/**
 	 * Whether the edit created, or should create, a new revision (that is, it's not a null-edit).
 	 *
-	 * @warning: at present, "null-revisions" that do not change content but do have a revision
+	 * @warning at present, "null-revisions" that do not change content but do have a revision
 	 * record would return false after prepareContent(), but true after prepareUpdate()!
 	 * This should probably be fixed.
 	 *
@@ -861,11 +968,14 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	/**
 	 * Returns the slots of the target revision, after PST.
 	 *
+	 * @note Callers must treat the returned RevisionSlots instance as immutable, even
+	 * if it is a MutableRevisionSlots instance.
+	 *
 	 * @return RevisionSlots
 	 */
 	public function getSlots() {
 		$this->assertPrepared( __METHOD__ );
-		return $this->pstContentSlots;
+		return $this->revision->getSlots();
 	}
 
 	/**
@@ -877,13 +987,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		$this->assertPrepared( __METHOD__ );
 
 		if ( !$this->slotsUpdate ) {
-			if ( !$this->revision ) {
-				// This should not be possible: if assertPrepared() returns true,
-				// at least one of $this->slotsUpdate or $this->revision should be set.
-				throw new LogicException( 'No revision nor a slots update is known!' );
-			}
-
-			$old = $this->getOldRevision();
+			$old = $this->getParentRevision();
 			$this->slotsUpdate = RevisionSlotsUpdate::newFromRevisionSlots(
 				$this->revision->getSlots(),
 				$old ? $old->getSlots() : null
@@ -931,11 +1035,11 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 *
 	 * @see docs/pageupdater.txt for more information on when thie method can and should be called.
 	 *
-	 * @note: Calling this method more than once with the same revision has no effect.
+	 * @note Calling this method more than once with the same revision has no effect.
 	 * $options are only used for the first call. Calling this method multiple times with
 	 * different revisions will cause an exception.
 	 *
-	 * @note: If grabCurrentRevision() (or prepareContent()) has been called before
+	 * @note If grabCurrentRevision() (or prepareContent()) has been called before
 	 * calling this method, $revision->getParentRevision() has to refer to the revision that
 	 * was the current revision at the time grabCurrentRevision() was called.
 	 *
@@ -946,8 +1050,8 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 * - moved: bool, whether the page was moved (default false)
 	 * - restored: bool, whether the page was undeleted (default false)
 	 * - oldrevision: Revision object for the pre-update revision (default null)
-	 * - parseroutput: The canonical ParserOutput of $revision (default null)
-	 * - triggeringuser: The user triggering the update (UserIdentity, default null)
+	 * - triggeringUser: The user triggering the update (UserIdentity, defaults to the
+	 *   user who created the revision)
 	 * - oldredirect: bool, null, or string 'no-change' (default null):
 	 *    - bool: whether the page was counted as a redirect before that
 	 *      revision, only used in changed is true and created is false
@@ -958,7 +1062,11 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	 *    - null: if created is false, don't update the article count; if created
 	 *      is true, do update the article count
 	 *    - 'no-change': don't update the article count, ever
-	 *
+	 *    When set to null, pageState['oldCountable'] will be used instead if available.
+	 *  - causeAction: an arbitrary string identifying the reason for the update.
+	 *    See DataUpdate::getCauseAction(). (default 'unknown')
+	 *  - causeAgent: name of the user who caused the update. See DataUpdate::getCauseAgent().
+	 *    (string, default 'unknown')
 	 */
 	public function prepareUpdate( RevisionRecord $revision, array $options = [] ) {
 		Assert::parameter(
@@ -969,15 +1077,9 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			'must be a RevisionRecord (or Revision)'
 		);
 		Assert::parameter(
-			!isset( $options['parseroutput'] )
-			|| $options['parseroutput'] instanceof ParserOutput,
-			'$options["parseroutput"]',
-			'must be a ParserOutput'
-		);
-		Assert::parameter(
-			!isset( $options['triggeringuser'] )
-			|| $options['triggeringuser'] instanceof UserIdentity,
-			'$options["triggeringuser"]',
+			!isset( $options['triggeringUser'] )
+			|| $options['triggeringUser'] instanceof UserIdentity,
+			'$options["triggeringUser"]',
 			'must be a UserIdentity'
 		);
 
@@ -987,21 +1089,21 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			);
 		}
 
-		if ( $this->revision ) {
+		if ( $this->revision && $this->revision->getId() ) {
 			if ( $this->revision->getId() === $revision->getId() ) {
 				return; // nothing to do!
 			} else {
 				throw new LogicException(
 					'Trying to re-use DerivedPageDataUpdater with revision '
-					.$revision->getId()
+					. $revision->getId()
 					. ', but it\'s already bound to revision '
 					. $this->revision->getId()
 				);
 			}
 		}
 
-		if ( $this->pstContentSlots
-			&& !$this->pstContentSlots->hasSameContent( $revision->getSlots() )
+		if ( $this->revision
+			&& !$this->revision->getSlots()->hasSameContent( $revision->getSlots() )
 		) {
 			throw new LogicException(
 				'The Revision provided has mismatching content!'
@@ -1011,12 +1113,14 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		// Override fields defined in $this->options with values from $options.
 		$this->options = array_intersect_key( $options, $this->options ) + $this->options;
 
-		if ( isset( $this->pageState['oldId'] ) ) {
-			$oldId = $this->pageState['oldId'];
+		if ( $this->revision ) {
+			$oldId = $this->pageState['oldId'] ?? 0;
+			$this->options['newrev'] = ( $revision->getId() !== $oldId );
 		} elseif ( isset( $this->options['oldrevision'] ) ) {
 			/** @var Revision|RevisionRecord $oldRev */
 			$oldRev = $this->options['oldrevision'];
 			$oldId = $oldRev->getId();
+			$this->options['newrev'] = ( $revision->getId() !== $oldId );
 		} else {
 			$oldId = $revision->getParentId();
 		}
@@ -1054,7 +1158,7 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			if ( !$this->user->equals( $user ) ) {
 				throw new LogicException(
 					'The Revision provided has a mismatching actor: expected '
-					.$this->user->getName()
+					. $this->user->getName()
 					. ', got '
 					. $user->getName()
 				);
@@ -1096,7 +1200,6 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		$this->options['created'] = ( $this->pageState['oldId'] === 0 );
 
 		$this->revision = $revision;
-		$this->pstContentSlots = $revision->getSlots();
 
 		$this->doTransition( 'has-revision' );
 
@@ -1107,72 +1210,25 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		}
 
 		// Prune any output that depends on the revision ID.
-		if ( $this->canonicalParserOutput ) {
-			if ( $this->outputVariesOnRevisionMetaData( $this->canonicalParserOutput, __METHOD__ ) ) {
-				$this->canonicalParserOutput = null;
-			}
+		if ( $this->renderedRevision ) {
+			$this->renderedRevision->updateRevision( $revision );
 		} else {
-			$this->saveParseLogger->debug( __METHOD__ . ": No prepared canonical output...\n" );
-		}
 
-		if ( $this->slotsOutput ) {
-			foreach ( $this->slotsOutput as $role => $prep ) {
-				if ( $this->outputVariesOnRevisionMetaData( $prep->output, __METHOD__ ) ) {
-					unset( $this->slotsOutput[$role] );
-				}
-			}
-		} else {
-			$this->saveParseLogger->debug( __METHOD__ . ": No prepared output...\n" );
-		}
+			// NOTE: we want a canonical rendering, so don't pass $this->user or ParserOptions
+			// NOTE: the revision is either new or current, so we can bypass audience checks.
+			$this->renderedRevision = $this->revisionRenderer->getRenderedRevision(
+				$this->revision,
+				null,
+				null,
+				[ 'use-master' => $this->useMaster(), 'audience' => RevisionRecord::RAW ]
+			);
 
-		// reset ParserOptions, so the actual revision ID is used in future ParserOutput generation
-		$this->canonicalParserOptions = null;
-
-		// Avoid re-generating the canonical ParserOutput if it's known.
-		// We just trust that the caller is passing the correct ParserOutput!
-		if ( isset( $options['parseroutput'] ) ) {
-			$this->canonicalParserOutput = $options['parseroutput'];
+			// XXX: Since we presumably are dealing with the current revision,
+			// we could try to get the ParserOutput from the parser cache.
 		}
 
 		// TODO: optionally get ParserOutput from the ParserCache here.
 		// Move the logic used by RefreshLinksJob here!
-	}
-
-	/**
-	 * @param ParserOutput $out
-	 * @param string $method
-	 * @return bool
-	 */
-	private function outputVariesOnRevisionMetaData( ParserOutput $out, $method = __METHOD__ ) {
-		if ( $out->getFlag( 'vary-revision' ) ) {
-			// XXX: Just keep the output if the speculative revision ID was correct, like below?
-			$this->saveParseLogger->info(
-				"$method: Prepared output has vary-revision...\n"
-			);
-			return true;
-		} elseif ( $out->getFlag( 'vary-revision-id' )
-			&& $out->getSpeculativeRevIdUsed() !== $this->revision->getId()
-		) {
-			$this->saveParseLogger->info(
-				"$method: Prepared output has vary-revision-id with wrong ID...\n"
-			);
-			return true;
-		} elseif ( $out->getFlag( 'vary-user' )
-			&& !$this->options['changed']
-		) {
-			// When Alice makes a null-edit on top of Bob's edit,
-			// {{REVISIONUSER}} must resolve to "Bob", not "Alice", see T135261.
-			// TODO: to avoid this, we should check for null-edits in makeCanonicalparserOptions,
-			// and set setCurrentRevisionCallback to return the existing revision when appropriate.
-			// See also the comment there [dk 2018-05]
-			$this->saveParseLogger->info(
-				"$method: Prepared output has vary-user and is null-edit...\n"
-			);
-			return true;
-		} else {
-			wfDebug( "$method: Keeping prepared output...\n" );
-			return false;
-		}
 	}
 
 	/**
@@ -1187,11 +1243,11 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 
 		$preparedEdit->popts = $this->getCanonicalParserOptions();
 		$preparedEdit->output = $this->getCanonicalParserOutput();
-		$preparedEdit->pstContent = $this->pstContentSlots->getContent( 'main' );
+		$preparedEdit->pstContent = $this->revision->getContent( SlotRecord::MAIN );
 		$preparedEdit->newContent =
-			$slotsUpdate->isModifiedSlot( 'main' )
-			? $slotsUpdate->getModifiedSlot( 'main' )->getContent()
-			: $this->pstContentSlots->getContent( 'main' ); // XXX: can we just remove this?
+			$slotsUpdate->isModifiedSlot( SlotRecord::MAIN )
+			? $slotsUpdate->getModifiedSlot( SlotRecord::MAIN )->getContent()
+			: $this->revision->getContent( SlotRecord::MAIN ); // XXX: can we just remove this?
 		$preparedEdit->oldContent = null; // unused. // XXX: could get this from the parent revision
 		$preparedEdit->revid = $this->revision ? $this->revision->getId() : null;
 		$preparedEdit->timestamp = $preparedEdit->output->getCacheTime();
@@ -1201,162 +1257,131 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 	}
 
 	/**
-	 * @return bool
-	 */
-	private function isContentAccessible() {
-		// XXX: when we move this to a RevisionHtmlProvider, the audience may be configurable!
-		return $this->isContentPublic();
-	}
-
-	/**
 	 * @param string $role
 	 * @param bool $generateHtml
 	 * @return ParserOutput
 	 */
 	public function getSlotParserOutput( $role, $generateHtml = true ) {
-		// TODO: factor this out into a RevisionHtmlProvider that can also be used for viewing.
-
-		$this->assertPrepared( __METHOD__ );
-
-		if ( isset( $this->slotsOutput[$role] ) ) {
-			$entry = $this->slotsOutput[$role];
-
-			if ( $entry->hasHtml || !$generateHtml ) {
-				return $entry->output;
-			}
-		}
-
-		if ( !$this->isContentAccessible() ) {
-			// empty output
-			$output = new ParserOutput();
-		} else {
-			$content = $this->getRawContent( $role );
-
-			$output = $content->getParserOutput(
-				$this->getTitle(),
-				$this->revision ? $this->revision->getId() : null,
-				$this->getCanonicalParserOptions(),
-				$generateHtml
-			);
-		}
-
-		$this->slotsOutput[$role] = (object)[
-			'output' => $output,
-			'hasHtml' => $generateHtml,
-		];
-
-		$output->setCacheTime( $this->getTimestampNow() );
-
-		return $output;
+		return $this->getRenderedRevision()->getSlotParserOutput(
+			$role,
+			[ 'generate-html' => $generateHtml ]
+		);
 	}
 
 	/**
 	 * @return ParserOutput
 	 */
 	public function getCanonicalParserOutput() {
-		if ( $this->canonicalParserOutput ) {
-			return $this->canonicalParserOutput;
-		}
-
-		// TODO: MCR: logic for combining the output of multiple slot goes here!
-		// TODO: factor this out into a RevisionHtmlProvider that can also be used for viewing.
-		$this->canonicalParserOutput = $this->getSlotParserOutput( 'main' );
-
-		return $this->canonicalParserOutput;
+		return $this->getRenderedRevision()->getRevisionParserOutput();
 	}
 
 	/**
 	 * @return ParserOptions
 	 */
 	public function getCanonicalParserOptions() {
-		if ( $this->canonicalParserOptions ) {
-			return $this->canonicalParserOptions;
-		}
-
-		// TODO: ParserOptions should *not* be controlled by the ContentHandler!
-		// See T190712 for how to fix this for Wikibase.
-		$this->canonicalParserOptions = $this->wikiPage->makeParserOptions( 'canonical' );
-
-		//TODO: if $this->revision is not set but we already know that we pending update is a
-		// null-edit, we should probably use the page's current revision here.
-		// That would avoid the need for the !$this->options['changed'] branch in
-		// outputVariesOnRevisionMetaData [dk 2018-05]
-
-		if ( $this->revision ) {
-			// Make sure we use the appropriate revision ID when generating output
-			$title = $this->getTitle();
-			$oldCallback = $this->canonicalParserOptions->getCurrentRevisionCallback();
-			$this->canonicalParserOptions->setCurrentRevisionCallback(
-				function ( Title $parserTitle, $parser = false ) use ( $title, &$oldCallback ) {
-					if ( $parserTitle->equals( $title ) ) {
-						$legacyRevision = new Revision( $this->revision );
-						return $legacyRevision;
-					} else {
-						return call_user_func( $oldCallback, $parserTitle, $parser );
-					}
-				}
-			);
-		} else {
-			// NOTE: we only get here without READ_LATEST if called directly by application logic
-			$dbIndex = $this->useMaster()
-				? DB_MASTER // use the best possible guess
-				: DB_REPLICA; // T154554
-
-			$this->canonicalParserOptions->setSpeculativeRevIdCallback(
-				function () use ( $dbIndex ) {
-					// TODO: inject LoadBalancer!
-					$lb = MediaWikiServices::getInstance()->getDBLoadBalancer();
-					// Use a fresh connection in order to see the latest data, by avoiding
-					// stale data from REPEATABLE-READ snapshots.
-					// HACK: But don't use a fresh connection in unit tests, since it would not have
-					// the fake tables. This should be handled by the LoadBalancer!
-					$flags = defined( 'MW_PHPUNIT_TEST' ) ? 0 : $lb::CONN_TRX_AUTOCOMMIT;
-					$db = $lb->getConnectionRef( $dbIndex, [], $this->getWikiId(), $flags );
-
-					return 1 + (int)$db->selectField(
-						'revision',
-						'MAX(rev_id)',
-						[],
-						__METHOD__
-					);
-				}
-			);
-		}
-
-		return $this->canonicalParserOptions;
+		return $this->getRenderedRevision()->getOptions();
 	}
 
 	/**
 	 * @param bool $recursive
 	 *
-	 * @return DataUpdate[]
+	 * @return DeferrableUpdate[]
 	 */
 	public function getSecondaryDataUpdates( $recursive = false ) {
-		// TODO: MCR: getSecondaryDataUpdates() needs a complete overhaul to avoid DataUpdates
-		// from different slots overwriting each other in the database. Plan:
-		// * replace direct calls to Content::getSecondaryDataUpdates() with calls to this method
-		// * Construct LinksUpdate here, on the combined ParserOutput, instead of in AbstractContent
-		//   for each slot.
-		// * Pass $slot into getSecondaryDataUpdates() - probably be introducing a new duplicate
-		//   version of this function in ContentHandler.
-		// * The new method gets the PreparedEdit, but no $recursive flag (that's for LinksUpdate)
-		// * Hack: call both the old and the new getSecondaryDataUpdates method here; Pass
-		//   the per-slot ParserOutput to the old method, for B/C.
-		// * Hack: If there is more than one slot, filter LinksUpdate from the DataUpdates
-		//   returned by getSecondaryDataUpdates, and use a LinksUpdated for the combined output
-		//   instead.
-		// * Call the SecondaryDataUpdates hook here (or kill it - its signature doesn't make sense)
+		if ( $this->isContentDeleted() ) {
+			// This shouldn't happen, since the current content is always public,
+			// and DataUpates are only needed for current content.
+			return [];
+		}
 
-		$content = $this->getSlots()->getContent( 'main' );
-
-		// NOTE: $output is the combined output, to be shown in the default view.
 		$output = $this->getCanonicalParserOutput();
 
-		$updates = $content->getSecondaryDataUpdates(
-			$this->getTitle(), null, $recursive, $output
+		// Construct a LinksUpdate for the combined canonical output.
+		$linksUpdate = new LinksUpdate(
+			$this->getTitle(),
+			$output,
+			$recursive
 		);
 
-		return $updates;
+		$allUpdates = [ $linksUpdate ];
+
+		// NOTE: Run updates for all slots, not just the modified slots! Otherwise,
+		// info for an inherited slot may end up being removed. This is also needed
+		// to ensure that purges are effective.
+		$renderedRevision = $this->getRenderedRevision();
+		foreach ( $this->getSlots()->getSlotRoles() as $role ) {
+			$slot = $this->getRawSlot( $role );
+			$content = $slot->getContent();
+			$handler = $content->getContentHandler();
+
+			$updates = $handler->getSecondaryDataUpdates(
+				$this->getTitle(),
+				$content,
+				$role,
+				$renderedRevision
+			);
+			$allUpdates = array_merge( $allUpdates, $updates );
+
+			// TODO: remove B/C hack in 1.32!
+			// NOTE: we assume that the combined output contains all relevant meta-data for
+			// all slots!
+			$legacyUpdates = $content->getSecondaryDataUpdates(
+				$this->getTitle(),
+				null,
+				$recursive,
+				$output
+			);
+
+			// HACK: filter out redundant and incomplete LinksUpdates
+			$legacyUpdates = array_filter( $legacyUpdates, function ( $update ) {
+				return !( $update instanceof LinksUpdate );
+			} );
+
+			$allUpdates = array_merge( $allUpdates, $legacyUpdates );
+		}
+
+		// XXX: if a slot was removed by an earlier edit, but deletion updates failed to run at
+		// that time, we don't know for which slots to run deletion updates when purging a page.
+		// We'd have to examine the entire history of the page to determine that. Perhaps there
+		// could be a "try extra hard" mode for that case that would run a DB query to find all
+		// roles/models ever used on the page. On the other hand, removing slots should be quite
+		// rare, so perhaps this isn't worth the trouble.
+
+		// TODO: consolidate with similar logic in WikiPage::getDeletionUpdates()
+		$wikiPage = $this->getWikiPage();
+		$parentRevision = $this->getParentRevision();
+		foreach ( $this->getRemovedSlotRoles() as $role ) {
+			// HACK: we should get the content model of the removed slot from a SlotRoleHandler!
+			// For now, find the slot in the parent revision - if the slot was removed, it should
+			// always exist in the parent revision.
+			$parentSlot = $parentRevision->getSlot( $role, RevisionRecord::RAW );
+			$content = $parentSlot->getContent();
+			$handler = $content->getContentHandler();
+
+			$updates = $handler->getDeletionUpdates(
+				$this->getTitle(),
+				$role
+			);
+			$allUpdates = array_merge( $allUpdates, $updates );
+
+			// TODO: remove B/C hack in 1.32!
+			$legacyUpdates = $content->getDeletionUpdates( $wikiPage );
+
+			// HACK: filter out redundant and incomplete LinksDeletionUpdate
+			$legacyUpdates = array_filter( $legacyUpdates, function ( $update ) {
+				return !( $update instanceof LinksDeletionUpdate );
+			} );
+
+			$allUpdates = array_merge( $allUpdates, $legacyUpdates );
+		}
+
+		// TODO: hard deprecate SecondaryDataUpdates in favor of RevisionDataUpdates in 1.33!
+		Hooks::run(
+			'RevisionDataUpdates',
+			[ $this->getTitle(), $renderedRevision, &$allUpdates ]
+		);
+
+		return $allUpdates;
 	}
 
 	/**
@@ -1376,49 +1401,20 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 
 		$wikiPage = $this->getWikiPage(); // TODO: use only for legacy hooks!
 
-		// NOTE: this may trigger the first parsing of the new content after an edit (when not
-		// using pre-generated stashed output).
-		// XXX: we may want to use the PoolCounter here. This would perhaps allow the initial parse
-		// to be perform post-send. The client could already follow a HTTP redirect to the
-		// page view, but would then have to wait for a response until rendering is complete.
-		$output = $this->getCanonicalParserOutput();
-
-		// Save it to the parser cache.
-		// Make sure the cache time matches page_touched to avoid double parsing.
-		$this->parserCache->save(
-			$output, $wikiPage, $this->getCanonicalParserOptions(),
-			$this->revision->getTimestamp(),  $this->revision->getId()
-		);
-
 		$legacyUser = User::newFromIdentity( $this->user );
 		$legacyRevision = new Revision( $this->revision );
 
-		// Update the links tables and other secondary data
-		$recursive = $this->options['changed']; // T52785
-		$updates = $this->getSecondaryDataUpdates( $recursive );
+		$this->doParserCacheUpdate();
 
-		foreach ( $updates as $update ) {
-			// TODO: make an $option field for the cause
-			$update->setCause( 'edit-page', $this->user->getName() );
-			if ( $update instanceof LinksUpdate ) {
-				$update->setRevision( $legacyRevision );
-
-				if ( !empty( $this->options['triggeringuser'] ) ) {
-					/** @var UserIdentity|User $triggeringUser */
-					$triggeringUser = $this->options['triggeringuser'];
-					if ( !$triggeringUser instanceof User ) {
-						$triggeringUser = User::newFromIdentity( $triggeringUser );
-					}
-
-					$update->setTriggeringUser( $triggeringUser );
-				}
-			}
-			DeferredUpdates::addUpdate( $update );
-		}
+		$this->doSecondaryDataUpdates( [
+			// T52785 do not update any other pages on a null edit
+			'recursive' => $this->options['changed'],
+			'defer' => DeferredUpdates::POSTSEND,
+		] );
 
 		// TODO: MCR: check if *any* changed slot supports categories!
 		if ( $this->rcWatchCategoryMembership
-			&& $this->getContentHandler( 'main' )->supportsCategories() === true
+			&& $this->getContentHandler( SlotRecord::MAIN )->supportsCategories() === true
 			&& ( $this->options['changed'] || $this->options['created'] )
 			&& !$this->options['restored']
 		) {
@@ -1426,12 +1422,9 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			// the recent change entry (also done via deferred updates) and carry over any
 			// bot/deletion/IP flags, ect.
 			$this->jobQueueGroup->lazyPush(
-				new CategoryMembershipChangeJob(
+				CategoryMembershipChangeJob::newSpec(
 					$this->getTitle(),
-					[
-						'pageId' => $this->getPageId(),
-						'revTimestamp' => $this->revision->getTimestamp(),
-					]
+					$this->revision->getTimestamp()
 				)
 			);
 		}
@@ -1469,6 +1462,9 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		} elseif ( $this->options['oldcountable'] !== null ) {
 			$good = (int)$this->isCountable()
 				- (int)$this->options['oldcountable'];
+		} elseif ( isset( $this->pageState['oldCountable'] ) ) {
+			$good = (int)$this->isCountable()
+				- (int)$this->pageState['oldCountable'];
 		} else {
 			$good = 0;
 		}
@@ -1480,8 +1476,8 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		) );
 
 		// TODO: make search infrastructure aware of slots!
-		$mainSlot = $this->revision->getSlot( 'main' );
-		if ( !$mainSlot->isInherited() && $this->isContentPublic() ) {
+		$mainSlot = $this->revision->getSlot( SlotRecord::MAIN );
+		if ( !$mainSlot->isInherited() && !$this->isContentDeleted() ) {
 			DeferredUpdates::addUpdate( new SearchUpdate( $id, $dbKey, $mainSlot->getContent() ) );
 		}
 
@@ -1514,9 +1510,9 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 		}
 
 		if ( $title->getNamespace() == NS_MEDIAWIKI
-			&& $this->getRevisionSlotsUpdate()->isModifiedSlot( 'main' )
+			&& $this->getRevisionSlotsUpdate()->isModifiedSlot( SlotRecord::MAIN )
 		) {
-			$mainContent = $this->isContentPublic() ? $this->getRawContent( 'main' ) : null;
+			$mainContent = $this->isContentDeleted() ? null : $this->getRawContent( SlotRecord::MAIN );
 
 			$this->messageCache->updateMessageOverride( $title, $mainContent );
 		}
@@ -1528,15 +1524,104 @@ class DerivedPageDataUpdater implements IDBAccessObject {
 			WikiPage::onArticleEdit( $title, $legacyRevision, $this->getTouchedSlotRoles() );
 		}
 
-		$oldRevision = $this->getOldRevision();
+		$oldRevision = $this->getParentRevision();
 		$oldLegacyRevision = $oldRevision ? new Revision( $oldRevision ) : null;
 
 		// TODO: In the wiring, register a listener for this on the new PageEventEmitter
 		ResourceLoaderWikiModule::invalidateModuleCache(
-			$title, $oldLegacyRevision, $legacyRevision, $this->getWikiId()
+			$title, $oldLegacyRevision, $legacyRevision, $this->getWikiId() ?: wfWikiID()
 		);
 
 		$this->doTransition( 'done' );
+	}
+
+	/**
+	 * Do secondary data updates (such as updating link tables).
+	 *
+	 * MCR note: this method is temporarily exposed via WikiPage::doSecondaryDataUpdates.
+	 *
+	 * @param array $options
+	 *   - recursive: make the update recursive, i.e. also update pages which transclude the
+	 *     current page or otherwise depend on it (default: false)
+	 *   - defer: one of the DeferredUpdates constants, or false to run immediately after waiting
+	 *     for replication of the changes from the SecondaryDataUpdates hooks (default: false)
+	 *   - transactionTicket: a transaction ticket from LBFactory::getEmptyTransactionTicket(),
+	 *     only when defer is false (default: null)
+	 * @since 1.32
+	 */
+	public function doSecondaryDataUpdates( array $options = [] ) {
+		$this->assertHasRevision( __METHOD__ );
+		$options += [
+			'recursive' => false,
+			'defer' => false,
+			'transactionTicket' => null,
+		];
+		$deferValues = [ false, DeferredUpdates::PRESEND, DeferredUpdates::POSTSEND ];
+		if ( !in_array( $options['defer'], $deferValues, true ) ) {
+			throw new InvalidArgumentException( 'invalid value for defer: ' . $options['defer'] );
+		}
+		Assert::parameterType( 'integer|null', $options['transactionTicket'],
+			'$options[\'transactionTicket\']' );
+
+		$updates = $this->getSecondaryDataUpdates( $options['recursive'] );
+
+		$triggeringUser = $this->options['triggeringUser'] ?? $this->user;
+		if ( !$triggeringUser instanceof User ) {
+			$triggeringUser = User::newFromIdentity( $triggeringUser );
+		}
+		$causeAction = $this->options['causeAction'] ?? 'unknown';
+		$causeAgent = $this->options['causeAgent'] ?? 'unknown';
+		$legacyRevision = new Revision( $this->revision );
+
+		if ( $options['defer'] === false && $options['transactionTicket'] !== null ) {
+			// For legacy hook handlers doing updates via LinksUpdateConstructed, make sure
+			// any pending writes they made get flushed before the doUpdate() calls below.
+			// This avoids snapshot-clearing errors in LinksUpdate::acquirePageLock().
+			$this->loadbalancerFactory->commitAndWaitForReplication(
+				__METHOD__, $options['transactionTicket']
+			);
+		}
+
+		foreach ( $updates as $update ) {
+			if ( $update instanceof DataUpdate ) {
+				$update->setCause( $causeAction, $causeAgent );
+			}
+			if ( $update instanceof LinksUpdate ) {
+				$update->setRevision( $legacyRevision );
+				$update->setTriggeringUser( $triggeringUser );
+			}
+			if ( $options['defer'] === false ) {
+				if ( $options['transactionTicket'] !== null ) {
+					$update->setTransactionTicket( $options['transactionTicket'] );
+				}
+				$update->doUpdate();
+			} else {
+				DeferredUpdates::addUpdate( $update, $options['defer'] );
+			}
+		}
+	}
+
+	public function doParserCacheUpdate() {
+		$this->assertHasRevision( __METHOD__ );
+
+		$wikiPage = $this->getWikiPage(); // TODO: ParserCache should accept a RevisionRecord instead
+
+		// NOTE: this may trigger the first parsing of the new content after an edit (when not
+		// using pre-generated stashed output).
+		// XXX: we may want to use the PoolCounter here. This would perhaps allow the initial parse
+		// to be performed post-send. The client could already follow a HTTP redirect to the
+		// page view, but would then have to wait for a response until rendering is complete.
+		$output = $this->getCanonicalParserOutput();
+
+		// Save it to the parser cache. Use the revision timestamp in the case of a
+		// freshly saved edit, as that matches page_touched and a mismatch would trigger an
+		// unnecessary reparse.
+		$timestamp = $this->options['newrev'] ? $this->revision->getTimestamp()
+			: $output->getCacheTime();
+		$this->parserCache->save(
+			$output, $wikiPage, $this->getCanonicalParserOptions(),
+			$timestamp, $this->revision->getId()
+		);
 	}
 
 }

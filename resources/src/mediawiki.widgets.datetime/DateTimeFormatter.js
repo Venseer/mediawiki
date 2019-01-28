@@ -1,4 +1,4 @@
-( function ( $, mw ) {
+( function () {
 
 	/**
 	 * Provides various methods needed for formatting dates and times.
@@ -333,6 +333,7 @@
 							parseValue: this.parseSpecValue
 						};
 						spec.size = Math.max.apply(
+							// eslint-disable-next-line jquery/no-map-util
 							null, $.map( spec.values, function ( v ) { return v.length; } )
 						);
 						return spec;
@@ -409,7 +410,9 @@
 			}
 		}
 
+		// eslint-disable-next-line no-restricted-properties
 		if ( v.normalize ) {
+			// eslint-disable-next-line no-restricted-properties
 			v = v.normalize();
 		}
 		re = new RegExp( '^\\s*' + v.replace( /([\\{}()|.?*+\-^$\[\]])/g, '\\$1' ), 'i' ); // eslint-disable-line no-useless-escape
@@ -624,4 +627,4 @@
 		};
 	};
 
-}( jQuery, mediaWiki ) );
+}() );

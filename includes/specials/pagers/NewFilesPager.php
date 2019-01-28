@@ -40,7 +40,7 @@ class NewFilesPager extends RangeChronologicalPager {
 	 * @param IContextSource $context
 	 * @param FormOptions $opts
 	 */
-	function __construct( IContextSource $context, FormOptions $opts ) {
+	public function __construct( IContextSource $context, FormOptions $opts ) {
 		parent::__construct( $context );
 
 		$this->opts = $opts;
@@ -113,7 +113,7 @@ class NewFilesPager extends RangeChronologicalPager {
 			$conds['rc_patrolled'] = RecentChange::PRC_UNPATROLLED;
 			$conds['rc_namespace'] = NS_FILE;
 
-			if ( $wgActorTableSchemaMigrationStage === MIGRATION_NEW ) {
+			if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_READ_NEW ) {
 				$jcond = 'rc_actor = ' . $imgQuery['fields']['img_actor'];
 			} else {
 				$rcQuery = ActorMigration::newMigration()->getJoin( 'rc_user' );
@@ -168,7 +168,7 @@ class NewFilesPager extends RangeChronologicalPager {
 		return 'img_timestamp';
 	}
 
-	function getStartBody() {
+	protected function getStartBody() {
 		if ( !$this->gallery ) {
 			// Note that null for mode is taken to mean use default.
 			$mode = $this->getRequest()->getVal( 'gallerymode', null );
@@ -183,7 +183,7 @@ class NewFilesPager extends RangeChronologicalPager {
 		return '';
 	}
 
-	function getEndBody() {
+	protected function getEndBody() {
 		return $this->gallery->toHTML();
 	}
 

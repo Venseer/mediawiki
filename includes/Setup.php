@@ -35,6 +35,14 @@ if ( !defined( 'MEDIAWIKI' ) ) {
 	exit( 1 );
 }
 
+// Check to see if we are at the file scope
+$wgScopeTest = 'MediaWiki Setup.php scope test';
+if ( !isset( $GLOBALS['wgScopeTest'] ) || $GLOBALS['wgScopeTest'] !== $wgScopeTest ) {
+	echo "Error, Setup.php must be included from the file scope.\n";
+	die( 1 );
+}
+unset( $wgScopeTest );
+
 /**
  * Pre-config setup: Before loading LocalSettings.php
  */
@@ -86,11 +94,6 @@ MediaWiki\HeaderCallback::register();
  * Load LocalSettings.php
  */
 
-if ( is_readable( "$IP/StartProfiler.php" ) ) {
-	// @deprecated since 1.32: Use LocalSettings.php instead.
-	require "$IP/StartProfiler.php";
-}
-
 if ( defined( 'MW_CONFIG_CALLBACK' ) ) {
 	call_user_func( MW_CONFIG_CALLBACK );
 } else {
@@ -122,12 +125,6 @@ $ps_setup = Profiler::instance()->scopedProfileIn( $fname );
 ExtensionRegistry::getInstance()->loadFromQueue();
 // Don't let any other extensions load
 ExtensionRegistry::getInstance()->finish();
-
-// Check to see if we are at the file scope
-if ( !isset( $wgVersion ) ) {
-	echo "Error, Setup.php must be included from the file scope, after DefaultSettings.php\n";
-	die( 1 );
-}
 
 mb_internal_encoding( 'UTF-8' );
 
@@ -278,7 +275,7 @@ $wgGalleryOptions += [
 ];
 
 /**
- * Initialise $wgLocalFileRepo from backwards-compatible settings
+ * Shortcuts for $wgLocalFileRepo
  */
 if ( !$wgLocalFileRepo ) {
 	$wgLocalFileRepo = [
@@ -294,8 +291,15 @@ if ( !$wgLocalFileRepo ) {
 		'deletedHashLevels' => $wgHashedUploadDirectory ? 3 : 0
 	];
 }
+
+if ( !isset( $wgLocalFileRepo['backend'] ) ) {
+	// Create a default FileBackend name.
+	// FileBackendGroup will register a default, if absent from $wgFileBackends.
+	$wgLocalFileRepo['backend'] = $wgLocalFileRepo['name'] . '-backend';
+}
+
 /**
- * Initialise shared repo from backwards-compatible settings
+ * Shortcuts for $wgForeignFileRepos
  */
 if ( $wgUseSharedUploads ) {
 	if ( $wgSharedUploadDBname ) {
@@ -346,13 +350,6 @@ if ( $wgUseInstantCommons ) {
 		'apiThumbCacheExpiry' => 0,
 	];
 }
-/*
- * Add on default file backend config for file repos.
- * FileBackendGroup will handle initializing the backends.
- */
-if ( !isset( $wgLocalFileRepo['backend'] ) ) {
-	$wgLocalFileRepo['backend'] = $wgLocalFileRepo['name'] . '-backend';
-}
 foreach ( $wgForeignFileRepos as &$repo ) {
 	if ( !isset( $repo['directory'] ) && $repo['class'] === ForeignAPIRepo::class ) {
 		$repo['directory'] = $wgUploadDirectory; // b/c
@@ -370,10 +367,9 @@ if ( $wgRCFilterByAge ) {
 	// Note that we allow 1 link higher than the max for things like 56 days but a 60 day link.
 	sort( $wgRCLinkDays );
 
-	// phpcs:ignore Generic.CodeAnalysis.ForLoopWithTestFunctionCall
-	for ( $i = 0; $i < count( $wgRCLinkDays ); $i++ ) {
-		if ( $wgRCLinkDays[$i] >= $rcMaxAgeDays ) {
-			$wgRCLinkDays = array_slice( $wgRCLinkDays, 0, $i + 1, false );
+	foreach ( $wgRCLinkDays as $i => $days ) {
+		if ( $days >= $rcMaxAgeDays ) {
+			array_splice( $wgRCLinkDays, $i + 1 );
 			break;
 		}
 	}
@@ -501,11 +497,24 @@ if ( is_array( $wgExtraNamespaces ) ) {
 	$wgCanonicalNamespaceNames = $wgCanonicalNamespaceNames + $wgExtraNamespaces;
 }
 
+// Hard-deprecate setting $wgDummyLanguageCodes in LocalSettings.php
+if ( count( $wgDummyLanguageCodes ) !== 0 ) {
+	wfDeprecated( '$wgDummyLanguageCodes', '1.29' );
+}
 // Merge in the legacy language codes, incorporating overrides from the config
 $wgDummyLanguageCodes += [
+	// Internal language codes of the private-use area which get mapped to
+	// themselves.
 	'qqq' => 'qqq', // Used for message documentation
 	'qqx' => 'qqx', // Used for viewing message keys
 ] + $wgExtraLanguageCodes + LanguageCode::getDeprecatedCodeMapping();
+// Merge in (inverted) BCP 47 mappings
+foreach ( LanguageCode::getNonstandardLanguageCodeMapping() as $code => $bcp47 ) {
+	$bcp47 = strtolower( $bcp47 ); // force case-insensitivity
+	if ( !isset( $wgDummyLanguageCodes[$bcp47] ) ) {
+		$wgDummyLanguageCodes[$bcp47] = $wgDummyLanguageCodes[$code] ?? $code;
+	}
+}
 
 // These are now the same, always
 // To determine the user language, use $wgLang->getCode()
@@ -774,7 +783,7 @@ if ( $wgCommandLineMode ) {
 	wfDebug( $debug );
 }
 
-$wgMemc = wfGetMainCache();
+$wgMemc = ObjectCache::getLocalClusterInstance();
 $messageMemc = wfGetMessageCacheStorage();
 
 wfDebugLog( 'caches',
@@ -794,9 +803,9 @@ $ps_globals = Profiler::instance()->scopedProfileIn( $fname . '-globals' );
 
 /**
  * @var Language $wgContLang
+ * @deprecated since 1.32, use the ContentLanguage service directly
  */
-$wgContLang = Language::factory( $wgLanguageCode );
-$wgContLang->initContLang();
+$wgContLang = MediaWikiServices::getInstance()->getContentLanguage();
 
 // Now that variant lists may be available...
 $wgRequest->interpolateTitle();
@@ -863,11 +872,19 @@ if ( !defined( 'MW_NO_SESSION' ) && !$wgCommandLineMode ) {
 
 	$session->renew();
 	if ( MediaWiki\Session\PHPSessionHandler::isEnabled() &&
-		( $session->isPersistent() || $session->shouldRememberUser() )
+		( $session->isPersistent() || $session->shouldRememberUser() ) &&
+		session_id() !== $session->getId()
 	) {
 		// Start the PHP-session for backwards compatibility
+		if ( session_id() !== '' ) {
+			wfDebugLog( 'session', 'PHP session {old_id} was already started, changing to {new_id}', 'all', [
+				'old_id' => session_id(),
+				'new_id' => $session->getId(),
+			] );
+			session_write_close();
+		}
 		session_id( $session->getId() );
-		Wikimedia\quietCall( 'session_start' );
+		session_start();
 	}
 
 	unset( $session );
@@ -898,6 +915,7 @@ $wgOut = RequestContext::getMain()->getOutput(); // BackCompat
 
 /**
  * @var Parser $wgParser
+ * @deprecated since 1.32, use MediaWikiServices::getParser() instead
  */
 $wgParser = new StubObject( 'wgParser', function () {
 	return MediaWikiServices::getInstance()->getParser();

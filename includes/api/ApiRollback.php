@@ -55,6 +55,15 @@ class ApiRollback extends ApiBase {
 			}
 		}
 
+		// @TODO: remove this hack once rollback uses POST (T88044)
+		$fname = __METHOD__;
+		$trxLimits = $this->getConfig()->get( 'TrxProfilerLimits' );
+		$trxProfiler = Profiler::instance()->getTransactionProfiler();
+		$trxProfiler->redefineExpectations( $trxLimits['POST'], $fname );
+		DeferredUpdates::addCallableUpdate( function () use ( $trxProfiler, $trxLimits, $fname ) {
+			$trxProfiler->redefineExpectations( $trxLimits['PostSend-POST'], $fname );
+		} );
+
 		$retval = $pageObj->doRollback(
 			$this->getRbUser( $params ),
 			$summary,
@@ -69,10 +78,7 @@ class ApiRollback extends ApiBase {
 			$this->dieStatus( $this->errorArrayToStatus( $retval, $user ) );
 		}
 
-		$watch = 'preferences';
-		if ( isset( $params['watchlist'] ) ) {
-			$watch = $params['watchlist'];
-		}
+		$watch = $params['watchlist'] ?? 'preferences';
 
 		// Watch pages
 		$this->setWatch( $watch, $titleObj, 'watchrollback' );

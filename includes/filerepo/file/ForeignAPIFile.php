@@ -77,9 +77,7 @@ class ForeignAPIFile extends File {
 			if ( $lastRedirect >= 0 ) {
 				$newtitle = Title::newFromText( $data['query']['redirects'][$lastRedirect]['to'] );
 				$img = new self( $newtitle, $repo, $info, true );
-				if ( $img ) {
-					$img->redirectedFrom( $title->getDBkey() );
-				}
+				$img->redirectedFrom( $title->getDBkey() );
 			} else {
 				$img = new self( $title, $repo, $info, true );
 			}
@@ -321,7 +319,7 @@ class ForeignAPIFile extends File {
 	 */
 	function getThumbPath( $suffix = '' ) {
 		if ( $this->repo->canCacheThumbs() ) {
-			$path = $this->repo->getZonePath( 'thumb' ) . '/' . $this->getHashPath( $this->getName() );
+			$path = $this->repo->getZonePath( 'thumb' ) . '/' . $this->getHashPath();
 			if ( $suffix ) {
 				$path = $path . $suffix . '/';
 			}
@@ -355,12 +353,12 @@ class ForeignAPIFile extends File {
 	}
 
 	function purgeDescriptionPage() {
-		global $wgContLang;
-
-		$url = $this->repo->getDescriptionRenderUrl( $this->getName(), $wgContLang->getCode() );
+		$services = MediaWikiServices::getInstance();
+		$url = $this->repo->getDescriptionRenderUrl(
+			$this->getName(), $services->getContentLanguage()->getCode() );
 		$key = $this->repo->getLocalCacheKey( 'RemoteFileDescription', 'url', md5( $url ) );
 
-		MediaWikiServices::getInstance()->getMainWANObjectCache()->delete( $key );
+		$services->getMainWANObjectCache()->delete( $key );
 	}
 
 	/**

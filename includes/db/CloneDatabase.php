@@ -52,6 +52,9 @@ class CloneDatabase {
 	public function __construct( IMaintainableDatabase $db, array $tablesToClone,
 		$newTablePrefix, $oldTablePrefix = null, $dropCurrentTables = true
 	) {
+		if ( !$tablesToClone ) {
+			throw new InvalidArgumentException( 'Empty list of tables to clone' );
+		}
 		$this->db = $db;
 		$this->tablesToClone = $tablesToClone;
 		$this->newTablePrefix = $newTablePrefix;
@@ -134,7 +137,7 @@ class CloneDatabase {
 		global $wgDBprefix;
 
 		$lbFactory = MediaWikiServices::getInstance()->getDBLoadBalancerFactory();
-		$lbFactory->setDomainPrefix( $prefix );
+		$lbFactory->setLocalDomainPrefix( $prefix );
 		$wgDBprefix = $prefix;
 	}
 }

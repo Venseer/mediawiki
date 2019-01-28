@@ -44,7 +44,7 @@ class ChangesList extends ContextSource {
 	/** @var callable */
 	protected $changeLinePrefixer;
 
-	/** @var BagOStuff */
+	/** @var MapCacheLRU */
 	protected $watchMsgCache;
 
 	/**
@@ -58,8 +58,6 @@ class ChangesList extends ContextSource {
 	protected $filterGroups;
 
 	/**
-	 * Changeslist constructor
-	 *
 	 * @param Skin|IContextSource $obj
 	 * @param array $filterGroups Array of ChangesListFilterGroup objects (currently optional)
 	 */
@@ -72,7 +70,7 @@ class ChangesList extends ContextSource {
 			$this->skin = $obj;
 		}
 		$this->preCacheMessages();
-		$this->watchMsgCache = new HashBagOStuff( [ 'maxKeys' => 50 ] );
+		$this->watchMsgCache = new MapCacheLRU( 50 );
 		$this->linkRenderer = MediaWikiServices::getInstance()->getLinkRenderer();
 		$this->filterGroups = $filterGroups;
 	}
@@ -351,12 +349,13 @@ class ChangesList extends ContextSource {
 		} else {
 			$formattedSizeClass = 'mw-plusminus-neg';
 		}
+		$formattedSizeClass .= ' mw-diff-bytes';
 
 		$formattedTotalSize = $context->msg( 'rc-change-size-new' )->numParams( $new )->text();
 
 		return Html::element( $tag,
 			[ 'dir' => 'ltr', 'class' => $formattedSizeClass, 'title' => $formattedTotalSize ],
-			$context->msg( 'parentheses', $formattedSize )->plain() ) . $lang->getDirMark();
+			$formattedSize ) . $lang->getDirMark();
 	}
 
 	/**
@@ -453,11 +452,9 @@ class ChangesList extends ContextSource {
 			);
 		}
 		if ( $rc->mAttribs['rc_type'] == RC_CATEGORIZE ) {
-			$diffhist = $diffLink . $this->message['pipe-separator'] . $this->message['hist'];
+			$histLink = $this->message['hist'];
 		} else {
-			$diffhist = $diffLink . $this->message['pipe-separator'];
-			# History link
-			$diffhist .= $this->linkRenderer->makeKnownLink(
+			$histLink = $this->linkRenderer->makeKnownLink(
 				$rc->getTitle(),
 				new HtmlArmor( $this->message['hist'] ),
 				[ 'class' => 'mw-changeslist-history' ],
@@ -468,9 +465,11 @@ class ChangesList extends ContextSource {
 			);
 		}
 
-		// @todo FIXME: Hard coded ". .". Is there a message for this? Should there be?
-		$s .= $this->msg( 'parentheses' )->rawParams( $diffhist )->escaped() .
-			' <span class="mw-changeslist-separator">. .</span> ';
+		$s .= Html::rawElement( 'div', [ 'class' => 'mw-changeslist-links' ],
+				Html::rawElement( 'span', [], $diffLink ) .
+				Html::rawElement( 'span', [], $histLink )
+			) .
+			' <span class="mw-changeslist-separator"></span> ';
 	}
 
 	/**
@@ -531,10 +530,10 @@ class ChangesList extends ContextSource {
 	public function getTimestamp( $rc ) {
 		// @todo FIXME: Hard coded ". .". Is there a message for this? Should there be?
 		return $this->message['semicolon-separator'] . '<span class="mw-changeslist-date">' .
-			$this->getLanguage()->userTime(
+			htmlspecialchars( $this->getLanguage()->userTime(
 				$rc->mAttribs['rc_timestamp'],
 				$this->getUser()
-			) . '</span> <span class="mw-changeslist-separator">. .</span> ';
+			) ) . '</span> <span class="mw-changeslist-separator"></span> ';
 	}
 
 	/**
@@ -560,7 +559,13 @@ class ChangesList extends ContextSource {
 		} else {
 			$s .= $this->getLanguage()->getDirMark() . Linker::userLink( $rc->mAttribs['rc_user'],
 				$rc->mAttribs['rc_user_text'] );
-			$s .= Linker::userToolLinks( $rc->mAttribs['rc_user'], $rc->mAttribs['rc_user_text'] );
+			$s .= Linker::userToolLinks(
+				$rc->mAttribs['rc_user'], $rc->mAttribs['rc_user_text'],
+				false, 0, null,
+				// The text content of tools is not wrapped with parenthesises or "piped".
+				// This will be handled in CSS (T205581).
+				false
+			);
 		}
 	}
 
@@ -602,10 +607,9 @@ class ChangesList extends ContextSource {
 		if ( $count <= 0 ) {
 			return '';
 		}
-		$cache = $this->watchMsgCache;
-		return $cache->getWithSetCallback(
-			$cache->makeKey( 'watching-users-msg', $count ),
-			$cache::TTL_INDEFINITE,
+
+		return $this->watchMsgCache->getWithSetCallback(
+			"watching-users-msg:$count",
 			function () use ( $count ) {
 				return $this->msg( 'number_of_watching_users_RCview' )
 					->numParams( $count )->escaped();

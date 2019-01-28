@@ -50,7 +50,7 @@ class ImageListPager extends TablePager {
 
 	protected $mTableName = 'image';
 
-	function __construct( IContextSource $context, $userName = null, $search = '',
+	public function __construct( IContextSource $context, $userName = null, $search = '',
 		$including = false, $showAll = false
 	) {
 		$this->setContext( $context );
@@ -134,7 +134,16 @@ class ImageListPager extends TablePager {
 		$conds = [];
 
 		if ( !is_null( $this->mUserName ) ) {
-			$conds[$prefix . '_user_text'] = $this->mUserName;
+			// getQueryInfoReal() should have handled the tables and joins.
+			$dbr = wfGetDB( DB_REPLICA );
+			$actorWhere = ActorMigration::newMigration()->getWhere(
+				$dbr,
+				$prefix . '_user',
+				User::newFromName( $this->mUserName, false ),
+				// oldimage doesn't have an index on oi_user, while image does. Set $useId accordingly.
+				$prefix === 'img'
+			);
+			$conds[] = $actorWhere['conds'];
 		}
 
 		if ( $this->mSearch !== '' ) {
@@ -244,28 +253,28 @@ class ImageListPager extends TablePager {
 	 * @return array Query info
 	 */
 	protected function getQueryInfoReal( $table ) {
+		$dbr = wfGetDB( DB_REPLICA );
 		$prefix = $table === 'oldimage' ? 'oi' : 'img';
 
 		$tables = [ $table ];
-		$fields = $this->getFieldNames();
+		$fields = array_keys( $this->getFieldNames() );
+		$fields = array_combine( $fields, $fields );
 		unset( $fields['img_description'] );
 		unset( $fields['img_user_text'] );
-		$fields = array_keys( $fields );
 
 		if ( $table === 'oldimage' ) {
-			foreach ( $fields as $id => &$field ) {
-				if ( substr( $field, 0, 4 ) !== 'img_' ) {
-					continue;
+			foreach ( $fields as $id => $field ) {
+				if ( substr( $id, 0, 4 ) === 'img_' ) {
+					$fields[$id] = $prefix . substr( $field, 3 );
 				}
-				$field = $prefix . substr( $field, 3 ) . ' AS ' . $field;
 			}
-			$fields[array_search( 'top', $fields )] = "'no' AS top";
+			$fields['top'] = $dbr->addQuotes( 'no' );
 		} else {
 			if ( $this->mShowAll ) {
-				$fields[array_search( 'top', $fields )] = "'yes' AS top";
+				$fields['top'] = $dbr->addQuotes( 'yes' );
 			}
 		}
-		$fields[array_search( 'thumb', $fields )] = $prefix . '_name AS thumb';
+		$fields['thumb'] = $prefix . '_name';
 
 		$options = $join_conds = [];
 
@@ -274,7 +283,7 @@ class ImageListPager extends TablePager {
 		$tables += $commentQuery['tables'];
 		$fields += $commentQuery['fields'];
 		$join_conds += $commentQuery['joins'];
-		$fields['description_field'] = "'{$prefix}_description'";
+		$fields['description_field'] = $dbr->addQuotes( "{$prefix}_description" );
 
 		# User fields
 		$actorQuery = ActorMigration::newMigration()->getJoin( $prefix . '_user' );
@@ -286,20 +295,13 @@ class ImageListPager extends TablePager {
 
 		# Depends on $wgMiserMode
 		# Will also not happen if mShowAll is true.
-		if ( isset( $this->mFieldNames['count'] ) ) {
-			$tables[] = 'oldimage';
-
-			# Need to rewrite this one
-			foreach ( $fields as &$field ) {
-				if ( $field == 'count' ) {
-					$field = 'COUNT(oi_archive_name) AS count';
-				}
-			}
-			unset( $field );
-
-			$columnlist = preg_grep( '/^img/', array_keys( $this->getFieldNames() ) );
-			$options = [ 'GROUP BY' => array_merge( [ $fields['img_user'] ], $columnlist ) ];
-			$join_conds['oldimage'] = [ 'LEFT JOIN', 'oi_name = img_name' ];
+		if ( isset( $fields['count'] ) ) {
+			$fields['count'] = $dbr->buildSelectSubquery(
+				'oldimage',
+				'COUNT(oi_archive_name)',
+				'oi_name = img_name',
+				__METHOD__
+			);
 		}
 
 		return [
@@ -413,7 +415,7 @@ class ImageListPager extends TablePager {
 		}
 	}
 
-	function doBatchLookups() {
+	protected function doBatchLookups() {
 		$userIds = [];
 		$this->mResult->seek( 0 );
 		foreach ( $this->mResult as $row ) {
@@ -449,7 +451,7 @@ class ImageListPager extends TablePager {
 					if ( $thumb ) {
 						return $thumb->toHtml( [ 'desc-link' => true ] );
 					} else {
-						return wfMessage( 'thumbnail_error', '' )->escaped();
+						return $this->msg( 'thumbnail_error', '' )->escaped();
 					}
 				} else {
 					return htmlspecialchars( $value );

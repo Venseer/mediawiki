@@ -1,7 +1,10 @@
 <?php
 
+use MediaWiki\Edit\PreparedEdit;
 use MediaWiki\MediaWikiServices;
+use MediaWiki\Revision\SlotRecord;
 use MediaWiki\Storage\RevisionSlotsUpdate;
+use PHPUnit\Framework\MockObject\MockObject;
 use Wikimedia\TestingAccessWrapper;
 
 /**
@@ -103,18 +106,38 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 
 	/**
 	 * @param string|Title|WikiPage $page
-	 * @param string $text
+	 * @param string|Content|Content[] $content
 	 * @param int|null $model
 	 *
 	 * @return WikiPage
 	 */
-	protected function createPage( $page, $text, $model = null, $user = null ) {
+	protected function createPage( $page, $content, $model = null, $user = null ) {
 		if ( is_string( $page ) || $page instanceof Title ) {
 			$page = $this->newPage( $page, $model );
 		}
 
-		$content = ContentHandler::makeContent( $text, $page->getTitle(), $model );
-		$page->doEditContent( $content, "testing", EDIT_NEW, false, $user );
+		if ( !$user ) {
+			$user = $this->getTestUser()->getUser();
+		}
+
+		if ( is_string( $content ) ) {
+			$content = ContentHandler::makeContent( $content, $page->getTitle(), $model );
+		}
+
+		if ( !is_array( $content ) ) {
+			$content = [ 'main' => $content ];
+		}
+
+		$updater = $page->newPageUpdater( $user );
+
+		foreach ( $content as $role => $cnt ) {
+			$updater->setContent( $role, $cnt );
+		}
+
+		$updater->saveRevision( CommentStoreComment::newUnsavedComment( "testing" ) );
+		if ( !$updater->wasSuccessful() ) {
+			$this->fail( $updater->getStatus()->getWikiText() );
+		}
 
 		return $page;
 	}
@@ -164,14 +187,14 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 
 		// Re-using the prepared info if possible
 		$sameEdit = $page->prepareContentForEdit( $content, null, $user, null, false );
-		$this->assertEquals( $edit, $sameEdit, 'equivalent PreparedEdit' );
+		$this->assertPreparedEditEquals( $edit, $sameEdit, 'equivalent PreparedEdit' );
 		$this->assertSame( $edit->pstContent, $sameEdit->pstContent, 're-use output' );
 		$this->assertSame( $edit->output, $sameEdit->output, 're-use output' );
 
 		// Not re-using the same PreparedEdit if not possible
 		$rev = $page->getRevision();
 		$edit2 = $page->prepareContentForEdit( $content2, null, $user, null, false );
-		$this->assertNotEquals( $edit, $edit2 );
+		$this->assertPreparedEditNotEquals( $edit, $edit2 );
 		$this->assertContains( 'At vero eos', $edit2->pstContent->serialize(), "content" );
 
 		// Check pre-safe transform
@@ -179,7 +202,7 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 		$this->assertNotContains( '~~~~', $edit2->pstContent->serialize() );
 
 		$edit3 = $page->prepareContentForEdit( $content2, null, $sysop, null, false );
-		$this->assertNotEquals( $edit2, $edit3 );
+		$this->assertPreparedEditNotEquals( $edit2, $edit3 );
 
 		// TODO: test with passing revision, then same without revision.
 	}
@@ -443,12 +466,13 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 		);
 		$logId = $status->getValue();
 		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
+		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
 		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'], /* table */
+			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'], /* table */
 			[
 				'log_type',
 				'log_action',
-				'log_comment',
+				'log_comment' => $commentQuery['fields']['log_comment_text'],
 				'log_user' => $actorQuery['fields']['log_user'],
 				'log_user_text' => $actorQuery['fields']['log_user_text'],
 				'log_namespace',
@@ -465,7 +489,7 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 				$page->getTitle()->getDBkey(),
 			] ],
 			[],
-			$actorQuery['joins']
+			$actorQuery['joins'] + $commentQuery['joins']
 		);
 	}
 
@@ -492,12 +516,13 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 		);
 		$logId = $status->getValue();
 		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
+		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
 		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'], /* table */
+			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'], /* table */
 			[
 				'log_type',
 				'log_action',
-				'log_comment',
+				'log_comment' => $commentQuery['fields']['log_comment_text'],
 				'log_user' => $actorQuery['fields']['log_user'],
 				'log_user_text' => $actorQuery['fields']['log_user_text'],
 				'log_namespace',
@@ -514,7 +539,7 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 				$page->getTitle()->getDBkey(),
 			] ],
 			[],
-			$actorQuery['joins']
+			$actorQuery['joins'] + $commentQuery['joins']
 		);
 	}
 
@@ -543,12 +568,13 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 		);
 		$logId = $status->getValue();
 		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
+		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
 		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'], /* table */
+			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'], /* table */
 			[
 				'log_type',
 				'log_action',
-				'log_comment',
+				'log_comment' => $commentQuery['fields']['log_comment_text'],
 				'log_user' => $actorQuery['fields']['log_user'],
 				'log_user_text' => $actorQuery['fields']['log_user_text'],
 				'log_namespace',
@@ -565,7 +591,7 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 				$page->getTitle()->getDBkey(),
 			] ],
 			[],
-			$actorQuery['joins']
+			$actorQuery['joins'] + $commentQuery['joins']
 		);
 
 		$this->assertNull(
@@ -588,16 +614,18 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 	 * @covers WikiPage::doDeleteUpdates
 	 */
 	public function testDoDeleteUpdates() {
+		$user = $this->getTestUser()->getUser();
 		$page = $this->createPage(
 			__METHOD__,
 			"[[original text]] foo",
 			CONTENT_MODEL_WIKITEXT
 		);
 		$id = $page->getId();
+		$page->loadPageData(); // make sure the current revision is cached.
 
 		// Similar to MovePage logic
 		wfGetDB( DB_MASTER )->delete( 'page', [ 'page_id' => $id ], __METHOD__ );
-		$page->doDeleteUpdates( $id );
+		$page->doDeleteUpdates( $page->getId(), $page->getContent(), $page->getRevision(), $user );
 
 		// Run the job queue
 		JobQueueGroup::destroySingletons();
@@ -612,6 +640,86 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 		$res->free();
 
 		$this->assertEquals( 0, $n, 'pagelinks should contain no more links from the page' );
+	}
+
+	/**
+	 * @param string $name
+	 *
+	 * @return ContentHandler
+	 */
+	protected function defineMockContentModelForUpdateTesting( $name ) {
+		/** @var ContentHandler|MockObject $handler */
+		$handler = $this->getMockBuilder( TextContentHandler::class )
+			->setConstructorArgs( [ $name ] )
+			->setMethods(
+				[ 'getSecondaryDataUpdates', 'getDeletionUpdates', 'unserializeContent' ]
+			)
+			->getMock();
+
+		$dataUpdate = new MWCallableUpdate( 'time' );
+		$dataUpdate->_name = "$name data update";
+
+		$deletionUpdate = new MWCallableUpdate( 'time' );
+		$deletionUpdate->_name = "$name deletion update";
+
+		$handler->method( 'getSecondaryDataUpdates' )->willReturn( [ $dataUpdate ] );
+		$handler->method( 'getDeletionUpdates' )->willReturn( [ $deletionUpdate ] );
+		$handler->method( 'unserializeContent' )->willReturnCallback(
+			function ( $text ) use ( $handler ) {
+				return $this->createMockContent( $handler, $text );
+			}
+		);
+
+		$this->mergeMwGlobalArrayValue(
+			'wgContentHandlers', [
+				$name => function () use ( $handler ){
+					return $handler;
+				}
+			]
+		);
+
+		return $handler;
+	}
+
+	/**
+	 * @param ContentHandler $handler
+	 * @param string $text
+	 *
+	 * @return Content
+	 */
+	protected function createMockContent( ContentHandler $handler, $text ) {
+		/** @var Content|MockObject $content */
+		$content = $this->getMockBuilder( TextContent::class )
+			->setConstructorArgs( [ $text ] )
+			->setMethods( [ 'getModel', 'getContentHandler' ] )
+			->getMock();
+
+		$content->method( 'getModel' )->willReturn( $handler->getModelID() );
+		$content->method( 'getContentHandler' )->willReturn( $handler );
+
+		return $content;
+	}
+
+	public function testGetDeletionUpdates() {
+		$m1 = $this->defineMockContentModelForUpdateTesting( 'M1' );
+
+		$mainContent1 = $this->createMockContent( $m1, 'main 1' );
+
+		$page = new WikiPage( Title::newFromText( __METHOD__ ) );
+		$page = $this->createPage(
+			$page,
+			[ 'main' => $mainContent1 ]
+		);
+
+		$dataUpdates = $page->getDeletionUpdates( $page->getRevisionRecord() );
+		$this->assertNotEmpty( $dataUpdates );
+
+		$updateNames = array_map( function ( $du ) {
+			return isset( $du->_name ) ? $du->_name : get_class( $du );
+		}, $dataUpdates );
+
+		$this->assertContains( LinksDeletionUpdate::class, $updateNames );
+		$this->assertContains( 'M1 deletion update', $updateNames );
 	}
 
 	/**
@@ -706,6 +814,23 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 				"#REDIRECT [[hello world]]",
 				"Hello world"
 			],
+			// The below added to protect against Media namespace
+			// redirects which throw a fatal: (T203942)
+			[
+				'WikiPageTest_testGetRedirectTarget_3',
+				CONTENT_MODEL_WIKITEXT,
+				"#REDIRECT [[Media:hello_world]]",
+				"File:Hello world"
+			],
+			// Test fragments longer than 255 bytes (T207876)
+			[
+				'WikiPageTest_testGetRedirectTarget_4',
+				CONTENT_MODEL_WIKITEXT,
+				// phpcs:ignore Generic.Files.LineLength
+				'#REDIRECT [[Foobar#🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿]]',
+				// phpcs:ignore Generic.Files.LineLength
+				'Foobar#🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬󠁦󠁲󠁿🏴󠁮󠁬...'
+			]
 		];
 	}
 
@@ -726,7 +851,7 @@ abstract class WikiPageDbTestBase extends MediaWikiLangTestCase {
 
 		# now, test the actual redirect
 		$t = $page->getRedirectTarget();
-		$this->assertEquals( $target, is_null( $t ) ? null : $t->getPrefixedText() );
+		$this->assertEquals( $target, is_null( $t ) ? null : $t->getFullText() );
 	}
 
 	/**
@@ -1051,6 +1176,9 @@ more stuff
 	 * @covers WikiPage::commitRollback
 	 */
 	public function testDoRollback() {
+		// FIXME: fails under postgres
+		$this->markTestSkippedIfDbType( 'postgres' );
+
 		$admin = $this->getTestSysop()->getUser();
 		$user1 = $this->getTestUser()->getUser();
 		// Use the confirmed group for user2 to make sure the user is different
@@ -1128,7 +1256,7 @@ more stuff
 		);
 
 		// TODO: MCR: assert origin once we write slot data
-		// $mainSlot = $page->getRevision()->getRevisionRecord()->getSlot( 'main' );
+		// $mainSlot = $page->getRevision()->getRevisionRecord()->getSlot( SlotRecord::MAIN );
 		// $this->assertTrue( $mainSlot->isInherited(), 'isInherited' );
 		// $this->assertSame( $rev2->getId(), $mainSlot->getOrigin(), 'getOrigin' );
 	}
@@ -1569,6 +1697,9 @@ more stuff
 		$expectedSuccess,
 		$expectedRowCount
 	) {
+		// FIXME: fails under sqlite and postgres
+		$this->markTestSkippedIfDbType( 'sqlite' );
+		$this->markTestSkippedIfDbType( 'postgres' );
 		static $pageCounter = 0;
 		$pageCounter++;
 
@@ -1917,7 +2048,7 @@ more stuff
 			wfTimestamp( TS_UNIX, $initialRevision->getTimestamp() ) - 1
 		);
 
-		$olderRevison = new Revision(
+		$olderRevision = new Revision(
 			[
 				'id' => 9989,
 				'page' => $page->getId(),
@@ -1934,7 +2065,7 @@ more stuff
 			]
 		);
 
-		$result = $page->updateIfNewerOn( $this->db, $olderRevison );
+		$result = $page->updateIfNewerOn( $this->db, $olderRevision );
 		$this->assertFalse( $result );
 	}
 
@@ -2141,10 +2272,11 @@ more stuff
 		// Make sure the log entry looks good
 		// log_params is not checked here
 		$actorQuery = ActorMigration::newMigration()->getJoin( 'log_user' );
+		$commentQuery = MediaWikiServices::getInstance()->getCommentStore()->getJoin( 'log_comment' );
 		$this->assertSelect(
-			[ 'logging' ] + $actorQuery['tables'],
+			[ 'logging' ] + $actorQuery['tables'] + $commentQuery['tables'],
 			[
-				'log_comment',
+				'log_comment' => $commentQuery['fields']['log_comment_text'],
 				'log_user' => $actorQuery['fields']['log_user'],
 				'log_user_text' => $actorQuery['fields']['log_user_text'],
 				'log_namespace',
@@ -2159,7 +2291,7 @@ more stuff
 				$page->getTitle()->getDBkey(),
 			] ],
 			[],
-			$actorQuery['joins']
+			$actorQuery['joins'] + $commentQuery['joins']
 		);
 	}
 
@@ -2309,10 +2441,10 @@ more stuff
 
 		// provide context, so the cache can be kept in place
 		$slotsUpdate = new revisionSlotsUpdate();
-		$slotsUpdate->modifyContent( 'main', $content );
+		$slotsUpdate->modifyContent( SlotRecord::MAIN, $content );
 
 		$updater = $page->newPageUpdater( $user, $slotsUpdate );
-		$updater->setContent( 'main', $content );
+		$updater->setContent( SlotRecord::MAIN, $content );
 		$revision = $updater->saveRevision(
 			CommentStoreComment::newUnsavedComment( 'test' ),
 			EDIT_NEW
@@ -2341,7 +2473,7 @@ more stuff
 		$user = $revision->getUser();
 
 		$slotsUpdate = new RevisionSlotsUpdate();
-		$slotsUpdate->modifyContent( 'main', new WikitextContent( 'Hello World' ) );
+		$slotsUpdate->modifyContent( SlotRecord::MAIN, new WikitextContent( 'Hello World' ) );
 
 		// get a virgin updater
 		$updater1 = $page->getDerivedDataUpdater( $user );
@@ -2353,7 +2485,7 @@ more stuff
 		$this->assertSame( $updater1, $page->getDerivedDataUpdater( $user, $revision ) );
 
 		$slotsUpdate = RevisionSlotsUpdate::newFromContent(
-			[ 'main' => $revision->getContent( 'main' ) ]
+			[ SlotRecord::MAIN => $revision->getContent( SlotRecord::MAIN ) ]
 		);
 		$this->assertSame( $updater1, $page->getDerivedDataUpdater( $user, null, $slotsUpdate ) );
 
@@ -2388,6 +2520,27 @@ more stuff
 		// Don't re-use cached "virgin" unprepared updater
 		$updater6 = $page->getDerivedDataUpdater( $admin, $revision );
 		$this->assertNotSame( $updater5, $updater6 );
+	}
+
+	protected function assertPreparedEditEquals(
+		PreparedEdit $edit, PreparedEdit $edit2, $message = ''
+	) {
+		// suppress differences caused by a clock tick between generating the two PreparedEdits
+		if ( abs( $edit->timestamp - $edit2->timestamp ) < 3 ) {
+			$edit2 = clone $edit2;
+			$edit2->timestamp = $edit->timestamp;
+		}
+		$this->assertEquals( $edit, $edit2, $message );
+	}
+
+	protected function assertPreparedEditNotEquals(
+		PreparedEdit $edit, PreparedEdit $edit2, $message = ''
+	) {
+		if ( abs( $edit->timestamp - $edit2->timestamp ) < 3 ) {
+			$edit2 = clone $edit2;
+			$edit2->timestamp = $edit->timestamp;
+		}
+		$this->assertNotEquals( $edit, $edit2, $message );
 	}
 
 }

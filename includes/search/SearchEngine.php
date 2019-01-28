@@ -32,6 +32,8 @@ use MediaWiki\MediaWikiServices;
  * @ingroup Search
  */
 abstract class SearchEngine {
+	const DEFAULT_SORT = 'relevance';
+
 	/** @var string */
 	public $prefix = '';
 
@@ -49,7 +51,7 @@ abstract class SearchEngine {
 
 	/** @var bool */
 	protected $showSuggestion = true;
-	private $sort = 'relevance';
+	private $sort = self::DEFAULT_SORT;
 
 	/** @var array Feature values */
 	protected $features = [];
@@ -217,10 +219,7 @@ abstract class SearchEngine {
 	 * @return mixed the feature value or null if unset
 	 */
 	public function getFeatureData( $feature ) {
-		if ( isset( $this->features[$feature] ) ) {
-			return $this->features[$feature];
-		}
-		return null;
+		return $this->features[$feature] ?? null;
 	}
 
 	/**
@@ -232,10 +231,8 @@ abstract class SearchEngine {
 	 * @return string
 	 */
 	public function normalizeText( $string ) {
-		global $wgContLang;
-
 		// Some languages such as Chinese require word segmentation
-		return $wgContLang->segmentByWord( $string );
+		return MediaWikiServices::getInstance()->getContentLanguage()->segmentByWord( $string );
 	}
 
 	/**
@@ -244,6 +241,8 @@ abstract class SearchEngine {
 	 * search=test&prefix=Main_Page/Archive -> test prefix:Main Page/Archive
 	 * @param string $term
 	 * @return string
+	 * @deprecated since 1.32 this should now be handled internally by the
+	 * search engine
 	 */
 	public function transformSearchTerm( $term ) {
 		return $term;
@@ -255,8 +254,8 @@ abstract class SearchEngine {
 	 * @return SearchNearMatcher
 	 */
 	public function getNearMatcher( Config $config ) {
-		global $wgContLang;
-		return new SearchNearMatcher( $config, $wgContLang );
+		return new SearchNearMatcher( $config,
+			MediaWikiServices::getInstance()->getContentLanguage() );
 	}
 
 	/**
@@ -264,8 +263,9 @@ abstract class SearchEngine {
 	 * @return SearchNearMatcher
 	 */
 	protected static function defaultNearMatcher() {
-		$config = MediaWikiServices::getInstance()->getMainConfig();
-		return MediaWikiServices::getInstance()->newSearchEngine()->getNearMatcher( $config );
+		$services = MediaWikiServices::getInstance();
+		$config = $services->getMainConfig();
+		return $services->newSearchEngine()->getNearMatcher( $config );
 	}
 
 	/**
@@ -287,6 +287,7 @@ abstract class SearchEngine {
 	 * @return SearchResultSet
 	 */
 	public static function getNearMatchResultSet( $searchterm ) {
+		wfDeprecated( __METHOD__, '1.27' );
 		return static::defaultNearMatcher()->getNearMatchResultSet( $searchterm );
 	}
 
@@ -345,13 +346,13 @@ abstract class SearchEngine {
 
 	/**
 	 * Get the valid sort directions.  All search engines support 'relevance' but others
-	 * might support more. The default in all implementations should be 'relevance.'
+	 * might support more. The default in all implementations must be 'relevance.'
 	 *
 	 * @since 1.25
 	 * @return string[] the valid sort directions for setSort
 	 */
 	public function getValidSorts() {
-		return [ 'relevance' ];
+		return [ self::DEFAULT_SORT ];
 	}
 
 	/**
@@ -385,16 +386,12 @@ abstract class SearchEngine {
 	 * or namespace names and set the list of namespaces
 	 * of this class accordingly.
 	 *
+	 * @deprecated since 1.32; should be handled internally by the search engine
 	 * @param string $query
 	 * @return string
 	 */
 	function replacePrefixes( $query ) {
-		$queryAndNs = self::parseNamespacePrefixes( $query );
-		if ( $queryAndNs === false ) {
-			return $query;
-		}
-		$this->namespaces = $queryAndNs[1];
-		return $queryAndNs[0];
+		return $query;
 	}
 
 	/**
@@ -402,50 +399,66 @@ abstract class SearchEngine {
 	 * or namespace names
 	 *
 	 * @param string $query
+	 * @param bool $withAllKeyword activate support of the "all:" keyword and its
+	 * translations to activate searching on all namespaces.
+	 * @param bool $withPrefixSearchExtractNamespaceHook call the PrefixSearchExtractNamespace hook
+	 *  if classic namespace identification did not match.
 	 * @return false|array false if no namespace was extracted, an array
 	 * with the parsed query at index 0 and an array of namespaces at index
 	 * 1 (or null for all namespaces).
+	 * @throws FatalError
+	 * @throws MWException
 	 */
-	public static function parseNamespacePrefixes( $query ) {
-		global $wgContLang;
-
+	public static function parseNamespacePrefixes(
+		$query,
+		$withAllKeyword = true,
+		$withPrefixSearchExtractNamespaceHook = false
+	) {
 		$parsed = $query;
 		if ( strpos( $query, ':' ) === false ) { // nothing to do
 			return false;
 		}
 		$extractedNamespace = null;
-		$allkeywords = [];
-
-		$allkeywords[] = wfMessage( 'searchall' )->inContentLanguage()->text() . ":";
-		// force all: so that we have a common syntax for all the wikis
-		if ( !in_array( 'all:', $allkeywords ) ) {
-			$allkeywords[] = 'all:';
-		}
 
 		$allQuery = false;
-		foreach ( $allkeywords as $kw ) {
-			if ( strncmp( $query, $kw, strlen( $kw ) ) == 0 ) {
-				$extractedNamespace = null;
-				$parsed = substr( $query, strlen( $kw ) );
-				$allQuery = true;
-				break;
+		if ( $withAllKeyword ) {
+			$allkeywords = [];
+
+			$allkeywords[] = wfMessage( 'searchall' )->inContentLanguage()->text() . ":";
+			// force all: so that we have a common syntax for all the wikis
+			if ( !in_array( 'all:', $allkeywords ) ) {
+				$allkeywords[] = 'all:';
+			}
+
+			foreach ( $allkeywords as $kw ) {
+				if ( strncmp( $query, $kw, strlen( $kw ) ) == 0 ) {
+					$extractedNamespace = null;
+					$parsed = substr( $query, strlen( $kw ) );
+					$allQuery = true;
+					break;
+				}
 			}
 		}
 
 		if ( !$allQuery && strpos( $query, ':' ) !== false ) {
-			// TODO: should we unify with PrefixSearch::extractNamespace ?
 			$prefix = str_replace( ' ', '_', substr( $query, 0, strpos( $query, ':' ) ) );
-			$index = $wgContLang->getNsIndex( $prefix );
+			$index = MediaWikiServices::getInstance()->getContentLanguage()->getNsIndex( $prefix );
 			if ( $index !== false ) {
 				$extractedNamespace = [ $index ];
 				$parsed = substr( $query, strlen( $prefix ) + 1 );
+			} elseif ( $withPrefixSearchExtractNamespaceHook ) {
+				$hookNamespaces = [ NS_MAIN ];
+				$hookQuery = $query;
+				Hooks::run( 'PrefixSearchExtractNamespace', [ &$hookNamespaces, &$hookQuery ] );
+				if ( $hookQuery !== $query ) {
+					$parsed = $hookQuery;
+					$extractedNamespace = $hookNamespaces;
+				} else {
+					return false;
+				}
 			} else {
 				return false;
 			}
-		}
-
-		if ( trim( $parsed ) == '' ) {
-			$parsed = $query; // prefix was the whole query
 		}
 
 		return [ $parsed, $extractedNamespace ];
@@ -530,34 +543,11 @@ abstract class SearchEngine {
 	 * @return string Simplified search string
 	 */
 	protected function normalizeNamespaces( $search ) {
-		// Find a Title which is not an interwiki and is in NS_MAIN
-		$title = Title::newFromText( $search );
-		$ns = $this->namespaces;
-		if ( $title && !$title->isExternal() ) {
-			$ns = [ $title->getNamespace() ];
-			$search = $title->getText();
-			if ( $ns[0] == NS_MAIN ) {
-				$ns = $this->namespaces; // no explicit prefix, use default namespaces
-				Hooks::run( 'PrefixSearchExtractNamespace', [ &$ns, &$search ] );
-			}
-		} else {
-			$title = Title::newFromText( $search . 'Dummy' );
-			if ( $title && $title->getText() == 'Dummy'
-					&& $title->getNamespace() != NS_MAIN
-					&& !$title->isExternal()
-			) {
-				$ns = [ $title->getNamespace() ];
-				$search = '';
-			} else {
-				Hooks::run( 'PrefixSearchExtractNamespace', [ &$ns, &$search ] );
-			}
+		$queryAndNs = self::parseNamespacePrefixes( $search, false, true );
+		if ( $queryAndNs !== false ) {
+			$this->setNamespaces( $queryAndNs[1] );
+			return $queryAndNs[0];
 		}
-
-		$ns = array_map( function ( $space ) {
-			return $space == NS_MEDIA ? NS_FILE : $space;
-		}, $ns );
-
-		$this->setNamespaces( $ns );
 		return $search;
 	}
 
@@ -632,9 +622,8 @@ abstract class SearchEngine {
 		$results = $this->completionSearchBackendOverfetch( $search );
 		$fallbackLimit = 1 + $this->limit - $results->getSize();
 		if ( $fallbackLimit > 0 ) {
-			global $wgContLang;
-
-			$fallbackSearches = $wgContLang->autoConvertToAllVariants( $search );
+			$fallbackSearches = MediaWikiServices::getInstance()->getContentLanguage()->
+				autoConvertToAllVariants( $search );
 			$fallbackSearches = array_diff( array_unique( $fallbackSearches ), [ $search ] );
 
 			foreach ( $fallbackSearches as $fbs ) {

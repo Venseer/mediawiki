@@ -140,13 +140,9 @@ class ResourceLoaderImage {
 			if ( isset( $desc['lang'][$contextLang] ) ) {
 				return $this->basePath . '/' . $desc['lang'][$contextLang];
 			}
-			$fallbacks = Language::getFallbacksFor( $contextLang );
+			$fallbacks = Language::getFallbacksFor( $contextLang, Language::STRICT_FALLBACKS );
 			foreach ( $fallbacks as $lang ) {
-				// Images will fallback to 'default' instead of 'en', except for 'en-*' variants
-				if (
-					( $lang !== 'en' || substr( $contextLang, 0, 3 ) === 'en-' ) &&
-					isset( $desc['lang'][$lang] )
-				) {
+				if ( isset( $desc['lang'][$lang] ) ) {
 					return $this->basePath . '/' . $desc['lang'][$lang];
 				}
 			}
@@ -296,12 +292,23 @@ class ResourceLoaderImage {
 	 * @return string New SVG file data
 	 */
 	protected function variantize( $variantConf, ResourceLoaderContext $context ) {
-		$dom = new DomDocument;
+		$dom = new DOMDocument;
 		$dom->loadXML( file_get_contents( $this->getPath( $context ) ) );
 		$root = $dom->documentElement;
-		$wrapper = $dom->createElement( 'g' );
+		$titleNode = null;
+		$wrapper = $dom->createElementNS( 'http://www.w3.org/2000/svg', 'g' );
+		// Reattach all direct children of the `<svg>` root node to the `<g>` wrapper
 		while ( $root->firstChild ) {
-			$wrapper->appendChild( $root->firstChild );
+			$node = $root->firstChild;
+			if ( !$titleNode && $node->nodeType === XML_ELEMENT_NODE && $node->tagName === 'title' ) {
+				// Remember the first encountered `<title>` node
+				$titleNode = $node;
+			}
+			$wrapper->appendChild( $node );
+		}
+		if ( $titleNode ) {
+			// Reattach the `<title>` node to the `<svg>` root node rather than the `<g>` wrapper
+			$root->appendChild( $titleNode );
 		}
 		$root->appendChild( $wrapper );
 		$wrapper->setAttribute( 'fill', $variantConf['color'] );
@@ -319,7 +326,7 @@ class ResourceLoaderImage {
 	 * @return string Massaged SVG image data
 	 */
 	protected function massageSvgPathdata( $svg ) {
-		$dom = new DomDocument;
+		$dom = new DOMDocument;
 		$dom->loadXML( $svg );
 		foreach ( $dom->getElementsByTagName( 'path' ) as $node ) {
 			$pathData = $node->getAttribute( 'd' );

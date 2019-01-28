@@ -76,11 +76,6 @@ class ParserTestRunner {
 	private $dbClone;
 
 	/**
-	 * @var TidySupport
-	 */
-	private $tidySupport;
-
-	/**
 	 * @var TidyDriverBase
 	 */
 	private $tidyDriver = null;
@@ -117,6 +112,24 @@ class ParserTestRunner {
 	private $normalizationFunctions = [];
 
 	/**
+	 * Run disabled parser tests
+	 * @var bool
+	 */
+	private $runDisabled;
+
+	/**
+	 * Disable parse on article insertion
+	 * @var bool
+	 */
+	private $disableSaveParse;
+
+	/**
+	 * Reuse upload directory
+	 * @var bool
+	 */
+	private $keepUploads;
+
+	/**
 	 * @param TestRecorder $recorder
 	 * @param array $options
 	 */
@@ -146,13 +159,8 @@ class ParserTestRunner {
 		$this->fileBackendName = $options['file-backend'] ?? false;
 
 		$this->runDisabled = !empty( $options['run-disabled'] );
-		$this->runParsoid = !empty( $options['run-parsoid'] );
 
-		$this->tidySupport = new TidySupport( !empty( $options['use-tidy-config'] ) );
-		if ( !$this->tidySupport->isEnabled() ) {
-			$this->recorder->warning(
-				"Warning: tidy is not installed, skipping some tests\n" );
-		}
+		$this->disableSaveParse = !empty( $options['disable-save-parse'] );
 
 		if ( isset( $options['upload-dir'] ) ) {
 			$this->uploadDir = $options['upload-dir'];
@@ -274,6 +282,7 @@ class ParserTestRunner {
 		$setup['wgHtml5'] = true;
 		$setup['wgDisableLangConversion'] = false;
 		$setup['wgDisableTitleConversion'] = false;
+		$setup['wgMediaInTargetLanguage'] = false;
 
 		// "extra language links"
 		// see https://gerrit.wikimedia.org/r/111390
@@ -384,7 +393,7 @@ class ParserTestRunner {
 		// any live Language object, both on setup and teardown
 		$reset = function () {
 			MWNamespace::clearCaches();
-			$GLOBALS['wgContLang']->resetNamespaces();
+			MediaWikiServices::getInstance()->getContentLanguage()->resetNamespaces();
 		};
 		$setup[] = $reset;
 		$teardown[] = $reset;
@@ -677,7 +686,6 @@ class ParserTestRunner {
 			foreach ( $filenames as $filename ) {
 				$testFileInfo = TestFileReader::read( $filename, [
 					'runDisabled' => $this->runDisabled,
-					'runParsoid' => $this->runParsoid,
 					'regex' => $this->regex ] );
 
 				// Don't start the suite if there are no enabled tests in the file
@@ -804,7 +812,7 @@ class ParserTestRunner {
 	 * @return ParserTestResult|false false if skipped
 	 */
 	public function runTest( $test ) {
-		wfDebug( __METHOD__.": running {$test['desc']}" );
+		wfDebug( __METHOD__ . ": running {$test['desc']}" );
 		$opts = $this->parseOptions( $test['options'] );
 		$teardownGuard = $this->perTestSetup( $test );
 
@@ -814,12 +822,7 @@ class ParserTestRunner {
 		$options->setTimestamp( $this->getFakeTimestamp() );
 
 		if ( isset( $opts['tidy'] ) ) {
-			if ( !$this->tidySupport->isEnabled() ) {
-				$this->recorder->skipped( $test, 'tidy extension is not installed' );
-				return false;
-			} else {
-				$options->setTidy( true );
-			}
+			$options->setTidy( true );
 		}
 
 		if ( isset( $opts['title'] ) ) {
@@ -1087,6 +1090,7 @@ class ParserTestRunner {
 				+ [ 'ISBN' => true, 'PMID' => true, 'RFC' => true ],
 			// Test with legacy encoding by default until HTML5 is very stable and default
 			'wgFragmentMode' => [ 'legacy' ],
+			'wgMediaInTargetLanguage' => self::getOptionValue( 'wgMediaInTargetLanguage', $opts, false ),
 		];
 
 		$nonIncludable = self::getOptionValue( 'wgNonincludableNamespaces', $opts, false );
@@ -1110,12 +1114,19 @@ class ParserTestRunner {
 		if ( isset( $opts['tidy'] ) ) {
 			// Cache a driver instance
 			if ( $this->tidyDriver === null ) {
-				$this->tidyDriver = MWTidy::factory( $this->tidySupport->getConfig() );
+				$this->tidyDriver = MWTidy::factory();
 			}
 			$tidy = $this->tidyDriver;
 		} else {
 			$tidy = false;
 		}
+
+		# Suppress warnings about running tests without tidy
+		Wikimedia\suppressWarnings();
+		wfDeprecated( 'disabling tidy' );
+		wfDeprecated( 'MWTidy::setInstance' );
+		Wikimedia\restoreWarnings();
+
 		MWTidy::setInstance( $tidy );
 		$teardown[] = function () {
 			MWTidy::destroySingleton();
@@ -1125,8 +1136,20 @@ class ParserTestRunner {
 		$lang = Language::factory( $langCode );
 		$lang->resetNamespaces();
 		$setup['wgContLang'] = $lang;
+		$setup[] = function () use ( $lang ) {
+			MediaWikiServices::getInstance()->disableService( 'ContentLanguage' );
+			MediaWikiServices::getInstance()->redefineService(
+				'ContentLanguage',
+				function () use ( $lang ) {
+					return $lang;
+				}
+			);
+		};
+		$teardown[] = function () {
+			MediaWikiServices::getInstance()->resetServiceForTesting( 'ContentLanguage' );
+		};
 		$reset = function () {
-			MagicWord::clearCache();
+			MediaWikiServices::getInstance()->resetServiceForTesting( 'MagicWordFactory' );
 			$this->resetTitleServices();
 		};
 		$setup[] = $reset;
@@ -1184,17 +1207,17 @@ class ParserTestRunner {
 			'site_stats', 'ipblocks', 'image', 'oldimage',
 			'recentchanges', 'watchlist', 'interwiki', 'logging', 'log_search',
 			'querycache', 'objectcache', 'job', 'l10n_cache', 'redirect', 'querycachetwo',
-			'archive', 'user_groups', 'page_props', 'category'
+			'archive', 'user_groups', 'page_props', 'category',
+			'slots', 'content', 'slot_roles', 'content_models',
 		];
 
 		if ( $wgCommentTableSchemaMigrationStage >= MIGRATION_WRITE_BOTH ) {
 			// The new tables for comments are in use
 			$tables[] = 'comment';
 			$tables[] = 'revision_comment_temp';
-			$tables[] = 'image_comment_temp';
 		}
 
-		if ( $wgActorTableSchemaMigrationStage >= MIGRATION_WRITE_BOTH ) {
+		if ( $wgActorTableSchemaMigrationStage & SCHEMA_COMPAT_WRITE_NEW ) {
 			// The new tables for actors are in use
 			$tables[] = 'actor';
 			$tables[] = 'revision_actor_temp';
@@ -1223,7 +1246,7 @@ class ParserTestRunner {
 	 * For best performance, call this once only for all tests. However, it can
 	 * be called at the start of each test if more isolation is desired.
 	 *
-	 * @todo: This is basically an unrefactored copy of
+	 * @todo This is basically an unrefactored copy of
 	 * MediaWikiTestCase::setupAllTestDBs. They should be factored out somehow.
 	 *
 	 * Do not call this function from a MediaWikiTestCase subclass, since
@@ -1354,7 +1377,17 @@ class ParserTestRunner {
 				'bits'        => 0,
 				'media_type'  => MEDIATYPE_DRAWING,
 				'mime'        => 'image/svg+xml',
-				'metadata'    => serialize( [] ),
+				'metadata'    => serialize( [
+					'version'        => SvgHandler::SVG_METADATA_VERSION,
+					'width'          => 240,
+					'height'         => 180,
+					'originalWidth'  => '100%',
+					'originalHeight' => '100%',
+					'translations'   => [
+						'en' => SVGReader::LANG_FULL_MATCH,
+						'ru' => SVGReader::LANG_FULL_MATCH,
+					],
+				] ),
 				'sha1'        => Wikimedia\base_convert( '', 16, 36, 31 ),
 				'fileExists'  => true
 		], $this->db->timestamp( '20010115123500' ), $user );
@@ -1451,7 +1484,6 @@ class ParserTestRunner {
 		$this->checkSetupDone( 'setupDatabase' );
 
 		$this->dbClone->destroy();
-		$this->databaseSetupDone = false;
 
 		if ( $this->useTemporaryTables ) {
 			if ( $this->db->getType() == 'sqlite' ) {
@@ -1584,15 +1616,25 @@ class ParserTestRunner {
 	 * @param array $articles Article info array from TestFileReader
 	 */
 	public function addArticles( $articles ) {
-		global $wgContLang;
 		$setup = [];
 		$teardown = [];
 
 		// Be sure ParserTestRunner::addArticle has correct language set,
 		// so that system messages get into the right language cache
-		if ( $wgContLang->getCode() !== 'en' ) {
+		if ( MediaWikiServices::getInstance()->getContentLanguage()->getCode() !== 'en' ) {
 			$setup['wgLanguageCode'] = 'en';
-			$setup['wgContLang'] = Language::factory( 'en' );
+			$lang = Language::factory( 'en' );
+			$setup['wgContLang'] = $lang;
+			$setup[] = function () use ( $lang ) {
+				$services = MediaWikiServices::getInstance();
+				$services->disableService( 'ContentLanguage' );
+				$services->redefineService( 'ContentLanguage', function () use ( $lang ) {
+					return $lang;
+				} );
+			};
+			$teardown[] = function () {
+				MediaWikiServices::getInstance()->resetServiceForTesting( 'ContentLanguage' );
+			};
 		}
 
 		// Add special namespaces, in case that hasn't been done by staticSetup() yet
@@ -1651,11 +1693,15 @@ class ParserTestRunner {
 			);
 		}
 
-		// Use mock parser, to make debugging of actual parser tests simpler.
+		// Optionally use mock parser, to make debugging of actual parser tests simpler.
 		// But initialise the MessageCache clone first, don't let MessageCache
 		// get a reference to the mock object.
-		MessageCache::singleton()->getParser();
-		$restore = $this->executeSetupSnippets( [ 'wgParser' => new ParserTestMockParser ] );
+		if ( $this->disableSaveParse ) {
+			MessageCache::singleton()->getParser();
+			$restore = $this->executeSetupSnippets( [ 'wgParser' => new ParserTestMockParser ] );
+		} else {
+			$restore = false;
+		}
 		try {
 			$status = $page->doEditContent(
 				$newContent,
@@ -1663,7 +1709,9 @@ class ParserTestRunner {
 				EDIT_NEW | EDIT_INTERNAL
 			);
 		} finally {
-			$restore();
+			if ( $restore ) {
+				$restore();
+			}
 		}
 
 		if ( !$status->isOK() ) {

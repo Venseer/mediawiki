@@ -2,7 +2,7 @@
  * HTMLForm enhancements:
  * Add a dynamic max length to the reason field of SelectAndOther.
  */
-( function ( mw, $ ) {
+( function () {
 
 	// cache the separator to avoid object creation on each keypress
 	var colonSeparator = mw.message( 'colon-separator' ).text();
@@ -41,7 +41,7 @@
 					// cache the current selection to avoid expensive lookup
 					currentValReasonList = $reasonList.val();
 
-					$reasonList.change( function () {
+					$reasonList.on( 'change', function () {
 						currentValReasonList = $reasonList.val();
 					} );
 
@@ -63,4 +63,4 @@
 			} );
 	} );
 
-}( mediaWiki, jQuery ) );
+}() );

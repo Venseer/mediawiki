@@ -95,7 +95,6 @@ class MssqlUpdater extends DatabaseUpdater {
 			[ 'addIndex', 'recentchanges', 'rc_name_type_patrolled_timestamp',
 				'patch-add-rc_name_type_patrolled_timestamp_index.sql' ],
 			[ 'addField', 'change_tag', 'ct_id', 'patch-change_tag-ct_id.sql' ],
-			[ 'addField', 'tag_summary', 'ts_id', 'patch-tag_summary-ts_id.sql' ],
 
 			// 1.29
 			[ 'addField', 'externallinks', 'el_index_60', 'patch-externallinks-el_index_60.sql' ],
@@ -114,11 +113,11 @@ class MssqlUpdater extends DatabaseUpdater {
 			[ 'migrateComments' ],
 
 			// 1.31
-			[ 'addTable', 'slots', 'patch-slots.sql' ],
-			[ 'addField', 'slots', 'slot_origin', 'patch-slot-origin.sql' ],
-			[ 'addTable', 'content', 'patch-content.sql' ],
 			[ 'addTable', 'slot_roles', 'patch-slot_roles.sql' ],
 			[ 'addTable', 'content_models', 'patch-content_models.sql' ],
+			[ 'addTable', 'content', 'patch-content.sql' ],
+			[ 'addTable', 'slots', 'patch-slots.sql' ],
+			[ 'addField', 'slots', 'slot_origin', 'patch-slot-origin.sql' ],
 			[ 'migrateArchiveText' ],
 			[ 'addTable', 'actor', 'patch-actor-table.sql' ],
 			[ 'migrateActors' ],
@@ -144,6 +143,19 @@ class MssqlUpdater extends DatabaseUpdater {
 			[ 'addIndex', 'protected_titles', 'PRIMARY', 'patch-protected_titles-pk.sql' ],
 			[ 'addIndex', 'page_props', 'PRIMARY', 'patch-page_props-pk.sql' ],
 			[ 'addIndex', 'site_identifiers', 'PRIMARY', 'patch-site_identifiers-pk.sql' ],
+			[ 'addIndex', 'recentchanges', 'rc_this_oldid', 'patch-recentchanges-rc_this_oldid-index.sql' ],
+			[ 'dropTable', 'transcache' ],
+			[ 'runMaintenance', PopulateChangeTagDef::class, 'maintenance/populateChangeTagDef.php' ],
+			[ 'addIndex', 'change_tag', 'change_tag_rc_tag_id',
+				'patch-change_tag-change_tag_rc_tag_id.sql' ],
+			[ 'addField', 'ipblocks', 'ipb_sitewide', 'patch-ipb_sitewide.sql' ],
+			[ 'addTable', 'ipblocks_restrictions', 'patch-ipblocks_restrictions-table.sql' ],
+			[ 'migrateImageCommentTemp' ],
+
+			// 1.33
+			[ 'dropField', 'change_tag', 'ct_tag', 'patch-drop-ct_tag.sql' ],
+			[ 'dropTable', 'valid_tag' ],
+			[ 'dropTable', 'tag_summary' ],
 		];
 	}
 

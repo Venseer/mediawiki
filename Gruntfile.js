@@ -21,6 +21,9 @@ module.exports = function ( grunt ) {
 
 	grunt.initConfig( {
 		eslint: {
+			options: {
+				reportUnusedDisableDirectives: true
+			},
 			all: [
 				'**/*.js',
 				'!docs/**',
@@ -47,6 +50,7 @@ module.exports = function ( grunt ) {
 				disallowBlankTranslations: false
 			},
 			core: 'languages/i18n/',
+			exif: 'languages/i18n/exif/',
 			api: 'includes/api/i18n/',
 			installer: 'includes/installer/i18n/'
 		},

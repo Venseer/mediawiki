@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	/**
 	 * Quick links menu option widget
 	 *
@@ -96,7 +96,9 @@
 		this.$icon.on( { click: this.onDefaultIconClick.bind( this ) } );
 		// Prevent propagation on mousedown for the save button
 		// so the menu doesn't close
-		this.saveButton.$element.on( { mousedown: function () { return false; } } );
+		this.saveButton.$element.on( { mousedown: function () {
+			return false;
+		} } );
 
 		// Initialize
 		this.toggleDefault( !!this.model.isDefault() );
@@ -292,7 +294,7 @@
 			this.saveButton.toggle( isEdit );
 
 			if ( isEdit ) {
-				this.editInput.$input.focus();
+				this.editInput.$input.trigger( 'focus' );
 			}
 			this.editing = isEdit;
 		}
@@ -326,4 +328,4 @@
 		return this.model.getID();
 	};
 
-}( mediaWiki ) );
+}() );

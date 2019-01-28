@@ -18,6 +18,8 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * Builds the image revision log shown on image pages
  *
@@ -52,13 +54,14 @@ class ImageHistoryList extends ContextSource {
 	 * @param ImagePage $imagePage
 	 */
 	public function __construct( $imagePage ) {
-		global $wgShowArchiveThumbnails;
+		$context = $imagePage->getContext();
 		$this->current = $imagePage->getPage()->getFile();
 		$this->img = $imagePage->getDisplayedFile();
 		$this->title = $imagePage->getTitle();
 		$this->imagePage = $imagePage;
-		$this->showThumb = $wgShowArchiveThumbnails && $this->img->canRender();
-		$this->setContext( $imagePage->getContext() );
+		$this->showThumb = $context->getConfig()->get( 'ShowArchiveThumbnails' ) &&
+			$this->img->canRender();
+		$this->setContext( $context );
 	}
 
 	/**
@@ -111,8 +114,6 @@ class ImageHistoryList extends ContextSource {
 	 * @return string
 	 */
 	public function imageHistoryLine( $iscur, $file ) {
-		global $wgContLang;
-
 		$user = $this->getUser();
 		$lang = $this->getLanguage();
 		$timestamp = wfTimestamp( TS_MW, $file->getTimestamp() );
@@ -264,8 +265,9 @@ class ImageHistoryList extends ContextSource {
 			$row .= '<td><span class="history-deleted">' .
 				$this->msg( 'rev-deleted-comment' )->escaped() . '</span></td>';
 		} else {
-			$row .= '<td dir="' . $wgContLang->getDir() . '">' .
-				Linker::formatComment( $description, $this->title ) . '</td>';
+			$row .=
+				'<td dir="' . MediaWikiServices::getInstance()->getContentLanguage()->getDir() .
+				'">' . Linker::formatComment( $description, $this->title ) . '</td>';
 		}
 
 		$rowClass = null;

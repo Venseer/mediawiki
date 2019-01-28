@@ -394,7 +394,7 @@ abstract class FileBackend implements LoggerAwareInterface {
 	 *                           This should only be used if all entries in the process
 	 *                           cache were added after the files were already locked. (since 1.20)
 	 *
-	 * @remarks Remarks on locking:
+	 * @note Remarks on locking:
 	 * File system paths given to operations should refer to files that are
 	 * already locked or otherwise safe from modification from other processes.
 	 * Normally these files will be new temp files, which should be adequate.
@@ -417,7 +417,7 @@ abstract class FileBackend implements LoggerAwareInterface {
 		if ( empty( $opts['bypassReadOnly'] ) && $this->isReadOnly() ) {
 			return $this->newStatus( 'backend-fail-readonly', $this->name, $this->readOnly );
 		}
-		if ( !count( $ops ) ) {
+		if ( $ops === [] ) {
 			return $this->newStatus(); // nothing to do
 		}
 
@@ -427,7 +427,7 @@ abstract class FileBackend implements LoggerAwareInterface {
 		}
 
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForOps(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 
 		return $this->doOperationsInternal( $ops, $opts );
 	}
@@ -436,6 +436,7 @@ abstract class FileBackend implements LoggerAwareInterface {
 	 * @see FileBackend::doOperations()
 	 * @param array $ops
 	 * @param array $opts
+	 * @return StatusValue
 	 */
 	abstract protected function doOperationsInternal( array $ops, array $opts );
 
@@ -655,7 +656,7 @@ abstract class FileBackend implements LoggerAwareInterface {
 		if ( empty( $opts['bypassReadOnly'] ) && $this->isReadOnly() ) {
 			return $this->newStatus( 'backend-fail-readonly', $this->name, $this->readOnly );
 		}
-		if ( !count( $ops ) ) {
+		if ( $ops === [] ) {
 			return $this->newStatus(); // nothing to do
 		}
 
@@ -665,7 +666,7 @@ abstract class FileBackend implements LoggerAwareInterface {
 		}
 
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForOps(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 
 		return $this->doQuickOperationsInternal( $ops );
 	}
@@ -673,6 +674,7 @@ abstract class FileBackend implements LoggerAwareInterface {
 	/**
 	 * @see FileBackend::doQuickOperations()
 	 * @param array $ops
+	 * @return StatusValue
 	 * @since 1.20
 	 */
 	abstract protected function doQuickOperationsInternal( array $ops );
@@ -812,13 +814,14 @@ abstract class FileBackend implements LoggerAwareInterface {
 			return $this->newStatus( 'backend-fail-readonly', $this->name, $this->readOnly );
 		}
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForOps(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 		return $this->doPrepare( $params );
 	}
 
 	/**
 	 * @see FileBackend::prepare()
 	 * @param array $params
+	 * @return StatusValue
 	 */
 	abstract protected function doPrepare( array $params );
 
@@ -843,13 +846,14 @@ abstract class FileBackend implements LoggerAwareInterface {
 			return $this->newStatus( 'backend-fail-readonly', $this->name, $this->readOnly );
 		}
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForOps(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 		return $this->doSecure( $params );
 	}
 
 	/**
 	 * @see FileBackend::secure()
 	 * @param array $params
+	 * @return StatusValue
 	 */
 	abstract protected function doSecure( array $params );
 
@@ -876,13 +880,14 @@ abstract class FileBackend implements LoggerAwareInterface {
 			return $this->newStatus( 'backend-fail-readonly', $this->name, $this->readOnly );
 		}
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForOps(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 		return $this->doPublish( $params );
 	}
 
 	/**
 	 * @see FileBackend::publish()
 	 * @param array $params
+	 * @return StatusValue
 	 */
 	abstract protected function doPublish( array $params );
 
@@ -902,33 +907,16 @@ abstract class FileBackend implements LoggerAwareInterface {
 			return $this->newStatus( 'backend-fail-readonly', $this->name, $this->readOnly );
 		}
 		/** @noinspection PhpUnusedLocalVariableInspection */
-		$scope = $this->getScopedPHPBehaviorForOps(); // try to ignore client aborts
+		$scope = ScopedCallback::newScopedIgnoreUserAbort(); // try to ignore client aborts
 		return $this->doClean( $params );
 	}
 
 	/**
 	 * @see FileBackend::clean()
 	 * @param array $params
+	 * @return StatusValue
 	 */
 	abstract protected function doClean( array $params );
-
-	/**
-	 * Enter file operation scope.
-	 * This just makes PHP ignore user aborts/disconnects until the return
-	 * value leaves scope. This returns null and does nothing in CLI mode.
-	 *
-	 * @return ScopedCallback|null
-	 */
-	final protected function getScopedPHPBehaviorForOps() {
-		if ( PHP_SAPI != 'cli' ) { // https://bugs.php.net/bug.php?id=47540
-			$old = ignore_user_abort( true ); // avoid half-finished operations
-			return new ScopedCallback( function () use ( $old ) {
-				ignore_user_abort( $old );
-			} );
-		}
-
-		return null;
-	}
 
 	/**
 	 * Check if a file exists at a storage path in the backend.

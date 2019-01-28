@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 
 	// FIXME: mw.htmlform.Element also sets this to empty object
 	mw.htmlform = {};
@@ -118,6 +118,8 @@
 			$errorBox = this.$errorBox;
 
 		if ( errors.length === 0 ) {
+			// FIXME: Use CSS transition
+			// eslint-disable-next-line jquery/no-slide
 			$errorBox.slideUp( function () {
 				$errorBox
 					.removeAttr( 'class' )
@@ -160,6 +162,8 @@
 						.removeAttr( 'class' )
 						.detach();
 				}
+				// FIXME: Use CSS transition
+				// eslint-disable-next-line jquery/no-slide
 				$errorBox
 					.attr( 'class', 'error' )
 					.empty()
@@ -169,6 +173,7 @@
 					.slideDown();
 			};
 			if ( $oldErrorBox !== $errorBox && $oldErrorBox.hasClass( 'error' ) ) {
+				// eslint-disable-next-line jquery/no-slide
 				$oldErrorBox.slideUp( showFunc );
 			} else {
 				showFunc();
@@ -178,4 +183,4 @@
 		return this;
 	};
 
-}( mediaWiki, jQuery ) );
+}() );

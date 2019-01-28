@@ -20,6 +20,9 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Storage\NameTableAccessException;
+
 /**
  * Query action to List the log events, with optional filtering by various parameters.
  *
@@ -104,16 +107,20 @@ class ApiQueryLogEvents extends ApiQueryBase {
 		}
 
 		if ( $this->fld_tags ) {
-			$this->addTables( 'tag_summary' );
-			$this->addJoinConds( [ 'tag_summary' => [ 'LEFT JOIN', 'log_id=ts_log_id' ] ] );
-			$this->addFields( 'ts_tags' );
+			$this->addFields( [ 'ts_tags' => ChangeTags::makeTagSummarySubquery( 'logging' ) ] );
 		}
 
 		if ( !is_null( $params['tag'] ) ) {
 			$this->addTables( 'change_tag' );
 			$this->addJoinConds( [ 'change_tag' => [ 'INNER JOIN',
 				[ 'log_id=ct_log_id' ] ] ] );
-			$this->addWhereFld( 'ct_tag', $params['tag'] );
+			$changeTagDefStore = MediaWikiServices::getInstance()->getChangeTagDefStore();
+			try {
+				$this->addWhereFld( 'ct_tag_id', $changeTagDefStore->getId( $params['tag'] ) );
+			} catch ( NameTableAccessException $exception ) {
+				// Return nothing.
+				$this->addWhere( '1=0' );
+			}
 		}
 
 		if ( !is_null( $params['action'] ) ) {
@@ -248,32 +255,6 @@ class ApiQueryLogEvents extends ApiQueryBase {
 		$result->addIndexedTagName( [ 'query', $this->getModuleName() ], 'item' );
 	}
 
-	/**
-	 * @deprecated since 1.25 Use LogFormatter::formatParametersForApi instead
-	 * @param ApiResult $result
-	 * @param array &$vals
-	 * @param string $params
-	 * @param string $type
-	 * @param string $action
-	 * @param string $ts
-	 * @param bool $legacy
-	 * @return array
-	 */
-	public static function addLogParams( $result, &$vals, $params, $type,
-		$action, $ts, $legacy = false
-	) {
-		wfDeprecated( __METHOD__, '1.25' );
-
-		$entry = new ManualLogEntry( $type, $action );
-		$entry->setParameters( $params );
-		$entry->setTimestamp( $ts );
-		$entry->setLegacy( $legacy );
-		$formatter = LogFormatter::newFromEntry( $entry );
-		$vals['params'] = $formatter->formatParametersForApi();
-
-		return $vals;
-	}
-
 	private function extractRowInfo( $row ) {
 		$logEntry = DatabaseLogEntry::newFromRow( $row );
 		$vals = [
@@ -399,6 +380,12 @@ class ApiQueryLogEvents extends ApiQueryBase {
 
 	public function getAllowedParams( $flags = 0 ) {
 		$config = $this->getConfig();
+		if ( $flags & ApiBase::GET_VALUES_FOR_HELP ) {
+			$logActions = $this->getAllowedLogActions();
+			sort( $logActions );
+		} else {
+			$logActions = null;
+		}
 		$ret = [
 			'prop' => [
 				ApiBase::PARAM_ISMULTI => true,
@@ -418,13 +405,11 @@ class ApiQueryLogEvents extends ApiQueryBase {
 				ApiBase::PARAM_HELP_MSG_PER_VALUE => [],
 			],
 			'type' => [
-				ApiBase::PARAM_TYPE => $config->get( 'LogTypes' )
+				ApiBase::PARAM_TYPE => LogPage::validTypes(),
 			],
 			'action' => [
 				// validation on request is done in execute()
-				ApiBase::PARAM_TYPE => ( $flags & ApiBase::GET_VALUES_FOR_HELP )
-					? $this->getAllowedLogActions()
-					: null
+				ApiBase::PARAM_TYPE => $logActions
 			],
 			'start' => [
 				ApiBase::PARAM_TYPE => 'timestamp'

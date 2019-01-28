@@ -1,6 +1,17 @@
 <?php
 /**
- * Show profiling data.
+ * Simple interface for displaying request profile data stored in
+ * the wikis' primary database.
+ *
+ * See also https://www.mediawiki.org/wiki/Manual:Profiling.
+ *
+ * To add profiling information to the database:
+ *
+ * - set $wgProfiler['class'] in LocalSetings.php to a Profiler class other than ProfilerStub.
+ * - set $wgProfiler['output'] to 'db' to force the profiler to save its the
+ *   information in the database.
+ * - apply the maintenance/archives/patch-profiling.sql patch to the database.
+ * - set $wgEnableProfileInfo to true.
  *
  * Copyright 2005 Kate Turner.
  *
@@ -26,13 +37,11 @@
  */
 
 // This endpoint is supposed to be independent of request cookies and other
-// details of the session. Log warnings for violations of the no-session
-// constraint.
-define( 'MW_NO_SESSION', 'warn' );
+// details of the session. Enforce this constraint with respect to session use.
+define( 'MW_NO_SESSION', 1 );
 
 ini_set( 'zlib.output_compression', 'off' );
 
-$wgEnableProfileInfo = false;
 require __DIR__ . '/includes/WebStart.php';
 
 header( 'Content-Type: text/html; charset=utf-8' );
@@ -155,7 +164,7 @@ $dbr = wfGetDB( DB_REPLICA );
 if ( !$dbr->tableExists( 'profiling' ) ) {
 	echo '<p>No <code>profiling</code> table exists, so we can\'t show you anything.</p>'
 		. '<p>If you want to log profiling data, enable <code>$wgProfiler[\'output\'] = \'db\'</code>'
-		. ' in your StartProfiler.php and run <code>maintenance/update.php</code> to'
+		. ' in LocalSettings.php and run <code>maintenance/update.php</code> to'
 		. ' create the profiling table.'
 		. '</body></html>';
 	exit( 1 );
@@ -284,7 +293,7 @@ class profile_point {
 	public function fmttime() {
 		return sprintf( '%5.02f', $this->time );
 	}
-};
+}
 
 function compare_point( profile_point $a, profile_point $b ) {
 	// phpcs:ignore MediaWiki.NamingConventions.ValidGlobalName.wgPrefix
@@ -329,11 +338,7 @@ $res = $dbr->select(
 	[ 'ORDER BY' => 'pf_name ASC' ]
 );
 
-if ( isset( $_REQUEST['filter'] ) ) {
-	$filter = $_REQUEST['filter'];
-} else {
-	$filter = '';
-}
+$filter = $_REQUEST['filter'] ?? '';
 
 ?>
 <form method="get" action="profileinfo.php">

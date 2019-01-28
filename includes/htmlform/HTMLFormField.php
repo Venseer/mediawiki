@@ -137,8 +137,7 @@ abstract class HTMLFormField {
 		for ( $i = count( $thisKeys ) - 1; $i >= 0; $i-- ) {
 			$keys = array_merge( array_slice( $thisKeys, 0, $i ), $nameKeys );
 			$data = $alldata;
-			while ( $keys ) {
-				$key = array_shift( $keys );
+			foreach ( $keys as $key ) {
 				if ( !is_array( $data ) || !array_key_exists( $key, $data ) ) {
 					continue 2;
 				}
@@ -607,18 +606,13 @@ abstract class HTMLFormField {
 			$error = new OOUI\HtmlSnippet( $error );
 		}
 
-		$notices = $this->getNotices();
-		foreach ( $notices as &$notice ) {
-			$notice = new OOUI\HtmlSnippet( $notice );
-		}
-
 		$config = [
 			'classes' => [ "mw-htmlform-field-$fieldType", $this->mClass ],
 			'align' => $this->getLabelAlignOOUI(),
 			'help' => ( $help !== null && $help !== '' ) ? new OOUI\HtmlSnippet( $help ) : null,
 			'errors' => $errors,
-			'notices' => $notices,
 			'infusable' => $infusable,
+			'helpInline' => $this->isHelpInline(),
 		];
 
 		$preloadModules = false;
@@ -679,8 +673,8 @@ abstract class HTMLFormField {
 	 * @return bool
 	 */
 	protected function shouldInfuseOOUI() {
-		// Always infuse fields with help text, since the interface for it is nicer with JS
-		return $this->getHelpText() !== null;
+		// Always infuse fields with popup help text, since the interface for it is nicer with JS
+		return $this->getHelpText() !== null && !$this->isHelpInline();
 	}
 
 	/**
@@ -852,11 +846,28 @@ abstract class HTMLFormField {
 	}
 
 	/**
+	 * Determine if the help text should be displayed inline.
+	 *
+	 * Only applies to OOUI forms.
+	 *
+	 * @since 1.31
+	 * @return bool
+	 */
+	public function isHelpInline() {
+		return $this->mParams['help-inline'] ?? true;
+	}
+
+	/**
 	 * Determine form errors to display and their classes
 	 * @since 1.20
 	 *
+	 * phan-taint-check gets confused with returning both classes
+	 * and errors and thinks double escaping is happening, so specify
+	 * that return value has no taint.
+	 *
 	 * @param string $value The value of the input
 	 * @return array array( $errors, $errorClass )
+	 * @return-taint none
 	 */
 	public function getErrorsAndErrorClass( $value ) {
 		$errors = $this->validate( $value, $this->mParent->mFieldData );
@@ -896,30 +907,6 @@ abstract class HTMLFormField {
 		}
 
 		return $errors;
-	}
-
-	/**
-	 * Determine notices to display for the field.
-	 *
-	 * @since 1.28
-	 * @return string[]
-	 */
-	public function getNotices() {
-		$notices = [];
-
-		if ( isset( $this->mParams['notice-message'] ) ) {
-			$notices[] = $this->getMessage( $this->mParams['notice-message'] )->parse();
-		}
-
-		if ( isset( $this->mParams['notice-messages'] ) ) {
-			foreach ( $this->mParams['notice-messages'] as $msg ) {
-				$notices[] = $this->getMessage( $msg )->parse();
-			}
-		} elseif ( isset( $this->mParams['notice'] ) ) {
-			$notices[] = $this->mParams['notice'];
-		}
-
-		return $notices;
 	}
 
 	/**
@@ -1119,6 +1106,12 @@ abstract class HTMLFormField {
 	 * Formats one or more errors as accepted by field validation-callback.
 	 *
 	 * @param string|Message|array $errors Array of strings or Message instances
+	 * To work around limitations in phan-taint-check the calling
+	 * class has taintedness disabled. So instead we pretend that
+	 * this method outputs html, since the result is eventually
+	 * outputted anyways without escaping and this allows us to verify
+	 * stuff is safe even though the caller has taintedness cleared.
+	 * @param-taint $errors exec_html
 	 * @return string HTML
 	 * @since 1.18
 	 */

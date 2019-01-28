@@ -203,6 +203,7 @@ class LocalisationCache {
 					break;
 				case 'db':
 					$storeClass = LCStoreDB::class;
+					$storeConf['server'] = $conf['storeServer'] ?? [];
 					break;
 				case 'array':
 					$storeClass = LCStoreStaticArray::class;
@@ -215,6 +216,7 @@ class LocalisationCache {
 						$storeClass = LCStoreCDB::class;
 					} else {
 						$storeClass = LCStoreDB::class;
+						$storeConf['server'] = $conf['storeServer'] ?? [];
 					}
 					break;
 				default:
@@ -523,10 +525,20 @@ class LocalisationCache {
 		ini_set( 'apc.cache_by_default', $_apcEnabled );
 		Wikimedia\restoreWarnings();
 
+		$data = [];
 		if ( $_fileType == 'core' || $_fileType == 'extension' ) {
-			$data = compact( self::$allKeys );
+			foreach ( self::$allKeys as $key ) {
+				// Not all keys are set in language files, so
+				// check they exist first
+				if ( isset( $$key ) ) {
+					$data[$key] = $$key;
+				}
+			}
 		} elseif ( $_fileType == 'aliases' ) {
-			$data = compact( 'aliases' );
+			if ( isset( $aliases ) ) {
+				/** @suppress PhanUndeclaredVariable */
+				$data['aliases'] = $aliases;
+			}
 		} else {
 			throw new MWException( __METHOD__ . ": Invalid file type: $_fileType" );
 		}
@@ -792,8 +804,9 @@ class LocalisationCache {
 		$messagesDirs = $config->get( 'MessagesDirs' );
 		return [
 			'core' => "$IP/languages/i18n",
+			'exif' => "$IP/languages/i18n/exif",
 			'api' => "$IP/includes/api/i18n",
-			'oojs-ui' => "$IP/resources/lib/oojs-ui/i18n",
+			'oojs-ui' => "$IP/resources/lib/ooui/i18n",
 		] + $messagesDirs;
 	}
 
@@ -831,17 +844,23 @@ class LocalisationCache {
 		}
 
 		# Fill in the fallback if it's not there already
-		if ( is_null( $coreData['fallback'] ) ) {
-			$coreData['fallback'] = $code === 'en' ? false : 'en';
-		}
-		if ( $coreData['fallback'] === false ) {
-			$coreData['fallbackSequence'] = [];
+		if ( ( is_null( $coreData['fallback'] ) || $coreData['fallback'] === false ) && $code === 'en' ) {
+			$coreData['fallback'] = false;
+			$coreData['originalFallbackSequence'] = $coreData['fallbackSequence'] = [];
 		} else {
-			$coreData['fallbackSequence'] = array_map( 'trim', explode( ',', $coreData['fallback'] ) );
+			if ( !is_null( $coreData['fallback'] ) ) {
+				$coreData['fallbackSequence'] = array_map( 'trim', explode( ',', $coreData['fallback'] ) );
+			} else {
+				$coreData['fallbackSequence'] = [];
+			}
 			$len = count( $coreData['fallbackSequence'] );
 
-			# Ensure that the sequence ends at en
-			if ( $coreData['fallbackSequence'][$len - 1] !== 'en' ) {
+			# Before we add the 'en' fallback for messages, keep a copy of
+			# the original fallback sequence
+			$coreData['originalFallbackSequence'] = $coreData['fallbackSequence'];
+
+			# Ensure that the sequence ends at 'en' for messages
+			if ( !$len || $coreData['fallbackSequence'][$len - 1] !== 'en' ) {
 				$coreData['fallbackSequence'][] = 'en';
 			}
 		}

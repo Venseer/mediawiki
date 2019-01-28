@@ -31,9 +31,10 @@ class LanguageCode {
 	 * Mapping of deprecated language codes that were used in previous
 	 * versions of MediaWiki to up-to-date, current language codes.
 	 * These may or may not be valid BCP 47 codes; they are included here
-	 * because MediaWiki remapped these particular codes at some point.
+	 * because MediaWiki renamed these particular codes at some point.
 	 *
-	 * @var array Mapping from language code to language code
+	 * @var array Mapping from deprecated MediaWiki-internal language code
+	 *   to replacement MediaWiki-internal language code.
 	 *
 	 * @since 1.30
 	 * @see https://meta.wikimedia.org/wiki/Special_language_codes
@@ -71,7 +72,8 @@ class LanguageCode {
 	 * `kk-Cyrl` is a valid code, although some validators may emit
 	 * a warning note.
 	 *
-	 * @var array Mapping from nonstandard codes to BCP 47 codes
+	 * @var array Mapping from nonstandard MediaWiki-internal codes to
+	 *   BCP 47 codes
 	 *
 	 * @since 1.32
 	 * @see https://meta.wikimedia.org/wiki/Special_language_codes
@@ -90,7 +92,7 @@ class LanguageCode {
 		'es-formal' => 'es-x-formal',
 		'hu-formal' => 'hu-x-formal',
 		'map-bms' => 'jv-x-bms', // [[en:Banyumasan_dialect]] T125073
-		'mo' => 'ro-MD', // T125073
+		'mo' => 'ro-Cyrl-MD', // T125073
 		'nrm' => 'nrf', // [[en:Norman_language]] T25216
 		'nl-informal' => 'nl-x-informal',
 		'roa-tara' => 'nap-x-tara', // [[en:Tarantino_dialect]]
@@ -161,10 +163,7 @@ class LanguageCode {
 	 * @since 1.30
 	 */
 	public static function replaceDeprecatedCodes( $code ) {
-		if ( isset( self::$deprecatedLanguageCodeMapping[$code] ) ) {
-			return self::$deprecatedLanguageCodeMapping[$code];
-		}
-		return $code;
+		return self::$deprecatedLanguageCodeMapping[$code] ?? $code;
 	}
 
 	/**

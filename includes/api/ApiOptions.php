@@ -52,9 +52,9 @@ class ApiOptions extends ApiBase {
 			$this->dieWithError( [ 'apierror-missingparam', 'optionname' ] );
 		}
 
-		if ( $params['reset'] ) {
-			$this->resetPreferences( $params['resetkinds'] );
-			$changed = true;
+		$resetKinds = $params['resetkinds'];
+		if ( !$params['reset'] ) {
+			$resetKinds = [];
 		}
 
 		$changes = [];
@@ -68,6 +68,14 @@ class ApiOptions extends ApiBase {
 			$newValue = $params['optionvalue'] ?? null;
 			$changes[$params['optionname']] = $newValue;
 		}
+
+		Hooks::run( 'ApiOptions', [ $this, $user, $changes, $resetKinds ] );
+
+		if ( $resetKinds ) {
+			$this->resetPreferences( $resetKinds );
+			$changed = true;
+		}
+
 		if ( !$changed && !count( $changes ) ) {
 			$this->dieWithError( 'apierror-nochanges' );
 		}
@@ -80,12 +88,18 @@ class ApiOptions extends ApiBase {
 			switch ( $prefsKinds[$key] ) {
 				case 'registered':
 					// Regular option.
-					if ( $htmlForm === null ) {
-						// We need a dummy HTMLForm for the validate callback...
-						$htmlForm = new HTMLForm( [], $this );
+					if ( $value === null ) {
+						// Reset it
+						$validation = true;
+					} else {
+						// Validate
+						if ( $htmlForm === null ) {
+							// We need a dummy HTMLForm for the validate callback...
+							$htmlForm = new HTMLForm( [], $this );
+						}
+						$field = HTMLForm::loadInputFromParameters( $key, $prefs[$key], $htmlForm );
+						$validation = $field->validate( $value, $user->getOptions() );
 					}
-					$field = HTMLForm::loadInputFromParameters( $key, $prefs[$key], $htmlForm );
-					$validation = $field->validate( $value, $user->getOptions() );
 					break;
 				case 'registered-multiselect':
 				case 'registered-checkmatrix':

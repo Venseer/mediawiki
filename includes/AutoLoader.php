@@ -129,16 +129,19 @@ class AutoLoader {
 	 */
 	public static function getAutoloadNamespaces() {
 		return [
+			'MediaWiki\\Auth\\' => __DIR__ . '/auth/',
+			'MediaWiki\\Block\\' => __DIR__ . '/block/',
 			'MediaWiki\\Edit\\' => __DIR__ . '/edit/',
 			'MediaWiki\\EditPage\\' => __DIR__ . '/editpage/',
-			'MediaWiki\\Linker\\' => __DIR__ .'/linker/',
-			'MediaWiki\\Preferences\\' => __DIR__ .'/preferences/',
-			'MediaWiki\\Services\\' => __DIR__ .'/services/',
-			'MediaWiki\\Session\\' => __DIR__ .'/session/',
-			'MediaWiki\\Shell\\' => __DIR__ .'/shell/',
-			'MediaWiki\\Sparql\\' => __DIR__ .'/sparql/',
-			'MediaWiki\\Storage\\' => __DIR__ .'/Storage/',
-			'MediaWiki\\Tidy\\' => __DIR__ .'/tidy/',
+			'MediaWiki\\Linker\\' => __DIR__ . '/linker/',
+			'MediaWiki\\Preferences\\' => __DIR__ . '/preferences/',
+			'MediaWiki\\Revision\\' => __DIR__ . '/Revision/',
+			'MediaWiki\\Session\\' => __DIR__ . '/session/',
+			'MediaWiki\\Shell\\' => __DIR__ . '/shell/',
+			'MediaWiki\\Sparql\\' => __DIR__ . '/sparql/',
+			'MediaWiki\\Storage\\' => __DIR__ . '/Storage/',
+			'MediaWiki\\Tidy\\' => __DIR__ . '/tidy/',
+			'Wikimedia\\Services\\' => __DIR__ . '/libs/services/',
 		];
 	}
 }

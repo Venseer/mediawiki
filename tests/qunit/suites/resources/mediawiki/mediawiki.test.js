@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	var specialCharactersPageName,
 		// Can't mock SITENAME since jqueryMsg caches it at load
 		siteName = mw.config.get( 'wgSiteName' );
@@ -95,11 +95,15 @@
 		assert.strictEqual( conf.get( 'constructor' ), null, 'Map.get does not look at Object.prototype of internal storage (constructor)' );
 		assert.strictEqual( conf.get( 'hasOwnProperty' ), null, 'Map.get does not look at Object.prototype of internal storage (hasOwnProperty)' );
 
-		conf.set( 'hasOwnProperty', function () { return true; } );
+		conf.set( 'hasOwnProperty', function () {
+			return true;
+		} );
 		assert.strictEqual( conf.get( 'example', 'missing' ), 'missing', 'Map.get uses neutral hasOwnProperty method (positive)' );
 
 		conf.set( 'example', 'Foo' );
-		conf.set( 'hasOwnProperty', function () { return false; } );
+		conf.set( 'hasOwnProperty', function () {
+			return false;
+		} );
 		assert.strictEqual( conf.get( 'example' ), 'Foo', 'Map.get uses neutral hasOwnProperty method (negative)' );
 
 		assert.strictEqual( conf.set( 'constructor', 42 ), true, 'Map.set for key "constructor"' );
@@ -108,7 +112,7 @@
 		assert.strictEqual( conf.set( 'undef' ), false, 'Map.set requires explicit value (no undefined default)' );
 
 		assert.strictEqual( conf.set( 'undef', undefined ), true, 'Map.set allows setting value to `undefined`' );
-		assert.strictEqual( conf.get( 'undef', 'fallback' ), undefined, 'Map.get supports retreiving value of `undefined`' );
+		assert.strictEqual( conf.get( 'undef', 'fallback' ), undefined, 'Map.get supports retrieving value of `undefined`' );
 
 		assert.strictEqual( conf.set( funky, 'Funky' ), false, 'Map.set returns boolean false if key was invalid (Function)' );
 		assert.strictEqual( conf.set( arry, 'Arry' ), false, 'Map.set returns boolean false if key was invalid (Array)' );
@@ -295,12 +299,12 @@
 		assertMultipleFormats( [ 'int-msg' ], [ 'text', 'parse', 'escaped' ], 'Some Other Message', 'int is resolved' );
 		assert.strictEqual( mw.message( 'int-msg' ).plain(), mw.messages.get( 'int-msg' ), 'int is not resolved in plain mode' );
 
-		assert.ok( mw.messages.set( 'mediawiki-italics-msg', '<i>Very</i> important' ),	'mw.messages.set: Register' );
+		assert.ok( mw.messages.set( 'mediawiki-italics-msg', '<i>Very</i> important' ), 'mw.messages.set: Register' );
 		assertMultipleFormats( [ 'mediawiki-italics-msg' ], [ 'plain', 'text', 'parse' ], mw.messages.get( 'mediawiki-italics-msg' ), 'Simple italics unchanged' );
 		assert.htmlEqual(
 			mw.message( 'mediawiki-italics-msg' ).escaped(),
 			'&lt;i&gt;Very&lt;/i&gt; important',
-			'Italics are escaped in	escaped mode'
+			'Italics are escaped in escaped mode'
 		);
 
 		assert.ok( mw.messages.set( 'mediawiki-italics-with-link', 'An <i>italicized [[link|wiki-link]]</i>' ), 'mw.messages.set: Register' );
@@ -329,6 +333,9 @@
 			'Script escaped when using parse format'
 		);
 
+		mw.config.set( 'wgUserLanguage', 'qqx' );
+		assert.strictEqual( mw.message( 'foo' ).plain(), '(foo)', 'qqx message' );
+		assert.strictEqual( mw.message( 'foo', 'bar', 'baz' ).plain(), '(foo: bar, baz)', 'qqx message with parameters' );
 	} );
 
 	QUnit.test( 'mw.msg', function ( assert ) {
@@ -353,4 +360,4 @@
 
 		assert.strictEqual( mw.msg( 'int-msg' ), 'Some Other Message', 'int is resolved' );
 	} );
-}( mediaWiki ) );
+}() );

@@ -1,4 +1,4 @@
-( function ( mw ) {
+( function () {
 	/**
 	 * Quick links widget
 	 *
@@ -40,8 +40,8 @@
 		this.menu = new mw.rcfilters.ui.GroupWidget( {
 			events: {
 				click: 'menuItemClick',
-				'delete': 'menuItemDelete',
-				'default': 'menuItemDefault',
+				delete: 'menuItemDelete',
+				default: 'menuItemDefault',
 				edit: 'menuItemEdit'
 			},
 			classes: [ 'mw-rcfilters-ui-savedLinksListWidget-menu' ],
@@ -150,4 +150,4 @@
 		this.menu.removeItems( [ this.menu.findItemFromData( item.getID() ) ] );
 		this.placeholderItem.toggle( this.model.isEmpty() );
 	};
-}( mediaWiki ) );
+}() );

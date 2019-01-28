@@ -1,7 +1,7 @@
 /*!
  * JavaScript for Special:RecentChanges
  */
-( function ( mw, $ ) {
+( function () {
 	var rc, $checkboxes, $select;
 
 	/**
@@ -27,7 +27,7 @@
 
 			// Bind to change event, and trigger once to set the initial state of the checkboxes.
 			rc.updateCheckboxes();
-			$select.change( rc.updateCheckboxes );
+			$select.on( 'change', rc.updateCheckboxes );
 		}
 	};
 
@@ -35,4 +35,4 @@
 
 	module.exports = rc;
 
-}( mediaWiki, jQuery ) );
+}() );

@@ -121,7 +121,7 @@ class FileDuplicateSearchPage extends QueryPage {
 				'label-message' => 'fileduplicatesearch-filename',
 				'id' => 'filename',
 				'size' => 50,
-				'value' => $this->filename,
+				'default' => $this->filename,
 			],
 		];
 		$hiddenFields = [
@@ -207,14 +207,14 @@ class FileDuplicateSearchPage extends QueryPage {
 	 * @return string HTML
 	 */
 	function formatResult( $skin, $result ) {
-		global $wgContLang;
-
 		$linkRenderer = $this->getLinkRenderer();
 		$nt = $result->getTitle();
-		$text = $wgContLang->convert( $nt->getText() );
+		$text = MediaWikiServices::getInstance()->getContentLanguage()->convert(
+			htmlspecialchars( $nt->getText() )
+		);
 		$plink = $linkRenderer->makeLink(
 			$nt,
-			$text
+			new HtmlArmor( $text )
 		);
 
 		$userText = $result->getUser( 'text' );

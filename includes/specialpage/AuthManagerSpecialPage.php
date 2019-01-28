@@ -254,7 +254,7 @@ abstract class AuthManagerSpecialPage extends SpecialPage {
 
 		$allReqs = AuthManager::singleton()->getAuthenticationRequests(
 			$this->authAction, $this->getUser() );
-		$this->authRequests = array_filter( $allReqs, function ( $req ) use ( $subPage ) {
+		$this->authRequests = array_filter( $allReqs, function ( $req ) {
 			return !in_array( get_class( $req ), $this->getRequestBlacklist(), true );
 		} );
 	}
@@ -456,7 +456,7 @@ abstract class AuthManagerSpecialPage extends SpecialPage {
 				// Let's just submit the data to AuthManager directly instead.
 				LoggerFactory::getInstance( 'authentication' )
 					->warning( 'Validation error on return', [ 'data' => $form->mFieldData,
-						'status' => $status->getWikiText() ] );
+						'status' => $status->getWikiText( false, false, 'en' ) ] );
 				$status = $this->handleFormSubmit( $form->mFieldData );
 			}
 		}

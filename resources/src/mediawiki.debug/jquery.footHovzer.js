@@ -2,12 +2,12 @@
  * @private
  * @class jQuery.plugin.footHovzer
  */
-( function ( $ ) {
+( function () {
 	var $hovzer, footHovzer, $spacer;
 
 	function getHovzer() {
 		if ( $hovzer === undefined ) {
-			$hovzer = $( '<div id="jquery-foot-hovzer"></div>' ).appendTo( 'body' );
+			$hovzer = $( '<div>' ).attr( 'id', 'jquery-foot-hovzer' ).appendTo( 'body' );
 		}
 		return $hovzer;
 	}
@@ -64,4 +64,4 @@
 	 * @mixins jQuery.plugin.footHovzer
 	 */
 
-}( jQuery ) );
+}() );

@@ -1,4 +1,4 @@
-( function ( mw, $ ) {
+( function () {
 	QUnit.module( 'mediawiki.toc', QUnit.newMwEnvironment( {
 		setup: function () {
 			// Prevent live cookies from interferring with the test
@@ -28,12 +28,12 @@
 
 		assert.strictEqual( $tocList.is( ':hidden' ), false, 'The table of contents is now visible' );
 
-		$toggleLink.click();
+		$toggleLink.trigger( 'click' );
 		return $tocList.promise().then( function () {
 			assert.strictEqual( $tocList.is( ':hidden' ), true, 'The table of contents is now hidden' );
 
-			$toggleLink.click();
+			$toggleLink.trigger( 'click' );
 			return $tocList.promise();
 		} );
 	} );
-}( mediaWiki, jQuery ) );
+}() );

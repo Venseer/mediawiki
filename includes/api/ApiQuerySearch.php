@@ -20,6 +20,8 @@
  * @file
  */
 
+use MediaWiki\MediaWikiServices;
+
 /**
  * Query module to perform full text search within wiki titles and content
  *
@@ -48,7 +50,6 @@ class ApiQuerySearch extends ApiQueryGeneratorBase {
 	 * @return void
 	 */
 	private function run( $resultPageSet = null ) {
-		global $wgContLang;
 		$params = $this->extractRequestParams();
 
 		// Extract parameters
@@ -66,9 +67,19 @@ class ApiQuerySearch extends ApiQueryGeneratorBase {
 		$search->setFeatureData( 'rewrite', (bool)$params['enablerewrites'] );
 		$search->setFeatureData( 'interwiki', (bool)$interwiki );
 
-		$query = $search->transformSearchTerm( $query );
-		$query = $search->replacePrefixes( $query );
+		$nquery = $search->transformSearchTerm( $query );
+		if ( $nquery !== $query ) {
+			$query = $nquery;
+			wfDeprecated( 'SearchEngine::transformSearchTerm() (overridden by ' .
+				get_class( $search ) . ')', '1.32' );
+		}
 
+		$nquery = $search->replacePrefixes( $query );
+		if ( $nquery !== $query ) {
+			$query = $nquery;
+			wfDeprecated( 'SearchEngine::replacePrefixes() (overridden by ' .
+						  get_class( $search ) . ')', '1.32' );
+		}
 		// Perform the actual search
 		if ( $what == 'text' ) {
 			$matches = $search->searchText( $query );
@@ -142,7 +153,8 @@ class ApiQuerySearch extends ApiQueryGeneratorBase {
 		}
 
 		// Add the search results to the result
-		$terms = $wgContLang->convertForSearchResult( $matches->termMatches() );
+		$terms = MediaWikiServices::getInstance()->getContentLanguage()->
+			convertForSearchResult( $matches->termMatches() );
 		$titles = [];
 		$count = 0;
 		$limit = $params['limit'];
@@ -387,13 +399,14 @@ class ApiQuerySearch extends ApiQueryGeneratorBase {
 
 		// If we have more than one engine the list of available sorts is
 		// difficult to represent. For now don't expose it.
-		$alternatives = MediaWiki\MediaWikiServices::getInstance()
+		$services = MediaWiki\MediaWikiServices::getInstance();
+		$alternatives = $services
 			->getSearchEngineConfig()
 			->getSearchTypes();
 		if ( count( $alternatives ) == 1 ) {
 			$this->allowedParams['sort'] = [
 				ApiBase::PARAM_DFLT => 'relevance',
-				ApiBase::PARAM_TYPE => MediaWiki\MediaWikiServices::getInstance()
+				ApiBase::PARAM_TYPE => $services
 					->newSearchEngine()
 					->getValidSorts(),
 			];

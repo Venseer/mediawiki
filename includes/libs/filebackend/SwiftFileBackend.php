@@ -129,7 +129,7 @@ class SwiftFileBackend extends FileBackendStore {
 			$this->memCache = $config['wanCache'];
 		}
 		// Process cache for container info
-		$this->containerStatCache = new ProcessCacheLRU( 300 );
+		$this->containerStatCache = new MapCacheLRU( 300 );
 		// Cache auth token information to avoid RTTs
 		if ( !empty( $config['cacheAuthInfo'] ) && isset( $config['srvCache'] ) ) {
 			$this->srvCache = $config['srvCache'];
@@ -720,7 +720,7 @@ class SwiftFileBackend extends FileBackendStore {
 	 * @param string $path Storage path to object
 	 * @return array New headers
 	 */
-	protected function addMissingMetadata( array $objHdrs, $path ) {
+	protected function addMissingHashMetadata( array $objHdrs, $path ) {
 		if ( isset( $objHdrs['x-object-meta-sha1base36'] ) ) {
 			return $objHdrs; // nothing to do
 		}
@@ -780,8 +780,8 @@ class SwiftFileBackend extends FileBackendStore {
 		$auth = $this->getAuthentication();
 
 		$ep = array_diff_key( $params, [ 'srcs' => 1 ] ); // for error logging
-		// Blindly create tmp files and stream to them, catching any exception if the file does
-		// not exist. Doing stats here is useless and will loop infinitely in addMissingMetadata().
+		// Blindly create tmp files and stream to them, catching any exception
+		// if the file does not exist. Do not waste time doing file stats here.
 		$reqs = []; // (path => op)
 
 		foreach ( $params['srcs'] as $path ) { // each path in this concurrent batch
@@ -1033,7 +1033,7 @@ class SwiftFileBackend extends FileBackendStore {
 	 * @param array $val Stat value
 	 */
 	public function loadListingStatInternal( $path, array $val ) {
-		$this->cheapCache->set( $path, 'stat', $val );
+		$this->cheapCache->setField( $path, 'stat', $val );
 	}
 
 	protected function doGetFileXAttributes( array $params ) {
@@ -1052,14 +1052,12 @@ class SwiftFileBackend extends FileBackendStore {
 	}
 
 	protected function doGetFileSha1base36( array $params ) {
+		// Avoid using stat entries from file listings, which never include the SHA-1 hash.
+		// Also, recompute the hash if it's not part of the metadata headers for some reason.
+		$params['requireSHA1'] = true;
+
 		$stat = $this->getFileStat( $params );
 		if ( $stat ) {
-			if ( !isset( $stat['sha1'] ) ) {
-				// Stat entries filled by file listings don't include SHA1
-				$this->clearCache( [ $params['src'] ] );
-				$stat = $this->getFileStat( $params );
-			}
-
 			return $stat['sha1'];
 		} else {
 			return false;
@@ -1139,8 +1137,8 @@ class SwiftFileBackend extends FileBackendStore {
 		$auth = $this->getAuthentication();
 
 		$ep = array_diff_key( $params, [ 'srcs' => 1 ] ); // for error logging
-		// Blindly create tmp files and stream to them, catching any exception if the file does
-		// not exist. Doing a stat here is useless causes infinite loops in addMissingMetadata().
+		// Blindly create tmp files and stream to them, catching any exception
+		// if the file does not exist. Do not waste time doing file stats here.
 		$reqs = []; // (path => op)
 
 		foreach ( $params['srcs'] as $path ) { // each path in this concurrent batch
@@ -1188,7 +1186,7 @@ class SwiftFileBackend extends FileBackendStore {
 				// Set the file stat process cache in passing
 				$stat = $this->getStatFromHeaders( $rhdrs );
 				$stat['latest'] = $isLatest;
-				$this->cheapCache->set( $path, 'stat', $stat );
+				$this->cheapCache->setField( $path, 'stat', $stat );
 			} elseif ( $rcode === 404 ) {
 				$tmpFiles[$path] = false;
 			} else {
@@ -1395,10 +1393,10 @@ class SwiftFileBackend extends FileBackendStore {
 
 		if ( $bypassCache ) { // purge cache
 			$this->containerStatCache->clear( $container );
-		} elseif ( !$this->containerStatCache->has( $container, 'stat' ) ) {
+		} elseif ( !$this->containerStatCache->hasField( $container, 'stat' ) ) {
 			$this->primeContainerCache( [ $container ] ); // check persistent cache
 		}
-		if ( !$this->containerStatCache->has( $container, 'stat' ) ) {
+		if ( !$this->containerStatCache->hasField( $container, 'stat' ) ) {
 			$auth = $this->getAuthentication();
 			if ( !$auth ) {
 				return null;
@@ -1418,7 +1416,7 @@ class SwiftFileBackend extends FileBackendStore {
 				if ( $bypassCache ) {
 					return $stat;
 				} else {
-					$this->containerStatCache->set( $container, 'stat', $stat ); // cache it
+					$this->containerStatCache->setField( $container, 'stat', $stat ); // cache it
 					$this->setContainerCache( $container, $stat ); // update persistent cache
 				}
 			} elseif ( $rcode === 404 ) {
@@ -1431,7 +1429,7 @@ class SwiftFileBackend extends FileBackendStore {
 			}
 		}
 
-		return $this->containerStatCache->get( $container, 'stat' );
+		return $this->containerStatCache->getField( $container, 'stat' );
 	}
 
 	/**
@@ -1583,7 +1581,7 @@ class SwiftFileBackend extends FileBackendStore {
 
 	protected function doPrimeContainerCache( array $containerInfo ) {
 		foreach ( $containerInfo as $container => $info ) {
-			$this->containerStatCache->set( $container, 'stat', $info );
+			$this->containerStatCache->setField( $container, 'stat', $info );
 		}
 	}
 
@@ -1631,7 +1629,9 @@ class SwiftFileBackend extends FileBackendStore {
 			list( $rcode, $rdesc, $rhdrs, $rbody, $rerr ) = $reqs[$path]['response'];
 			if ( $rcode === 200 || $rcode === 204 ) {
 				// Update the object if it is missing some headers
-				$rhdrs = $this->addMissingMetadata( $rhdrs, $path );
+				if ( !empty( $params['requireSHA1'] ) ) {
+					$rhdrs = $this->addMissingHashMetadata( $rhdrs, $path );
+				}
 				// Load the stat array from the headers
 				$stat = $this->getStatFromHeaders( $rhdrs );
 				if ( $this->isRGW ) {
